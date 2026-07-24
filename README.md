@@ -22,3 +22,15 @@ Catalog System の上に載る、ルールベース(AI 非使用)のおすすめ
 
 - コード: `Assets/SmartMediaPlatform/Recommendation/Runtime`(純粋C#・テスト対象)、`Assets/SmartMediaPlatform/Recommendation/Udon`(UdonSharp)
 - 設計ドキュメント(アーキテクチャ図 / クラス図 / スコアリング仕様 / 期待順位 / 設計レビュー / テスト方法 / 引き継ぎ): [docs/Phase1-3_RecommendationEngine.md](docs/Phase1-3_RecommendationEngine.md)
+
+## Phase1-4: Queue System(実装済み)
+
+Recommendation Engine が決定した曲を管理する純粋な Queue。Player・UI・ネットワーク・VRChat SDK に依存せず(asmdef で強制)、将来の Music/Video Player・Shared Queue・DJ Mode・Auto Play・Vote System すべてから `IQueue` 経由で利用できる。キューが尽きそうなときに Recommendation Engine から自動補充する `QueueManager` を同梱(自動再生は未実装)。
+
+- コード: `Assets/SmartMediaPlatform/Queue/Runtime`(純粋C#)、`Demo`、`Tests`
+- 設計ドキュメント(クラス図 / ディレクトリ構成 / Queue API一覧 / Console出力例 / 設計レビュー / 将来改善点 / 引き継ぎ / テスト方法): [docs/Phase1-4_QueueSystem.md](docs/Phase1-4_QueueSystem.md)
+
+## テスト
+
+EditMode テスト計 **120 ケース**(Catalog 63 / Recommendation 13 / Queue 44)。
+Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。

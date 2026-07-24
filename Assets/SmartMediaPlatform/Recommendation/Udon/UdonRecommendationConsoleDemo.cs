@@ -43,9 +43,10 @@ namespace SmartMediaPlatform.Recommendation.Udon
             for (int i = 0; i < n; i++)
             {
                 int idx = Engine.GetResultIndex(i);
-                float score = Engine.GetResultScore(i);
+                // Udon では float.ToString(書式) が使えないため、小数第 2 位で丸めてから連結する。
+                float score = Mathf.Round(Engine.GetResultScore(i) * 100f) / 100f;
                 Debug.Log("  #" + (i + 1) + "  " + Engine.GetResultId(i)
-                          + "  score=" + score.ToString("0.00")
+                          + "  score=" + score
                           + "  " + Engine.Catalog.GetTitle(idx) + " / " + Engine.Catalog.GetArtist(idx));
             }
         }
