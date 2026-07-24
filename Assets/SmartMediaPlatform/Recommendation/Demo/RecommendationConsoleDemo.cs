@@ -1,4 +1,3 @@
-using System;
 using SmartMediaPlatform.Catalog;
 using SmartMediaPlatform.Catalog.Data;
 using UnityEngine;
@@ -39,7 +38,8 @@ namespace SmartMediaPlatform.Recommendation.Demo
                 RecommendationRule.TagMatch(_weightTagMatch),
                 RecommendationRule.Random(_weightRandom),
             };
-            var engine = new RecommendationEngine(catalog, rules, new Random());
+            // System.Random を明示(UnityEngine.Random との衝突を避ける)。
+            var engine = new RecommendationEngine(catalog, rules, new System.Random());
 
             var seed = catalog.FindById(_seedId);
             Debug.Log($"=== Recommendation Demo (seed: {(seed != null ? seed.ToString() : _seedId)}) ===");

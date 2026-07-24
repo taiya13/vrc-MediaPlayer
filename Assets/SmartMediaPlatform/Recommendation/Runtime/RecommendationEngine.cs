@@ -24,7 +24,8 @@ namespace SmartMediaPlatform.Recommendation
         private static readonly RecommendationResult[] EmptyResults = new RecommendationResult[0];
 
         private readonly IMediaCatalog _catalog;
-        private readonly Random _random;
+        // 決定的なテストのため System.Random を使用(UnityEngine.Random と混同しないよう明示)。
+        private readonly System.Random _random;
 
         // ルールを種類ごとの重みに解決(無効・未指定は 0)
         private readonly double _wArtist;
@@ -33,10 +34,10 @@ namespace SmartMediaPlatform.Recommendation
         private readonly double _wRelated;
         private readonly double _wRandom;
 
-        public RecommendationEngine(IMediaCatalog catalog, RecommendationRule[] rules = null, Random random = null)
+        public RecommendationEngine(IMediaCatalog catalog, RecommendationRule[] rules = null, System.Random random = null)
         {
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
-            _random = random ?? new Random();
+            _random = random ?? new System.Random();
 
             if (rules == null) rules = RecommendationRule.CreateDefault();
             foreach (var rule in rules)
