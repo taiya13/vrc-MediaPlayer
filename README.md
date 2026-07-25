@@ -61,7 +61,15 @@ Unity の `AudioSource` を使って**実際に音楽を再生する** Backend�
 - DemoScene: `Player/Scenes/Phase2PlaybackDemoScene.unity` を開いて **Play**
 - 設計ドキュメント(クラス図 / API一覧 / 設計の要点 / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-2_PlaybackControl.md](docs/Phase2-2_PlaybackControl.md)
 
+## Phase2-3: Playlist & Auto Queue(実装済み)
+
+Playlist・Queue・Recommendation を統合し「聴き続けられる」再生体験を実現。`Playlist` は **MediaId のみ**を保持し(Music/Video の区別を持たないので将来 VideoBackend でもそのまま使える)、作成/削除/保存/読込/複製/並び替え/曲の追加・削除・移動に対応。`AutoQueueService` が Playlist から Queue を生成し、5 つの再生モード(Normal / RepeatOne / RepeatAll / Shuffle / Shuffle+AutoQueue)に応じて維持、尽きそうなら Recommendation で自動補充する。**Backend・Catalog・MediaPlayer は変更していない**(MediaPlayer は Playlist の存在を知らない)。
+
+- コード: `Assets/SmartMediaPlatform/Playlists/`(Runtime / Demo / Editor / Scenes / Tests)
+- DemoScene: `Playlists/Scenes/Phase2PlaylistDemoScene.unity` を開いて **Play**
+- 設計ドキュメント(クラス図 / API一覧 / 再生モード / Recommendation連携 / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-3_PlaylistAutoQueue.md](docs/Phase2-3_PlaylistAutoQueue.md)
+
 ## テスト
 
-EditMode テスト計 **262 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35)。
+EditMode テスト計 **332 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
