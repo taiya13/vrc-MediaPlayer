@@ -54,10 +54,17 @@ namespace SmartMediaPlatform.Audio
         /// <summary>
         /// バックエンドを組み立てる(まだなら)。
         /// Awake 前に他のコンポーネントから参照されても動くよう、明示的に呼べるようにしてある。
+        ///
+        /// Awake はロガーが用意される前に呼ばれるため、既に組み立て済みでも
+        /// logger が指定された場合はそれを差し替える(ログが握りつぶされないようにするため)。
         /// </summary>
         public AudioBackend EnsureBuilt(IBackendLogger logger = null)
         {
-            if (Backend != null) return Backend;
+            if (Backend != null)
+            {
+                if (logger != null) Backend.SetLogger(logger);
+                return Backend;
+            }
 
             _audioSource = GetComponent<AudioSource>();
             if (_audioSource == null) _audioSource = gameObject.AddComponent<AudioSource>();

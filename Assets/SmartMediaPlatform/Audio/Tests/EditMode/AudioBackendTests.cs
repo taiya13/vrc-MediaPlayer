@@ -362,6 +362,24 @@ namespace SmartMediaPlatform.Audio.Tests
             Assert.IsTrue(_logger.Lines.Any(l => l.Contains("AudioSource")));
         }
 
+        [Test]
+        public void SetLogger_RewiresOutputAfterConstruction()
+        {
+            // AudioBackendHost.Awake() はロガーが用意される前にバックエンドを組み立てるため、
+            // 後から SetLogger でログ出力先を差し替えられる必要がある
+            // (でないと Load/Play のログが握りつぶされる)。
+            var backend = new AudioBackend("Late", _player, _library); // ロガー未指定 = Null
+
+            backend.Load(M("music-001")); // まだ捨てられる
+            Assert.IsEmpty(_logger.Lines);
+
+            backend.SetLogger(_logger);
+            backend.Play();
+
+            Assert.IsTrue(_logger.Lines.Any(l => l.Contains("Play music-001")),
+                "SetLogger 以降のログは新しい出力先に届く");
+        }
+
         // --- ガード ---
 
         [Test]

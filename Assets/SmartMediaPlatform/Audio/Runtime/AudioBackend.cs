@@ -24,7 +24,7 @@ namespace SmartMediaPlatform.Audio
         private readonly List<IBackendObserver> _observers = new List<IBackendObserver>();
         private readonly IAudioPlayer _player;
         private readonly AudioClipLibrary _library;
-        private readonly IBackendLogger _logger;
+        private IBackendLogger _logger;
         private readonly MediaType[] _supportedTypes;
 
         private MediaItem _current;
@@ -40,6 +40,19 @@ namespace SmartMediaPlatform.Audio
         public bool AllowMissingClip { get; set; }
 
         public string Name { get; }
+
+        /// <summary>
+        /// ログ出力先を後から差し替える。
+        ///
+        /// <see cref="AudioBackendHost.Awake"/> はコンポーネントの初期化順序上、
+        /// ロガーが用意される前にバックエンドを組み立てざるを得ない。
+        /// そのため一旦 <see cref="NullBackendLogger"/> で構築し、
+        /// 実際のロガーが用意できた時点でこれを呼んで差し替える。
+        /// </summary>
+        public void SetLogger(IBackendLogger logger)
+        {
+            _logger = logger ?? NullBackendLogger.Instance;
+        }
 
         /// <param name="name">バックエンド名(ログに出る)。</param>
         /// <param name="player">音を鳴らす手段。</param>
