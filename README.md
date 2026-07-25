@@ -37,7 +37,16 @@ Queue と Player の間に位置する共通 Backend Interface。Music / Video /
 - コード: `Assets/SmartMediaPlatform/Backend/Runtime`(純粋C#)、`Demo`、`Tests`
 - 設計ドキュメント(クラス図 / 状態遷移図 / API一覧 / Console出力例 / 設計レビュー / Phase2引き継ぎ / テスト方法): [docs/Phase1-5_BackendInterface.md](docs/Phase1-5_BackendInterface.md)
 
+## Phase1 最終統合テスト(DemoScene)
+
+Catalog → Recommendation → Queue → Backend を 1 つの Unity シーンで連携させ、Console だけで一連の動作を確認できる統合テスト。実際の再生は行わない(DummyBackend)。**28 の成功条件**を各ステップのログとともに判定・出力する。
+
+- シーン: `Assets/SmartMediaPlatform/Integration/Scenes/Phase1DemoScene.unity` を開いて **Play**
+  - メニュー **Tools > Smart Media Platform > Run Phase1 Integration Test (Console)** なら Play 不要
+- コード: `Assets/SmartMediaPlatform/Integration/`
+- 設計ドキュメント(構成 / 実行方法 / Console出力例 / 成功条件一覧 / Phase2引き継ぎ): [docs/Phase1-Final_IntegrationTest.md](docs/Phase1-Final_IntegrationTest.md)
+
 ## テスト
 
-EditMode テスト計 **164 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44)。
+EditMode テスト計 **173 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
