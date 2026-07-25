@@ -17,6 +17,12 @@ namespace SmartMediaPlatform.Audio
         /// <summary>現在割り当てられているクリップ。</summary>
         AudioClip Clip { get; }
 
+        /// <summary>
+        /// 再生位置(秒)。シークはここへ代入して行う。
+        /// AudioSource.time に対応する。
+        /// </summary>
+        float Time { get; set; }
+
         /// <summary>クリップを頭から再生する。</summary>
         void Play(AudioClip clip);
 

@@ -380,6 +380,72 @@ namespace SmartMediaPlatform.Audio.Tests
                 "SetLogger 以降のログは新しい出力先に届く");
         }
 
+        // --- ISeekableBackend(Phase2-2)---
+
+        [Test]
+        public void AudioBackend_ImplementsSeekableCapability()
+        {
+            Assert.IsInstanceOf<ISeekableBackend>(_backend,
+                "AudioBackend は再生位置を扱えるバックエンドとして振る舞う");
+        }
+
+        [Test]
+        public void CanSeek_RequiresLoadedClip()
+        {
+            Assert.IsFalse(_backend.CanSeek, "何も読み込んでいなければシークできない");
+
+            _backend.Load(M("music-001"));
+            Assert.IsTrue(_backend.CanSeek);
+        }
+
+        [Test]
+        public void GetDuration_ComesFromTheClip()
+        {
+            _backend.Load(M("music-001"));
+
+            Assert.AreEqual(_library.Get("music-001").length, _backend.GetDuration(), 0.001f);
+        }
+
+        [Test]
+        public void Seek_MovesThePlayerPosition()
+        {
+            _backend.Load(M("music-001"));
+            _backend.Play();
+
+            float duration = _backend.GetDuration();
+            Assert.IsTrue(_backend.Seek(0.5f));
+            Assert.AreEqual(duration * 0.5f, _player.Time, 0.001f);
+            Assert.AreEqual(duration * 0.5f, _backend.GetCurrentTime(), 0.001f);
+        }
+
+        [Test]
+        public void Seek_ClampsOutOfRangeValues()
+        {
+            _backend.Load(M("music-001"));
+            _backend.Play();
+
+            _backend.Seek(-1f);
+            Assert.AreEqual(0f, _backend.GetCurrentTime(), 0.001f);
+
+            _backend.Seek(2f);
+            Assert.AreEqual(_backend.GetDuration(), _backend.GetCurrentTime(), 0.001f);
+        }
+
+        [Test]
+        public void Seek_WithoutLoadedClip_Fails()
+        {
+            Assert.IsFalse(_backend.Seek(0.5f));
+        }
+
+        [Test]
+        public void DummyBackend_DoesNotClaimSeekCapability()
+        {
+            var dummy = new DummyBackend("Dummy", _logger, MediaType.Music);
+
+            Assert.IsNotInstanceOf<ISeekableBackend>(dummy,
+                "再生しないバックエンドは再生位置の能力を主張しない");
+        }
+
         // --- ガード ---
 
         [Test]

@@ -19,7 +19,7 @@ namespace SmartMediaPlatform.Audio
     /// 音を出す部分は <see cref="IAudioPlayer"/> に委ねているため、
     /// テストでは偽の実装に差し替えて決定的に検証できる。
     /// </summary>
-    public sealed class AudioBackend : IMediaBackend
+    public sealed class AudioBackend : IMediaBackend, ISeekableBackend
     {
         private readonly List<IBackendObserver> _observers = new List<IBackendObserver>();
         private readonly IAudioPlayer _player;
@@ -100,6 +100,38 @@ namespace SmartMediaPlatform.Audio
 
         /// <summary>現在再生している AudioClip。無ければ null。</summary>
         public AudioClip GetCurrentClip() => _currentClip;
+
+        // --- ISeekableBackend(再生位置を扱う能力)---
+
+        /// <summary>クリップを読み込んでいればシークできる。</summary>
+        public bool CanSeek => _currentClip != null;
+
+        public float GetCurrentTime()
+        {
+            return _currentClip != null ? _player.Time : 0f;
+        }
+
+        public float GetDuration()
+        {
+            return _currentClip != null ? _currentClip.length : 0f;
+        }
+
+        public bool Seek(float normalizedPosition)
+        {
+            if (_currentClip == null)
+            {
+                Log("Seek 失敗: クリップが読み込まれていません");
+                return false;
+            }
+
+            float clamped = normalizedPosition < 0f ? 0f
+                : normalizedPosition > 1f ? 1f : normalizedPosition;
+
+            _player.Time = clamped * _currentClip.length;
+
+            Log($"Seek {_current.Id} -> {_player.Time:0.00}s / {_currentClip.length:0.00}s");
+            return true;
+        }
 
         // --- 操作 ---
 

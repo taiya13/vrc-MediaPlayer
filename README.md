@@ -53,7 +53,15 @@ Unity の `AudioSource` を使って**実際に音楽を再生する** Backend�
 - コード: `Assets/SmartMediaPlatform/Audio/`(Runtime / Demo / Tests)
 - 設計ドキュメント(クラス図 / 再生経路 / 設計の要点 / 使い方 / テスト方法 / Phase2-2引き継ぎ): [docs/Phase2-1_AudioBackend.md](docs/Phase2-1_AudioBackend.md)
 
+## Phase2-2: Playback Control(実装済み)
+
+再生制御の統一 API(`MediaPlayer`)。Play / Pause / Resume / Stop / SkipNext / SkipPrevious / TogglePlayPause / Seek / 再生位置取得 を提供し、曲が終わったら Queue の次へ自動で進んで再生を続ける。**純粋C#(UnityEngine 非依存)**なので、AudioBackend でも将来の VideoBackend でも同じコードが動く。シーク対応可否は `ISeekableBackend` の有無で判定するため、**`IMediaBackend` は今後変更不要**。`BackendManager`・`Queue` は変更していない。
+
+- コード: `Assets/SmartMediaPlatform/Player/`(Runtime / Demo / Editor / Scenes / Tests)
+- DemoScene: `Player/Scenes/Phase2PlaybackDemoScene.unity` を開いて **Play**
+- 設計ドキュメント(クラス図 / API一覧 / 設計の要点 / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-2_PlaybackControl.md](docs/Phase2-2_PlaybackControl.md)
+
 ## テスト
 
-EditMode テスト計 **219 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 46)。
+EditMode テスト計 **262 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。

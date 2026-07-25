@@ -26,6 +26,20 @@ namespace SmartMediaPlatform.Audio
 
         public AudioClip Clip => _source.clip;
 
+        public float Time
+        {
+            get => _source.time;
+            set
+            {
+                // AudioSource.time はクリップ長を超えると例外になるため、手前で丸める。
+                var clip = _source.clip;
+                float max = clip != null ? clip.length : 0f;
+                float clamped = value < 0f ? 0f : value;
+                if (max > 0f && clamped >= max) clamped = Mathf.Max(0f, max - 0.01f);
+                _source.time = clamped;
+            }
+        }
+
         public void Play(AudioClip clip)
         {
             _source.clip = clip;

@@ -13,6 +13,7 @@ namespace SmartMediaPlatform.Audio.Tests
     {
         public bool IsPlaying { get; private set; }
         public AudioClip Clip { get; private set; }
+        public float Time { get; set; }
 
         public int PlayCallCount { get; private set; }
         public int StopCallCount { get; private set; }
@@ -22,6 +23,7 @@ namespace SmartMediaPlatform.Audio.Tests
         public void Play(AudioClip clip)
         {
             Clip = clip;
+            Time = 0f;
             IsPlaying = true;
             PlayCallCount++;
         }
@@ -41,6 +43,7 @@ namespace SmartMediaPlatform.Audio.Tests
         public void Stop()
         {
             IsPlaying = false;
+            Time = 0f;
             StopCallCount++;
         }
 
