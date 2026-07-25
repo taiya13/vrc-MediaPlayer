@@ -1,0 +1,19 @@
+{
+    "name": "SmartMediaPlatform.Backend.Demo",
+    "rootNamespace": "SmartMediaPlatform.Backend.Demo",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Recommendation",
+        "SmartMediaPlatform.Queue",
+        "SmartMediaPlatform.Backend"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

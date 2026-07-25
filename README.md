@@ -30,7 +30,14 @@ Recommendation Engine が決定した曲を管理する純粋な Queue。Player�
 - コード: `Assets/SmartMediaPlatform/Queue/Runtime`(純粋C#)、`Demo`、`Tests`
 - 設計ドキュメント(クラス図 / ディレクトリ構成 / Queue API一覧 / Console出力例 / 設計レビュー / 将来改善点 / 引き継ぎ / テスト方法): [docs/Phase1-4_QueueSystem.md](docs/Phase1-4_QueueSystem.md)
 
+## Phase1-5: Backend Interface(実装済み)
+
+Queue と Player の間に位置する共通 Backend Interface。Music / Video / Live / Podcast を同一 API で扱い、`CanPlay()` によって種別ごとのバックエンドが選ばれる。`DummyBackend` は**実際の再生を行わずログのみ**出力する。Catalog・Recommendation・Queue にのみ依存(asmdef で強制)。
+
+- コード: `Assets/SmartMediaPlatform/Backend/Runtime`(純粋C#)、`Demo`、`Tests`
+- 設計ドキュメント(クラス図 / 状態遷移図 / API一覧 / Console出力例 / 設計レビュー / Phase2引き継ぎ / テスト方法): [docs/Phase1-5_BackendInterface.md](docs/Phase1-5_BackendInterface.md)
+
 ## テスト
 
-EditMode テスト計 **120 ケース**(Catalog 63 / Recommendation 13 / Queue 44)。
+EditMode テスト計 **164 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
