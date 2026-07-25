@@ -46,7 +46,14 @@ Catalog → Recommendation → Queue → Backend を 1 つの Unity シーンで
 - コード: `Assets/SmartMediaPlatform/Integration/`
 - 設計ドキュメント(構成 / 実行方法 / Console出力例 / 成功条件一覧 / Phase2引き継ぎ): [docs/Phase1-Final_IntegrationTest.md](docs/Phase1-Final_IntegrationTest.md)
 
+## Phase2-1: Audio Backend(実装済み)
+
+Unity の `AudioSource` を使って**実際に音楽を再生する** Backend。Phase1-5 の `IMediaBackend` を実装しているだけなので、**`BackendManager` を一切変更せず** DummyBackend と差し替えられる。曲の終わりを検出して `Ended` を通知する。音源ファイルが無くても動作確認できるよう、ID から短い音を自動生成する仕組みを同梱。
+
+- コード: `Assets/SmartMediaPlatform/Audio/`(Runtime / Demo / Tests)
+- 設計ドキュメント(クラス図 / 再生経路 / 設計の要点 / 使い方 / テスト方法 / Phase2-2引き継ぎ): [docs/Phase2-1_AudioBackend.md](docs/Phase2-1_AudioBackend.md)
+
 ## テスト
 
-EditMode テスト計 **173 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9)。
+EditMode テスト計 **219 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 46)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
