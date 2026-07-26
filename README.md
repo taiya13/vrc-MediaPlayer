@@ -79,7 +79,15 @@ Playlist・Queue・Recommendation を統合し「聴き続けられる」再生�
 
 > Phase2-3 は Playlist(A)と PlayerSession(B)の 2 本立てです。両者の機能の重なりと使い分けは [PlayerSession ドキュメント §8](docs/Phase2-3_PlayerSession.md) を参照してください。
 
+## Phase2-4: Backend Adapter(実装済み)
+
+MusicBackend と VideoBackend を同じ窓口で扱う Adapter 層。`IBackendAdapter` を **`IMediaBackend` の拡張**にしたことで、**PlayerSession・MediaPlayer・BackendManager を 1 行も変更せず**にアダプタを差し込める。`AudioBackendAdapter`(内側の再生位置をそのまま通す)と `DummyVideoBackendAdapter`(内側が持たない再生位置をアダプタが肩代わり)が、**同じ API で違う中身を吸収**する。VideoBackend を足しても上位が変わらないことをテストで証明済み。VRChat SDK / VideoPlayer は未使用(動画はログのみ)。
+
+- コード: `Assets/SmartMediaPlatform/Adapter/`(Runtime / Audio / Demo / Editor / Scenes / Tests)
+- DemoScene: `Adapter/Scenes/Phase2AdapterDemoScene.unity` を開いて **Play**
+- 設計ドキュメント(設計判断 / クラス図 / API一覧 / 違いの吸収 / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-4_BackendAdapter.md](docs/Phase2-4_BackendAdapter.md)
+
 ## テスト
 
-EditMode テスト計 **390 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58)。
+EditMode テスト計 **425 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
