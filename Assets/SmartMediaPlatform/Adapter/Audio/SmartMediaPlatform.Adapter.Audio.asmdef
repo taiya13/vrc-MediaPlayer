@@ -1,0 +1,19 @@
+{
+    "name": "SmartMediaPlatform.Adapter.Audio",
+    "rootNamespace": "SmartMediaPlatform.Adapter.Audio",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Backend",
+        "SmartMediaPlatform.Adapter",
+        "SmartMediaPlatform.Audio"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
