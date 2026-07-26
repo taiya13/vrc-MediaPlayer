@@ -79,7 +79,7 @@ Playlist・Queue・Recommendation を統合し「聴き続けられる」再生�
 
 > Phase2-3 は Playlist(A)と PlayerSession(B)の 2 本立てです。両者の機能の重なりと使い分けは [PlayerSession ドキュメント §8](docs/Phase2-3_PlayerSession.md) を参照してください。
 
-## Phase2-4: Backend Adapter(実装済み)
+## Phase2-4(A): Backend Adapter(実装済み)
 
 MusicBackend と VideoBackend を同じ窓口で扱う Adapter 層。`IBackendAdapter` を **`IMediaBackend` の拡張**にしたことで、**PlayerSession・MediaPlayer・BackendManager を 1 行も変更せず**にアダプタを差し込める。`AudioBackendAdapter`(内側の再生位置をそのまま通す)と `DummyVideoBackendAdapter`(内側が持たない再生位置をアダプタが肩代わり)が、**同じ API で違う中身を吸収**する。VideoBackend を足しても上位が変わらないことをテストで証明済み。VRChat SDK / VideoPlayer は未使用(動画はログのみ)。
 
@@ -87,7 +87,17 @@ MusicBackend と VideoBackend を同じ窓口で扱う Adapter 層。`IBackendAd
 - DemoScene: `Adapter/Scenes/Phase2AdapterDemoScene.unity` を開いて **Play**
 - 設計ドキュメント(設計判断 / クラス図 / API一覧 / 違いの吸収 / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-4_BackendAdapter.md](docs/Phase2-4_BackendAdapter.md)
 
+## Phase2-4(B): Video Backend Adapter(実装済み)
+
+**VRChat の VideoPlayer に依存するコードを Backend 層だけに閉じ込める**ための Adapter。`IVideoBackend` を「実機の動画プレイヤーの形」(URL・秒・独自の状態 `VideoPlayerState`・非同期読み込み)にしたうえで、`VideoBackendAdapter` が **5 つの違い**(対象 / 状態 / シーク / 通知 / 読み込み)を翻訳する。`DummyVideoBackend` は**ログのみで動画は再生しない**。`Video/Runtime` の asmdef は `noEngineReferences: true` なので、SDK 依存の混入をビルドレベルで防いでいる。**Backend の種類を判断するのは `BackendManager` だけ**で、PlayerSession / Queue / Recommendation に `MediaType` の分岐は 1 つもない。
+
+- コード: `Assets/SmartMediaPlatform/Video/`(Runtime / Demo / Editor / Scenes / Tests)
+- DemoScene: `Video/Scenes/Phase2VideoBackendDemoScene.unity` を開いて **Play**
+- 設計ドキュメント(設計判断 / クラス図 / API一覧 / 5つの違いの吸収 / Console出力例 / テスト方法 / Phase3引き継ぎ): [docs/Phase2-4_VideoBackendAdapter.md](docs/Phase2-4_VideoBackendAdapter.md)
+
+> Phase2-4 は Backend Adapter(A)と Video Backend Adapter(B)の 2 本立てです。(A)の `DummyVideoBackendAdapter` と(B)の `VideoBackendAdapter` は役割が重なっており、Phase3 では後者への一本化を推奨します([詳細](docs/Phase2-4_VideoBackendAdapter.md#9-設計レビュー自己評価))。
+
 ## テスト
 
-EditMode テスト計 **425 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35)。
+EditMode テスト計 **474 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 49)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
