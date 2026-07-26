@@ -61,7 +61,7 @@ Unity の `AudioSource` を使って**実際に音楽を再生する** Backend�
 - DemoScene: `Player/Scenes/Phase2PlaybackDemoScene.unity` を開いて **Play**
 - 設計ドキュメント(クラス図 / API一覧 / 設計の要点 / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-2_PlaybackControl.md](docs/Phase2-2_PlaybackControl.md)
 
-## Phase2-3: Playlist & Auto Queue(実装済み)
+## Phase2-3(A): Playlist & Auto Queue(実装済み)
 
 Playlist・Queue・Recommendation を統合し「聴き続けられる」再生体験を実現。`Playlist` は **MediaId のみ**を保持し(Music/Video の区別を持たないので将来 VideoBackend でもそのまま使える)、作成/削除/保存/読込/複製/並び替え/曲の追加・削除・移動に対応。`AutoQueueService` が Playlist から Queue を生成し、5 つの再生モード(Normal / RepeatOne / RepeatAll / Shuffle / Shuffle+AutoQueue)に応じて維持、尽きそうなら Recommendation で自動補充する。**Backend・Catalog・MediaPlayer は変更していない**(MediaPlayer は Playlist の存在を知らない)。
 
@@ -69,7 +69,17 @@ Playlist・Queue・Recommendation を統合し「聴き続けられる」再生�
 - DemoScene: `Playlists/Scenes/Phase2PlaylistDemoScene.unity` を開いて **Play**
 - 設計ドキュメント(クラス図 / API一覧 / 再生モード / Recommendation連携 / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-3_PlaylistAutoQueue.md](docs/Phase2-3_PlaylistAutoQueue.md)
 
+## Phase2-3(B): Player Session(実装済み)
+
+プレイヤーの再生状態を一元管理する中核 `PlayerSession`。Catalog / Recommendation / Queue / Backend / Playback をまとめる**オーケストレーター**で、**利用者は PlayerSession だけを触れば再生できる**。現在の MediaId・Queue・履歴・RepeatMode・Shuffle・AutoQueue・Backend状態・Playback状態を保持し、Ended を受けて次の曲を決める(Repeat One は同じ曲、それ以外は次へ)。Queue が尽きても Recommendation で補充して再生が続く。**Backend の具体型を一切参照しない**ので将来 VideoBackend でもそのまま動く。`PlayerSessionManager` で複数セッション(部屋ごと等)にも対応。
+
+- コード: `Assets/SmartMediaPlatform/Session/`(Runtime / Demo / Editor / Scenes / Tests)
+- DemoScene: `Session/Scenes/Phase2SessionDemoScene.unity` を開いて **Play**
+- 設計ドキュメント(クラス図 / 状態一覧 / API / Ended フロー / Console出力例 / テスト方法 / 引き継ぎ): [docs/Phase2-3_PlayerSession.md](docs/Phase2-3_PlayerSession.md)
+
+> Phase2-3 は Playlist(A)と PlayerSession(B)の 2 本立てです。両者の機能の重なりと使い分けは [PlayerSession ドキュメント §8](docs/Phase2-3_PlayerSession.md) を参照してください。
+
 ## テスト
 
-EditMode テスト計 **332 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70)。
+EditMode テスト計 **390 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
