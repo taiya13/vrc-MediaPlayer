@@ -115,7 +115,18 @@ Phase3-1 の `Tick()` によるポーリング(状態を見て「終わったは
 - DemoScene(SDK で実機イベント): **Tools > Smart Media Platform > Create Phase3-2 VRChat SDK Video Event Scene (実機イベント)** で生成して **Play**
 - 設計ドキュメント(なぜブリッジが要るか / 重複排除 / Tick 調停 / Udon からの運び方 / テスト方法 / 設計レビュー / 引き継ぎ): [docs/Phase3-2_VRChatVideoEventBridge.md](docs/Phase3-2_VRChatVideoEventBridge.md)
 
+## Phase3-3: Recommendation Playback Integration(実装済み)
+
+Phase3-2 までの部品を **1 本の再生フロー**につないだ接続層。`RecommendationEngine → Queue → PlayerSession → BackendAdapter → VRChatVideoBackend` が **Ended イベントだけで回り続ける**ようになった。中心は `RecommendationPlaybackService`(純粋C#)。
+
+Phase3-3 が足した判断は **1 つだけ**:「**積む直前に、再生できるか確かめる**」。おすすめは Catalog 全体から候補を返すため、VideoBackend しか登録していない構成では Music が混ざり、`BackendManager.LoadCurrent()` が失敗して再生が止まっていた。この判定を `IPlaybackFilter` に切り出し、`BackendPlaybackFilter` は **`BackendManager.CanPlay()` に直接聞く**ので、`MediaType` の分岐をどこにも書かずに済む(構成が挙動を決める)。Recommendation からは **MediaId(string)だけ**を受け取り、Queue へは `PlayerSession.Enqueue()` 経由で積むので、**URL(VRCUrl)を知るのは引き続き VideoBackend だけ**。おすすめが尽きても直近の除外を緩めて回り続ける。動画 10 本の `VideoCatalogSource` を `IMediaCatalogSource` の実装として追加(Catalog の設計は無変更)。**Catalog / Recommendation / Queue / PlayerSession / BackendAdapter / VRChatVideoBackend は 1 行も変更していない**(差分は新規追加のみ)。
+
+- コード: `Assets/SmartMediaPlatform/AutoPlay/`(Runtime / VRChat / Demo / Editor / Scenes / Tests)、`Video/Runtime/Data/VideoCatalogSource.cs`
+- ConsoleDemo(SDK 不要): **Tools > Smart Media Platform > Open Phase3-3 Recommendation Playback Demo Scene** → **Play**
+- DemoScene(SDK で実際に再生): **Tools > Smart Media Platform > Create Phase3-3 VRChat SDK Auto Play Scene (実際に再生)** で生成して **Play**
+- 設計ドキュメント(見つけた穴 / 責務の置きどころ / フィルタ 3 実装 / Ended の受け取り順 / テスト方法 / 引き継ぎ): [docs/Phase3-3_RecommendationPlaybackIntegration.md](docs/Phase3-3_RecommendationPlaybackIntegration.md)
+
 ## テスト
 
-EditMode テスト計 **568 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143)。
+EditMode テスト計 **607 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 39)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
