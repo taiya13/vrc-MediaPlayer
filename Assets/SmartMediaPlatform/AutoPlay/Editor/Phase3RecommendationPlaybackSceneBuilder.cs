@@ -75,22 +75,42 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
 
 #if VRC_SDK_VRCSDK3
         private const string SdkScenePath = SceneFolder + "/Phase3VRChatAutoPlayScene.unity";
+        private const string SdkMenuPath =
+            "Tools/Smart Media Platform/Create Phase3-3 VRChat SDK Auto Play Scene (実際に再生)";
 
-        [MenuItem("Tools/Smart Media Platform/Create Phase3-3 VRChat SDK Auto Play Scene (実際に再生)")]
+        [MenuItem(SdkMenuPath)]
         public static void CreateSdkScene()
         {
+            // 0. 先に UdonSharp のプログラム(.asset)を用意する。
+            //    シーンを作る前にやるのが要点 — コンパイル前にコンポーネントを置くと
+            //    「the U# program asset on this component is null」の壊れた状態が
+            //    シーンに保存されてしまう。
+            var report = UdonSharpProgramAssetFactory.EnsureProgramAssets(
+                typeof(UdonVRCVideoEventRelay));
+
+            if (report.HasCreated && !UdonSharpProgramAssetFactory.TryCompile())
+            {
+                string notice = UdonSharpSceneUtility.RecompileInstruction(SdkMenuPath);
+                Debug.LogWarning("[Phase3RecommendationPlaybackSceneBuilder] " + notice);
+                EditorUtility.DisplayDialog("Smart Media Platform", notice, "OK");
+                return;
+            }
+
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
             var scene = EditorSceneManager.NewScene(
                 NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
-            // 1. 映像の出力先
+            // 1. VRCSceneDescriptor(これが無いと ClientSim が起動せず Udon が動かない)
+            var world = UdonSharpSceneUtility.EnsureSceneDescriptor();
+
+            // 2. 映像の出力先
             var screen = GameObject.CreatePrimitive(PrimitiveType.Quad);
             screen.name = "VideoScreen";
             screen.transform.position = new Vector3(0f, 1.5f, 3f);
             screen.transform.localScale = new Vector3(3.2f, 1.8f, 1f);
 
-            // 2. 動画プレイヤー + Phase3-2 のイベント経路
+            // 3. 動画プレイヤー + Phase3-2 のイベント経路
             var playerObject = new GameObject("VRCVideoPlayer");
             var audioSource = playerObject.AddComponent<AudioSource>();
             audioSource.spatialBlend = 0f;
@@ -100,15 +120,15 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
             // 素の AddComponent<T>() ではプロキシしか付かず、
             // 「Unable to find valid U# program asset」になる。
             var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
-                playerObject, typeof(UdonVRCVideoEventRelay));
+                playerObject, typeof(UdonVRCVideoEventRelay), out _);
 
             var host = playerObject.AddComponent<VRChatVideoBackendHost>();
             playerObject.AddComponent<UdonVideoEventPump>();
 
-            // 3. Phase3-3 のおすすめ再生
+            // 4. Phase3-3 のおすすめ再生
             var demo = playerObject.AddComponent<VRChatAutoPlaySceneDemo>();
 
-            // 4. 動画カタログの URL を VRCUrl へ焼き込む(実行時には作れない)
+            // 5. 動画カタログの URL を VRCUrl へ焼き込む(実行時には作れない)
             IMediaCatalog catalog = new MediaCatalog(new VideoCatalogSource());
             int baked = host.BakeUrlsFrom(catalog);
 
@@ -122,7 +142,9 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
                 "[Phase3RecommendationPlaybackSceneBuilder] SDK シーンを作成しました: "
                 + SdkScenePath + "\n"
                 + $"  {videoPlayer.GetType().Name} / {demo.GetType().Name}\n"
-                + $"  Udon 中継: {(relay != null ? relay.GetType().Name : "未追加")}\n"
+                + $"  Udon 中継     : {(relay != null ? relay.GetType().Name : "未追加")}\n"
+                + $"  SceneDescriptor: {(world != null ? world.name : "未作成(ClientSim が起動しません)")}\n"
+                + $"  U# プログラム : {report}\n"
                 + $"  ベイク済み URL: {baked} 件(VideoCatalogSource の動画 10 本)\n"
                 + $"  映像の出力先({screen.name})に RenderTexture / Material を割り当ててください。\n"
                 + "  Play を押すと、おすすめだけで動画が次々に切り替わる様子が Console に出ます。\n"

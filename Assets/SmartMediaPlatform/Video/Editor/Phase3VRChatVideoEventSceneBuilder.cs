@@ -78,13 +78,34 @@ namespace SmartMediaPlatform.Video.EditorTools
         }
 
 #if VRC_SDK_VRCSDK3
-        [MenuItem("Tools/Smart Media Platform/Create Phase3-2 VRChat SDK Video Event Scene (実機イベント)")]
+        private const string SdkMenuPath =
+            "Tools/Smart Media Platform/Create Phase3-2 VRChat SDK Video Event Scene (実機イベント)";
+
+        [MenuItem(SdkMenuPath)]
         public static void CreateSdkScene()
         {
+            // 0. 先に UdonSharp のプログラム(.asset)を用意する。
+            //    シーンを作る前にやるのが要点 — コンパイル前にコンポーネントを置くと
+            //    「the U# program asset on this component is null」の壊れた状態が
+            //    シーンに保存されてしまう。
+            var report = UdonSharpProgramAssetFactory.EnsureProgramAssets(
+                typeof(UdonVRCVideoEventRelay));
+
+            if (report.HasCreated && !UdonSharpProgramAssetFactory.TryCompile())
+            {
+                string notice = UdonSharpSceneUtility.RecompileInstruction(SdkMenuPath);
+                Debug.LogWarning("[Phase3VRChatVideoEventSceneBuilder] " + notice);
+                EditorUtility.DisplayDialog("Smart Media Platform", notice, "OK");
+                return;
+            }
+
             if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
 
             var scene = EditorSceneManager.NewScene(
                 NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+
+            // 0-b. VRCSceneDescriptor(これが無いと ClientSim が起動せず Udon が動かない)
+            var world = UdonSharpSceneUtility.EnsureSceneDescriptor();
 
             // 1. 映像の出力先
             var screen = GameObject.CreatePrimitive(PrimitiveType.Quad);
@@ -104,7 +125,7 @@ namespace SmartMediaPlatform.Video.EditorTools
             // 素の AddComponent<T>() ではプロキシしか付かず、
             // 「Unable to find valid U# program asset」になる。
             var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
-                playerObject, typeof(UdonVRCVideoEventRelay));
+                playerObject, typeof(UdonVRCVideoEventRelay), out _);
 
             // 3. Backend + ブリッジ + 運搬役 + 進行役
             var host = playerObject.AddComponent<VRChatVideoBackendHost>();
@@ -124,7 +145,9 @@ namespace SmartMediaPlatform.Video.EditorTools
             Debug.Log(
                 $"[Phase3VRChatVideoEventSceneBuilder] SDK シーンを作成しました: {SdkScenePath}\n"
                 + $"  {videoPlayer.GetType().Name} / {pump.GetType().Name} / {demo.GetType().Name}\n"
-                + $"  Udon 中継: {(relay != null ? relay.GetType().Name : "未追加")}\n"
+                + $"  Udon 中継     : {(relay != null ? relay.GetType().Name : "未追加")}\n"
+                + $"  SceneDescriptor: {(world != null ? world.name : "未作成(ClientSim が起動しません)")}\n"
+                + $"  U# プログラム : {report}\n"
                 + $"  ベイク済み URL: {baked} 件\n"
                 + $"  映像の出力先({screen.name})に RenderTexture / Material を割り当ててください。\n"
                 + "  Play を押すと OnVideoReady / OnVideoStart / OnVideoEnd / OnVideoError の\n"

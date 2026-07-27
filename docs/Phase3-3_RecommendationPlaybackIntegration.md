@@ -278,7 +278,7 @@ Play すると、おすすめだけで動画が次々に切り替わる様子が
 > 実在する動画 URL に差し替えてから **Bake Catalog Urls Into Selected Video Host** で
 > 焼き直してください。
 
-#### UdonSharp コンポーネントの追加について
+#### UdonSharp のセットアップについて(重要)
 
 `UdonVRCVideoEventRelay` は UdonSharpBehaviour です。実際に動くには
 
@@ -294,14 +294,41 @@ Play すると、おすすめだけで動画が次々に切り替わる様子が
 NullReferenceException at UdonSharpEditor.UdonSharpEditorUtility.RunBehaviourSetup
 ```
 
-になります。シーン生成ツールは `UdonSharpSceneUtility.AddUdonSharpComponent()` 経由で
-`UdonSharpEditor.UdonSharpUndo.AddComponent` を呼び、3 つをまとめて用意します。
-この API が見つからない場合は**何も付けず**、手動追加の手順を Console に出します
-(壊れたコンポーネントをシーンに残さないため)。
+になります。**1 番の `UdonSharpProgramAsset` はリポジトリに同梱できません。**
+UdonSharp のバージョンに依存する内容だからです。そのため
+**`UdonSharpProgramAssetFactory`(共通化した生成処理)** を用意しました。
 
-その場合は Hierarchy で `VRCVideoPlayer` を選び、Inspector の **Add Component** から
-`Udon VRC Video Event Relay` を追加してください。追加しなくても再生は動きます
-(`VideoEventBridge` のポーリングが保険になります)が、実機イベント経由の確認にはなりません。
+| 入口 | 用途 |
+|---|---|
+| `Tools > Smart Media Platform > UdonSharp > Create Missing UdonSharp Program Assets` | プロジェクト内の全 `UdonSharpBehaviour` について、足りないプログラムを作る |
+| `Tools > Smart Media Platform > UdonSharp > Diagnose UdonSharp Setup` | 何が揃っていて何が足りないかを Console に出す |
+| `UdonSharpProgramAssetFactory.EnsureProgramAssets(types)` | シーン生成ツールが内部で呼ぶ |
+
+シーン生成ツールは **シーンを作る前に** これを呼びます。
+新しくプログラムを作った直後で U# のコンパイルが済んでいない場合は、
+**シーンを作らずにやり直しを促します**(コンパイル前にコンポーネントを置くと
+壊れた状態がシーンに保存されてしまうため)。その場合はコンパイル完了後に
+もう一度同じメニューを実行してください。
+
+UdonSharp の型名・メソッド名はバージョンで変わりうるので、すべてリフレクションで扱い、
+`MonoScript` を保持しているフィールドも**名前ではなく型で**探しています。
+
+#### VRCSceneDescriptor が要る理由
+
+**ClientSim は `VRCSceneDescriptor` が無いと起動しません**
+(Console: `Cannot start ClientSim if there is no scene descriptor!`)。
+ClientSim が起動しなければ **Udon は 1 行も実行されず**、動画イベントも届きません。
+シーン生成ツールは `UdonSharpSceneUtility.EnsureSceneDescriptor()` で
+`VRCWorld` を自動的に用意します。
+
+#### それでも中継が付かない場合
+
+Console に `Udon 中継: 未追加` と出たら、Hierarchy で `VRCVideoPlayer` を選び、
+Inspector の **Add Component** から `Udon VRC Video Event Relay` を追加してください
+(手動追加は UdonSharp が全部やってくれる確実な経路です)。
+
+追加しなくても再生は動きます(`VideoEventBridge` のポーリングが保険になります)が、
+実機イベント経由の確認にはなりません。
 
 ### 成功条件の対応表
 
