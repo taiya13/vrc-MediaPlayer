@@ -15,8 +15,9 @@ namespace SmartMediaPlatform.Video.Udon
     /// UdonSharp は インターフェース を扱えず、任意の C# クラスのメソッドも呼べません
     /// (Udon から呼べるのは許可された Unity API と、他の UdonSharpBehaviour だけ)。
     /// そのため、この中継は <b>イベントを起きた順にリングバッファへ書き込むだけ</b>にし、
-    /// C# 側の <c>UdonVideoEventPump</c> が <c>UdonBehaviour.GetProgramVariable</c> で
-    /// それを読み出して <see cref="VideoEventBridge"/> へ流します。
+    /// C# 側の <c>UdonVideoEventPump</c> がそれを読み出して
+    /// <see cref="VideoEventBridge"/> へ流します
+    /// (読み出しは <c>GetProgramVariable</c> かフィールド直読み。SDK の型には依存しません)。
     ///
     /// <b>これは「ポーリング」ではありません。</b>
     /// 推測(<c>IsPlaying</c> を見て終わったことにする)ではなく、

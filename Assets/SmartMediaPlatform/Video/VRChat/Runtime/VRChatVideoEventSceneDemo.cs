@@ -87,7 +87,7 @@ namespace SmartMediaPlatform.Video.VRChat
             // ── 0. 配線
             Section("0. イベントの配線");
             Line($"動画プレイヤー : {(_host.VideoPlayer != null ? _host.VideoPlayer.GetType().Name : "(none)")}");
-            Line($"Udon 中継の接続 : {(_pump != null && _pump.IsConnected ? "OK" : "未接続")}");
+            Line($"Udon 中継の接続 : {(_pump != null ? _pump.ConnectionDescription : "(Pump なし)")}");
             if (_pump == null || !_pump.IsConnected)
             {
                 Line("  ※ UdonVRCVideoEventRelay が見つかりません。");

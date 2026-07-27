@@ -1,17 +1,36 @@
 using System;
+using System.Reflection;
 using UnityEngine;
-using VRC.Udon;
 
 namespace SmartMediaPlatform.Video.VRChat
 {
     /// <summary>
     /// <b>Udon 側の中継が受け取ったイベントを C# 側へ運ぶ運搬役。</b>
     ///
-    /// VRChat の動画プレイヤーはイベントを<b>同じ GameObject の UdonBehaviour</b> へ送ります。
+    /// VRChat の動画プレイヤーはイベントを<b>同じ GameObject の Udon</b> へ送ります。
     /// C# の MonoBehaviour は直接受け取れず、UdonSharp は インターフェース を扱えないため、
     /// <c>UdonVRCVideoEventRelay</c>(UdonSharp)がイベントを int のリングバッファへ記録し、
-    /// このクラスが <c>UdonBehaviour.GetProgramVariable</c> で読み出して
+    /// このクラスがそれを読み出して
     /// <see cref="IVideoEventSink"/>(= <see cref="VideoEventBridge"/>)へ流します。
+    ///
+    /// <b>VRChat SDK の型に依存していません。</b>
+    /// 中継は <see cref="MonoBehaviour"/> として受け取り、値の読み出しはリフレクションで行います。
+    /// 理由は 2 つ:
+    /// <list type="number">
+    /// <item>
+    /// <c>VRC.Udon.UdonBehaviour</c> を型で参照すると、この asmdef から
+    /// Udon アセンブリを参照できる構成でないとコンパイルが通らない。
+    /// SDK の配布形態(DLL / asmdef / Auto Reference の有無)はバージョンで変わるため、
+    /// <b>型依存を持たないほうが壊れにくい</b>。
+    /// </item>
+    /// <item>
+    /// 中継の実体は環境によって <c>UdonBehaviour</c>(Udon プログラム)だったり
+    /// <c>UdonSharpBehaviour</c> のプロキシだったりする。
+    /// <b>どちらでも読めるように</b>、2 つの経路を試す。
+    /// </item>
+    /// </list>
+    /// リフレクションで SDK のバージョン差を吸収するのは、Phase1-2 の
+    /// <c>UdonCatalogBaker.SyncUdonSharpProxy</c> と同じ考え方です。
     ///
     /// <b>ポーリングとの違い</b><br/>
     /// 状態を見て推測する(<c>IsPlaying</c> が false だから終わったはず)のではなく、
@@ -35,29 +54,48 @@ namespace SmartMediaPlatform.Video.VRChat
         [Tooltip("イベントを届ける先。未設定なら同じ GameObject から探す")]
         [SerializeField] private VRChatVideoBackendHost _host;
 
-        [Tooltip("UdonVRCVideoEventRelay の UdonBehaviour。未設定なら同じ GameObject から探す")]
-        [SerializeField] private UdonBehaviour _relay;
+        [Tooltip("UdonVRCVideoEventRelay(UdonBehaviour でもプロキシでも可)。未設定なら同じ GameObject から探す")]
+        [SerializeField] private MonoBehaviour _relay;
 
         [Header("診断")]
         [Tooltip("運んだイベントをすべて Console に出す")]
         [SerializeField] private bool _verbose;
 
+        // 読み出し経路(どちらか一方が使われる)
+        private MethodInfo _getProgramVariable;   // UdonBehaviour.GetProgramVariable(string)
+        private FieldInfo _writeCountField;       // UdonSharpBehaviour のプロキシの public フィールド
+        private FieldInfo _eventCodesField;
+
+        private bool _resolved;
         private int _consumed;
         private bool _warned;
 
         /// <summary>これまでに運んだイベントの件数。</summary>
         public int DeliveredCount { get; private set; }
 
-        /// <summary>取りこぼした件数(1 フレームに 32 件を超えた場合のみ発生)。</summary>
+        /// <summary>取りこぼした件数(1 フレームにバッファ長を超えた場合のみ発生)。</summary>
         public int DroppedCount { get; private set; }
 
-        /// <summary>中継の UdonBehaviour を見つけられているか。</summary>
-        public bool IsConnected => _relay != null;
+        /// <summary>中継を見つけて読み出せる状態か。</summary>
+        public bool IsConnected =>
+            _relay != null && (_getProgramVariable != null || _writeCountField != null);
+
+        /// <summary>どの経路で読んでいるか(診断用)。</summary>
+        public string ConnectionDescription
+        {
+            get
+            {
+                if (_relay == null) return "未接続(中継が見つかりません)";
+                if (_getProgramVariable != null) return $"{_relay.GetType().Name} / GetProgramVariable";
+                if (_writeCountField != null) return $"{_relay.GetType().Name} / フィールド直読み";
+                return $"{_relay.GetType().Name}(読み出し方法が見つかりません)";
+            }
+        }
 
         private void Awake()
         {
             if (_host == null) _host = GetComponent<VRChatVideoBackendHost>();
-            if (_relay == null) _relay = FindRelay();
+            Resolve();
         }
 
         private void Update()
@@ -72,16 +110,22 @@ namespace SmartMediaPlatform.Video.VRChat
         public int Drain()
         {
             var sink = _host != null ? _host.Bridge : null;
-            if (sink == null || _relay == null)
+            if (sink == null) return 0;
+
+            if (!_resolved) Resolve();
+            if (!IsConnected)
             {
                 WarnOnce();
                 return 0;
             }
 
-            if (!TryReadInt(_relay, WriteCountVariable, out int writeCount)) return 0;
+            if (!TryReadWriteCount(out int writeCount)) return 0;
+
+            // シーンの再読み込みなどでカウンタが巻き戻った場合は追従する
+            if (writeCount < _consumed) _consumed = 0;
             if (writeCount == _consumed) return 0;
 
-            var codes = _relay.GetProgramVariable(EventCodesVariable) as int[];
+            int[] codes = ReadEventCodes();
             if (codes == null || codes.Length == 0) return 0;
 
             // 1 フレームにバッファ長を超えるイベントが来た場合は、
@@ -115,43 +159,133 @@ namespace SmartMediaPlatform.Video.VRChat
             return delivered;
         }
 
+        // ───────── 中継の解決(SDK の型に依存しない) ─────────
+
         /// <summary>
-        /// 中継の UdonBehaviour を同じ GameObject から探す。
-        /// 期待する変数を持つものを選ぶので、他の Udon が同居していても誤爆しない。
+        /// 中継と、その読み出し方法を決める。
+        /// 期待する変数(<see cref="WriteCountVariable"/>)を持つものだけを選ぶので、
+        /// 他の Udon が同居していても誤爆しません。
         /// </summary>
-        private UdonBehaviour FindRelay()
+        private void Resolve()
         {
-            var candidates = GetComponents<UdonBehaviour>();
+            _resolved = true;
+
+            if (_relay != null && TryBind(_relay)) return;
+
+            var candidates = GetComponents<MonoBehaviour>();
             for (int i = 0; i < candidates.Length; i++)
             {
-                if (TryReadInt(candidates[i], WriteCountVariable, out _)) return candidates[i];
+                var candidate = candidates[i];
+                if (candidate == null || ReferenceEquals(candidate, this)) continue;
+                if (ReferenceEquals(candidate, _host)) continue;
+
+                if (TryBind(candidate))
+                {
+                    _relay = candidate;
+                    return;
+                }
             }
-            return null;
+
+            _getProgramVariable = null;
+            _writeCountField = null;
+            _eventCodesField = null;
         }
 
         /// <summary>
-        /// Udon の変数を読む。存在しない変数名では実装によって例外が出るため、
-        /// 探索にも使えるよう握りつぶして false を返す。
+        /// その コンポーネント から <c>WriteCount</c> / <c>EventCodes</c> を読めるか調べ、
+        /// 読めるなら読み出し方法を覚える。
         /// </summary>
-        private static bool TryReadInt(UdonBehaviour behaviour, string name, out int value)
+        private bool TryBind(MonoBehaviour candidate)
+        {
+            if (candidate == null) return false;
+
+            var type = candidate.GetType();
+
+            // 経路 1: UdonBehaviour.GetProgramVariable(string)
+            //   型で参照せず、メソッド名と引数で探す。
+            var method = type.GetMethod(
+                "GetProgramVariable",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(string) },
+                null);
+
+            if (method != null && method.ReturnType == typeof(object))
+            {
+                try
+                {
+                    object raw = method.Invoke(candidate, new object[] { WriteCountVariable });
+                    if (raw is int)
+                    {
+                        _getProgramVariable = method;
+                        _writeCountField = null;
+                        _eventCodesField = null;
+                        return true;
+                    }
+                }
+                catch (Exception)
+                {
+                    // その コンポーネント は中継ではない、というだけ。
+                }
+            }
+
+            // 経路 2: UdonSharpBehaviour のプロキシ(public フィールドを直接読む)
+            var countField = type.GetField(
+                WriteCountVariable, BindingFlags.Public | BindingFlags.Instance);
+            var codesField = type.GetField(
+                EventCodesVariable, BindingFlags.Public | BindingFlags.Instance);
+
+            if (countField != null && countField.FieldType == typeof(int)
+                && codesField != null && codesField.FieldType == typeof(int[]))
+            {
+                _getProgramVariable = null;
+                _writeCountField = countField;
+                _eventCodesField = codesField;
+                return true;
+            }
+
+            return false;
+        }
+
+        private bool TryReadWriteCount(out int value)
         {
             value = 0;
-            if (behaviour == null) return false;
-
             try
             {
-                object raw = behaviour.GetProgramVariable(name);
+                object raw = _getProgramVariable != null
+                    ? _getProgramVariable.Invoke(_relay, new object[] { WriteCountVariable })
+                    : _writeCountField.GetValue(_relay);
+
                 if (raw is int number)
                 {
                     value = number;
                     return true;
                 }
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                // その UdonBehaviour は中継ではない、というだけ。
+                Debug.LogWarning($"[{name}] 中継の {WriteCountVariable} を読めませんでした: {e.Message}");
+                _resolved = false;   // 次のフレームで探し直す
             }
             return false;
+        }
+
+        private int[] ReadEventCodes()
+        {
+            try
+            {
+                object raw = _getProgramVariable != null
+                    ? _getProgramVariable.Invoke(_relay, new object[] { EventCodesVariable })
+                    : _eventCodesField.GetValue(_relay);
+
+                return raw as int[];
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning($"[{name}] 中継の {EventCodesVariable} を読めませんでした: {e.Message}");
+                _resolved = false;
+                return null;
+            }
         }
 
         private void WarnOnce()

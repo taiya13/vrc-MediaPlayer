@@ -40,7 +40,7 @@ flowchart LR
 
     subgraph SDK["SDK 依存（運ぶだけ・判断しない）"]
         RELAY["<b>UdonVRCVideoEventRelay</b><br>UdonSharpBehaviour<br>OnVideoReady/Start/End/Error…<br>を int で記録"]
-        PUMP["<b>UdonVideoEventPump</b><br>GetProgramVariable で読み出し"]
+        PUMP["<b>UdonVideoEventPump</b><br>差分を読み出す<br><i>SDK の型に依存しない</i>"]
         HOST["VRChatVideoBackendHost<br>OnVideoXxx()"]
     end
 
@@ -227,8 +227,21 @@ private void Push(int code)
 
 ### 4.2 `UdonVideoEventPump`(C#)
 
-`UdonBehaviour.GetProgramVariable` で `WriteCount` と `EventCodes` を読み、
-**前回からの差分だけ**を順番に流します。
+`WriteCount` と `EventCodes` を読み、**前回からの差分だけ**を順番に流します。
+
+読み出しは **VRChat SDK の型に依存しません**。中継は `MonoBehaviour` として受け取り、
+2 つの経路をリフレクションで試します。
+
+| 経路 | 対象 | 方法 |
+|---|---|---|
+| 1 | `UdonBehaviour`(Udon プログラム) | `GetProgramVariable(string)` をメソッド名と引数で探して呼ぶ |
+| 2 | `UdonSharpBehaviour` のプロキシ | `public` フィールドを直接読む |
+
+`VRC.Udon.UdonBehaviour` を型で参照すると、この asmdef から Udon アセンブリを
+参照できる構成でないとコンパイルが通りません。SDK の配布形態(DLL / asmdef /
+Auto Reference の有無)はバージョンで変わるため、**型依存を持たないほうが壊れにくい**という判断です。
+SDK のバージョン差をリフレクションで吸収するのは、Phase1-2 の
+`UdonCatalogBaker.SyncUdonSharpProxy` と同じ考え方です。
 
 ```csharp
 while (_consumed < writeCount)
@@ -344,10 +357,13 @@ Phase3-1 の既存テスト(56 ケース)は**書き換えずにそのまま通�
 
 ### 気になっている点(正直な申告)
 
-1. **`UdonBehaviour.GetProgramVariable` に依存しています。**
-   UdonSharp が インターフェース を扱えない以上、Udon → C# の受け渡しはこの API か
-   同等の手段しかありません。SDK のバージョンで挙動が変わる可能性があり、
+1. **Udon → C# の受け渡しがリフレクション頼みです。**
+   UdonSharp が インターフェース を扱えない以上、この受け渡しは
+   `GetProgramVariable` かフィールド直読みしかありません。
+   SDK の型に依存しない形にして壊れにくくはしましたが、
    **この環境では実行検証できていません**(§8)。
+   どちらの経路も使えない場合は `UdonVideoEventPump.ConnectionDescription` が
+   「未接続」と出て、ポーリング(保険)にフォールバックします。
 
 2. **1 フレームに 32 件を超えるイベントが来ると取りこぼします。**
    実際には起こらない想定ですが、`UdonVideoEventPump.DroppedCount` で検知できるようにしました。
@@ -366,7 +382,7 @@ Phase3-1 の既存テスト(56 ケース)は**書き換えずにそのまま通�
 
 - **コンパイルとテストの実行**:この作業環境に Unity / .NET SDK / VRChat SDK が無いため、
   **一度も実行検証できていません。** 括弧対応と状態遷移の机上確認のみです。
-- **`UdonBehaviour.GetProgramVariable` の実挙動**、および UdonSharp の
+- **`GetProgramVariable` / フィールド直読みの実挙動**、および UdonSharp の
   `OnVideoReady` などのオーバーライドが期待どおり呼ばれるか。
 - **`UdonSharpEditorUtility.CreateBehaviourForProxy` の有無**(リフレクションで呼び、
   見つからなければスキップするようにしてあります)。
