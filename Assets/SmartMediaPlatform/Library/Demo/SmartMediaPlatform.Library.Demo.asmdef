@@ -1,0 +1,24 @@
+{
+    "name": "SmartMediaPlatform.Library.Demo",
+    "rootNamespace": "SmartMediaPlatform.Library.Demo",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Recommendation",
+        "SmartMediaPlatform.Queue",
+        "SmartMediaPlatform.Backend",
+        "SmartMediaPlatform.Player",
+        "SmartMediaPlatform.Session",
+        "SmartMediaPlatform.Video",
+        "SmartMediaPlatform.Library",
+        "SmartMediaPlatform.Library.Playback"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

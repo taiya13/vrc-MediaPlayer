@@ -139,7 +139,20 @@ Phase3-3 の再生ループは **失敗すると止まりました**(実在し�
 - DemoScene(SDK で実際に再生): **Tools > Smart Media Platform > Create Phase3-4 VRChat SDK Auto Play Recovery Scene (実際に再生)** で生成して **Play**(URL をわざと一部だけ焼き込むので、実機と同じ `InvalidUrl` 経路で立て直しが動きます)
 - 設計ドキュメント(7 つの整理 / 立て直しの仕組み / 状態の分け方 / テスト方法 / 設計レビュー / 引き継ぎ): [docs/Phase3-4_PlaybackOrchestrationAndRecovery.md](docs/Phase3-4_PlaybackOrchestrationAndRecovery.md)
 
+## Phase4-1: Media Library(実装済み)
+
+**Catalog の中身をユーザーが閲覧し、選んで再生できるようにする層。** 中心は `MediaLibrary`(純粋C#)で、役割は**閲覧と選択の 2 つだけ**です。一覧の表示、Music / Video の絞り込み(`ShowOnly`)、並べ替え(登録順 / タイトル / アーティスト / ジャンル / 長さ)、1 件の選択(位置・ID・前後移動)を持ちます。**選択は位置ではなく ID で覚え直す**ので、並び順や絞り込みを変えても選んでいたものは選ばれたまま、見えなくなったときだけ外れます。
+
+**「閲覧と選択だけ」を参照関係で守っています。** `SmartMediaPlatform.Library` の asmdef は **`Catalog` しか参照していない**(`noEngineReferences: true`)ので、`MediaLibrary` からは `PlayerSession` も `Queue` も `Backend` も**そもそも見えません**。両側が見えるのは `LibraryPlaybackBridge`(別 asmdef)**1 クラスだけ**で、**境界を越えるのは MediaId(string)だけ**です — `MediaItem` も URL も渡さず、`MediaLibraryFormatter` にも URL の出力口がありません(Phase3 からの「URL を知るのは VideoBackend だけ」を表示側でも維持)。受け渡しは `PlayerSession` の既存 API(`SetTracks` / `Enqueue` / `Play`)だけを呼ぶので、**`PlayerSession` / `BackendAdapter` / `Queue` / `Recommendation` / `VideoBackend` は差分ゼロ**です。
+
+UI は **Game ビューに一覧を描いてクリックで選べる画面**(`MediaLibraryScreenDemo`)を用意しました。判断ロジックは 1 つも持たず「描いて、押されたことを伝えるだけ」なので、**uGUI や Udon の UI に差し替えても下は 1 行も変わりません**(ワールド内 UI は Phase4-2 以降)。あわせて設計方針どおり、実機再生の標準を `VRCAVProVideoPlayer` に切り替えました。`VRChatVideoBackendHost` に `VideoPlayerPreference`(AVPro / Unity / Explicit)を足し、**Inspector のドロップダウン 1 つで両対応**します。抽象化は Phase3-1 のまま(`BaseVRCVideoPlayer` を 1 クラスで包む)で、上位はどちらが繋がっているか知りません。
+
+- コード: `Assets/SmartMediaPlatform/Library/`(Runtime / Playback / Demo / Editor / Scenes / Tests)、`Video/VRChat/Runtime/VideoPlayerPreference.cs`
+- DemoScene(SDK 不要・クリックで操作): **Tools > Smart Media Platform > Open Phase4-1 Media Library Demo Scene** → **Play**
+- ConsoleDemo: 同じシーンで **Play**(1 つの GameObject に両方載っています)
+- 設計ドキュメント(責務の守り方 / クラス一覧 / UI の方針 / バックエンド切り替え / テスト方法 / 引き継ぎ): [docs/Phase4-1_MediaLibrary.md](docs/Phase4-1_MediaLibrary.md)
+
 ## テスト
 
-EditMode テスト計 **690 ケース**(Catalog 63 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94)。
+EditMode テスト計 **763 ケース**(Catalog 63 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 73)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。

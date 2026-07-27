@@ -36,8 +36,11 @@ namespace SmartMediaPlatform.Video.VRChat
     public sealed class VRChatVideoBackendHost : MonoBehaviour
     {
         [Header("VRChat 動画プレイヤー")]
-        [Tooltip("VRCUnityVideoPlayer または VRCAVProVideoPlayer。未設定なら同じ GameObject から探す")]
+        [Tooltip("VRCUnityVideoPlayer または VRCAVProVideoPlayer。未設定なら好みに合わせて同じ GameObject から探す")]
         [SerializeField] private BaseVRCVideoPlayer _videoPlayer;
+
+        [Tooltip("同じ GameObject に両方ある場合、どちらを使うか。実機は AVPro が標準")]
+        [SerializeField] private VideoPlayerPreference _preferredPlayer = VideoPlayerPreference.AVPro;
 
         [Header("バックエンド設定")]
         [SerializeField] private string _backendName = "VRChatVideoBackend";
@@ -75,6 +78,45 @@ namespace SmartMediaPlatform.Video.VRChat
 
         public BaseVRCVideoPlayer VideoPlayer => _videoPlayer;
 
+        /// <summary>
+        /// いま使っている(あるいはこれから探す)プレイヤーの種類。
+        /// 組み立て済みなら実体から、まだなら Inspector の好みから答えます。
+        /// </summary>
+        public VRCVideoPlayerKind PlayerKind
+        {
+            get
+            {
+                if (_videoPlayer != null) return DetectKind(_videoPlayer);
+                return _preferredPlayer == VideoPlayerPreference.Unity
+                    ? VRCVideoPlayerKind.Unity
+                    : VRCVideoPlayerKind.AVPro;
+            }
+        }
+
+        /// <summary>
+        /// 使うプレイヤーを選び直す。<b>組み立て前(Awake より前 / EnsureBuilt より前)</b>に
+        /// 呼んでください。組み立て済みの場合は次の <see cref="Rebuild"/> から効きます。
+        /// </summary>
+        public void SetPreferredPlayer(VideoPlayerPreference preference)
+        {
+            _preferredPlayer = preference;
+            _videoPlayer = null;   // 好みが変わったので選び直す
+        }
+
+        /// <summary>
+        /// バックエンドを組み立て直す(プレイヤーを差し替えたあとに使う)。
+        /// <b>上位(BackendAdapter より上)は作り直しません</b> — 返ってくるアダプタは新しい実体なので、
+        /// 登録し直しが必要な場合は呼び出し側で行ってください。
+        /// </summary>
+        public VideoBackendAdapter Rebuild(IBackendLogger logger = null)
+        {
+            Backend = null;
+            Adapter = null;
+            Bridge = null;
+            if (_preferredPlayer != VideoPlayerPreference.Explicit) _videoPlayer = null;
+            return EnsureBuilt(logger);
+        }
+
         private void Awake()
         {
             EnsureBuilt();
@@ -100,7 +142,7 @@ namespace SmartMediaPlatform.Video.VRChat
                 return Adapter;
             }
 
-            if (_videoPlayer == null) _videoPlayer = GetComponent<BaseVRCVideoPlayer>();
+            if (_videoPlayer == null) _videoPlayer = ResolveVideoPlayer();
             if (_videoPlayer == null)
             {
                 Debug.LogError(
@@ -127,6 +169,54 @@ namespace SmartMediaPlatform.Video.VRChat
             // VideoBackendAdapter も、その上のすべても一切変更していない。
             Adapter = new VideoBackendAdapter(_adapterName, Backend, logger);
             return Adapter;
+        }
+
+        // ───────── どちらのプレイヤーを使うか(Phase4-1) ─────────
+
+        /// <summary>
+        /// 同じ GameObject にあるプレイヤーから、好みに合うものを選ぶ。
+        ///
+        /// <b>Backend の抽象化はそのままです。</b>
+        /// ここで選ばれたものは <see cref="VRCVideoPlayerBridge"/> が
+        /// <c>IVRCVideoPlayer</c> として包むので、
+        /// <c>VRChatVideoBackend</c> から上は<b>どちらが繋がっているか知りません</b>
+        /// (生配信を扱えるかの判定だけが <c>Kind</c> を見ます)。
+        /// </summary>
+        private BaseVRCVideoPlayer ResolveVideoPlayer()
+        {
+            // Explicit は「Inspector で指したものだけを使う」指定なので自動で探さない
+            if (_preferredPlayer == VideoPlayerPreference.Explicit) return null;
+
+            var candidates = GetComponents<BaseVRCVideoPlayer>();
+            if (candidates == null || candidates.Length == 0) return null;
+
+            var wanted = _preferredPlayer == VideoPlayerPreference.Unity
+                ? VRCVideoPlayerKind.Unity
+                : VRCVideoPlayerKind.AVPro;
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (DetectKind(candidates[i]) == wanted) return candidates[i];
+            }
+
+            // 好みのものが無ければ、あるものを使う(繋がらないより繋がるほうがよい)
+            Debug.LogWarning(
+                $"[{name}] {wanted} プレイヤーが見つからないので "
+                + $"{DetectKind(candidates[0])} を使います。");
+            return candidates[0];
+        }
+
+        /// <summary>
+        /// 型名から AVPro かどうかを判定する。
+        /// 具体型を直接参照しないので、SDK の名前空間が変わってもコンパイルが壊れない
+        /// (<see cref="VRCVideoPlayerBridge"/> と同じやり方)。
+        /// </summary>
+        private static VRCVideoPlayerKind DetectKind(BaseVRCVideoPlayer player)
+        {
+            string typeName = player.GetType().Name;
+            return typeName.IndexOf("AVPro", System.StringComparison.OrdinalIgnoreCase) >= 0
+                ? VRCVideoPlayerKind.AVPro
+                : VRCVideoPlayerKind.Unity;
         }
 
         /// <summary>
