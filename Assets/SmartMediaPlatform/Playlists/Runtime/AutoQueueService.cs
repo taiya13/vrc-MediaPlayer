@@ -26,7 +26,7 @@ namespace SmartMediaPlatform.Playlists
     {
         private readonly IQueue _queue;
         private readonly IMediaCatalog _catalog;
-        private readonly RecommendationEngine _engine;
+        private readonly IRecommendationEngine _engine;
         private readonly Random _random;
 
         /// <summary>直近におすすめとして積んだ曲。同じ曲を続けて推薦しないために覚えておく。</summary>
@@ -44,7 +44,7 @@ namespace SmartMediaPlatform.Playlists
         public AutoQueueService(
             IQueue queue,
             IMediaCatalog catalog,
-            RecommendationEngine engine,
+            IRecommendationEngine engine,
             Random random = null)
         {
             _queue = queue ?? throw new ArgumentNullException(nameof(queue));

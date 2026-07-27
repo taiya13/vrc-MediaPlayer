@@ -14,12 +14,17 @@ namespace SmartMediaPlatform.Queue
     /// 汚さずに補充ポリシーを分離することで、将来
     /// 「DJ Mode では補充しない」「Shared Queue ではホストだけが補充する」といった
     /// 差し替えがこのクラスの置き換えだけで済む。
+    ///
+    /// <b>Phase3-4:</b> 実際に積む処理は <see cref="RecommendationQueueRefiller"/> へ移しました
+    /// (補充の実装をプロジェクト全体で 1 つに保つため)。
+    /// このクラスに残っているのは<b>「種(seed)の決め方」と「いつ補充するか」</b>だけです。
+    /// 公開 API と挙動は Phase1-4 から変わっていません。
     /// </summary>
     public sealed class QueueManager
     {
         private readonly IQueue _queue;
-        private readonly RecommendationEngine _engine;
         private readonly IMediaCatalog _catalog;
+        private readonly RecommendationQueueRefiller _refiller;
 
         /// <summary>この数を下回ったら補充する(既定 2)。</summary>
         public int MinimumCount { get; set; } = 2;
@@ -33,14 +38,27 @@ namespace SmartMediaPlatform.Queue
         /// </summary>
         public string LastRemovedId { get; private set; }
 
-        public QueueManager(IQueue queue, RecommendationEngine engine, IMediaCatalog catalog)
+        public QueueManager(IQueue queue, IRecommendationEngine engine, IMediaCatalog catalog)
         {
             _queue = queue ?? throw new ArgumentNullException(nameof(queue));
-            _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+            if (engine == null) throw new ArgumentNullException(nameof(engine));
             _catalog = catalog ?? throw new ArgumentNullException(nameof(catalog));
+
+            // Phase1-4 の挙動をそのまま再現する設定:
+            // ふるい無し・直近の除外無し・緩和無し・カタログ補完無し。
+            _refiller = new RecommendationQueueRefiller(catalog, engine)
+            {
+                RecentMemory = 0,
+                AllowRepeatWhenExhausted = false,
+                AllowCatalogFallback = false,
+                Source = QueueItemSource.Recommendation,
+            };
         }
 
         public IQueue Queue => _queue;
+
+        /// <summary>実際に積む処理(プロジェクト全体で共有している実装)。</summary>
+        public IQueueRefiller Refiller => _refiller;
 
         /// <summary>
         /// キューが <see cref="MinimumCount"/> を下回っていれば、
@@ -113,20 +131,12 @@ namespace SmartMediaPlatform.Queue
         {
             if (count <= 0 || string.IsNullOrEmpty(seedId)) return 0;
 
-            // 既にキューにある曲を避けるため、必要数より多めに候補を取る。
-            var candidates = _engine.GetNextRecommendations(seedId, count + _queue.Count);
-            if (candidates.Length == 0) return 0;
-
-            int added = 0;
-            for (int i = 0; i < candidates.Length && added < count; i++)
-            {
-                var item = candidates[i].Item;
-                if (_queue.Contains(item.Id)) continue;
-
-                _queue.Enqueue(item, QueueItemSource.Recommendation);
-                added++;
-            }
-            return added;
+            // 既にキューにある曲を避けるため、必要数より多めに候補を取る
+            // (Phase1-4 と同じ取り方を保つ)。
+            return _refiller.Refill(
+                _queue, seedId, count,
+                excludeMediaId: null,
+                candidateCount: count + _queue.Count);
         }
     }
 }

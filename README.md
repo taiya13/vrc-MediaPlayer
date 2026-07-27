@@ -126,7 +126,20 @@ Phase3-3 が足した判断は **1 つだけ**:「**積む直前に、再生で�
 - DemoScene(SDK で実際に再生): **Tools > Smart Media Platform > Create Phase3-3 VRChat SDK Auto Play Scene (実際に再生)** で生成して **Play**
 - 設計ドキュメント(見つけた穴 / 責務の置きどころ / フィルタ 3 実装 / Ended の受け取り順 / テスト方法 / 引き継ぎ): [docs/Phase3-3_RecommendationPlaybackIntegration.md](docs/Phase3-3_RecommendationPlaybackIntegration.md)
 
+## Phase3-4: Playback Orchestration & Recovery(実装済み)
+
+Phase3-3 の再生ループは **失敗すると止まりました**(実在しない URL・アクセス拒否・読み込みが返らない)。Phase3-4 は新機能を足さず、**Ended / Error / Timeout のどれが来ても止まらない再生制御**へ整理したものです。中心は `AutoPlayController`(純粋C#)。`Ended` では何もせず(進めるのは今までどおり `PlayerSession`)、**失敗の記録と「次へ進める合図」だけ**を引き受けます。
+
+あわせて、依頼された 7 点を整理しました。**補充ロジックの一本化**:4 箇所に散っていた「おすすめで Queue を埋める」処理を `IQueueRefiller` / `RecommendationQueueRefiller`(Queue 層)の 1 実装に集約し、違いは設定 3 つ(`RecentMemory` / `AllowRepeatWhenExhausted` / `AllowCatalogFallback`)で表現。`QueueManager` は候補数の取り方まで元のままなので **Phase1-4 の期待順位がそのまま通ります**。**おすすめの抽象化**:`IRecommendationEngine` を追加(アルゴリズムは 1 行も変更せず、`: IRecommendationEngine` を付けただけ)。**`AutoQueueEnabled` の整理**:利用側がセッションの設定を書き換えるのをやめ、**補充の手段だけを渡す**形(`session.QueueRefiller = refiller`)にしたので、`PlayerSession` からは `_recentlyRecommended` が消えて**むしろ小さくなりました**。**Error Recovery**:`PlaybackFailureTracker` が失敗した動画をクールダウン + バックオフ付きで覚え、**それ自体が `IPlaybackFilter`** なので「再生できる種別か」とは `CompositePlaybackFilter` で並べるだけ。**状態の整理**:`AutoPlayState`(Idle / Starting / Loading / Ready / Playing / Paused / Recovering / Stopped / Failed)を層ごとの列挙型として追加。**カタログの整理**:`CompositeCatalogSource` / `FilteredCatalogSource` / `InMemoryCatalogSource` を用意し、Catalog Builder を差し込むだけにしました。**耐久**:120 本連続・失敗混在 120 本・200 本のメモリ上限テストで、記憶(失敗 / 直近 / 履歴)が増え続けないことを確認。
+
+**`BackendAdapter` / `VideoBackend` / `MediaQueue` / `RecommendationEngine` のアルゴリズムは差分ゼロ**、VRCUrl を知るのは引き続き `VideoBackend` だけです。
+
+- コード: `Assets/SmartMediaPlatform/AutoPlay/`、`Queue/Runtime`(補充の共有実装)、`Recommendation/Runtime/IRecommendationEngine.cs`、`Catalog/Runtime/Data/CatalogSources.cs`
+- ConsoleDemo(SDK 不要): **Tools > Smart Media Platform > Open Phase3-4 Auto Play Recovery Demo Scene** → **Play**
+- DemoScene(SDK で実際に再生): **Tools > Smart Media Platform > Create Phase3-4 VRChat SDK Auto Play Recovery Scene (実際に再生)** で生成して **Play**(URL をわざと一部だけ焼き込むので、実機と同じ `InvalidUrl` 経路で立て直しが動きます)
+- 設計ドキュメント(7 つの整理 / 立て直しの仕組み / 状態の分け方 / テスト方法 / 設計レビュー / 引き継ぎ): [docs/Phase3-4_PlaybackOrchestrationAndRecovery.md](docs/Phase3-4_PlaybackOrchestrationAndRecovery.md)
+
 ## テスト
 
-EditMode テスト計 **607 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 39)。
+EditMode テスト計 **690 ケース**(Catalog 63 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。

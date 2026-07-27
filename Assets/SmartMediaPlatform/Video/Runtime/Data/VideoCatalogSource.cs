@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using SmartMediaPlatform.Catalog;
+using SmartMediaPlatform.Catalog.Data;
 
 namespace SmartMediaPlatform.Video.Data
 {
@@ -155,24 +156,30 @@ namespace SmartMediaPlatform.Video.Data
     /// 動画と音楽を混ぜたカタログ供給元。
     ///
     /// <b>「再生できない種別が混ざっても、おすすめ再生ループが崩れない」</b>ことを
-    /// 確かめるために使います(Phase3-3 の <c>IPlaybackFilter</c> の検証)。
+    /// 確かめるために使います(<c>IPlaybackFilter</c> の検証)。
+    ///
+    /// <b>Phase3-4:</b> 合成処理を自前で書くのをやめ、
+    /// Catalog 層の <see cref="CompositeCatalogSource"/> に任せました。
+    /// ID が重なったときは先に並べたソースが勝つので、
+    /// <see cref="VideoCatalogSource"/> の <c>video-001</c> が使われます。
+    ///
+    /// <b>カタログ供給元の役割分担</b>(Phase3-4 で整理)
+    /// <list type="bullet">
+    /// <item><c>DummyCatalogSource</c>(Phase1-1)… 音楽中心の総合サンプル。Catalog / Queue / Audio の検証用</item>
+    /// <item><see cref="VideoCatalogSource"/>(Phase3-3)… 動画だけのサンプル。おすすめ再生ループの検証用</item>
+    /// <item><see cref="MixedCatalogSource"/>(Phase3-3)… 上記 2 つの合成。ふるいの検証用</item>
+    /// <item><c>CompositeCatalogSource</c> / <c>FilteredCatalogSource</c> / <c>InMemoryCatalogSource</c>(Phase3-4)…
+    /// 組み合わせの道具。<b>Catalog Builder はこの受け皿に差し込むだけ</b>で済みます</item>
+    /// </list>
     /// </summary>
     public sealed class MixedCatalogSource : IMediaCatalogSource
     {
-        public IReadOnlyList<MediaItem> LoadItems()
-        {
-            var items = new List<MediaItem>();
-            items.AddRange(new VideoCatalogSource().LoadItems());
-            items.AddRange(new Catalog.Data.DummyCatalogSource().LoadItems());
+        private readonly CompositeCatalogSource _composite = new CompositeCatalogSource(
+            new VideoCatalogSource(),
+            new Catalog.Data.DummyCatalogSource());
 
-            // DummyCatalogSource の video-001 は VideoCatalogSource と ID が重なるので落とす。
-            var result = new List<MediaItem>();
-            var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
-            foreach (var item in items)
-            {
-                if (seen.Add(item.Id)) result.Add(item);
-            }
-            return result;
-        }
+        public IReadOnlyList<MediaItem> LoadItems() => _composite.LoadItems();
+
+        public override string ToString() => "MixedCatalogSource(video + music)";
     }
 }

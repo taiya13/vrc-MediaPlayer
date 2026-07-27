@@ -19,7 +19,7 @@ namespace SmartMediaPlatform.Recommendation
     ///  - Random      : [0, 重み) の乱数(同点崩し)
     /// 並び順は「スコア降順 → カタログ登録順(index 昇順)」で決定的。
     /// </summary>
-    public sealed class RecommendationEngine
+    public sealed class RecommendationEngine : IRecommendationEngine
     {
         private static readonly RecommendationResult[] EmptyResults = new RecommendationResult[0];
 

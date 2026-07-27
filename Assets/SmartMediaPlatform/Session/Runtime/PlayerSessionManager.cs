@@ -43,7 +43,7 @@ namespace SmartMediaPlatform.Session
         public PlayerSession Create(
             MediaPlayer player,
             IMediaCatalog catalog,
-            RecommendationEngine engine,
+            IRecommendationEngine engine,
             string id = null,
             string name = null,
             Random random = null,

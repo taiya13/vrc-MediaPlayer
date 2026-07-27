@@ -27,7 +27,7 @@ namespace SmartMediaPlatform.Session
     {
         private readonly MediaPlayer _player;
         private readonly IMediaCatalog _catalog;
-        private readonly RecommendationEngine _engine;
+        private readonly IRecommendationEngine _engine;
         private readonly Random _random;
 
         /// <summary>このセッションで流す曲。Queue の元になる。</summary>
@@ -42,8 +42,27 @@ namespace SmartMediaPlatform.Session
         private readonly IReadOnlyList<string> _readOnlyTracks;
         private readonly IReadOnlyList<string> _readOnlyHistory;
 
-        /// <summary>直近におすすめとして積んだ曲。同じ曲を続けて推薦しないために覚えておく。</summary>
-        private readonly List<string> _recentlyRecommended = new List<string>();
+        /// <summary>
+        /// 実際に Queue へ積む処理。Phase3-4 で <see cref="IQueueRefiller"/> へ切り出しました。
+        ///
+        /// <b>PlayerSession の役割は増えていません。</b>
+        /// もともとここが持っていた「おすすめで積む」手順を、
+        /// プロジェクト全体で共有する実装へ委譲しただけです。
+        /// 外から差し替えられるので、
+        /// <b>利用側が <see cref="AutoQueueEnabled"/> を書き換える必要がなくなりました</b>
+        /// (「補充の仕方」を渡せば済む)。
+        /// 「直近に積んだ曲を覚えておく」記憶もこの中にあります。
+        /// </summary>
+        private IQueueRefiller _refiller;
+
+        /// <summary>
+        /// <see cref="_refiller"/> をこのセッションが自分で作ったか。
+        ///
+        /// 自作なら <see cref="RecentMemory"/> はセッションの設定なので毎回押し込みます
+        /// (Phase2-3(B) の挙動をそのまま保つため)。
+        /// 外から渡された補充は<b>渡した側の持ち物</b>なので、設定を上書きしません。
+        /// </summary>
+        private bool _ownsRefiller;
 
         private bool _exhausted;
         private IBackendLogger _logger;
@@ -52,9 +71,10 @@ namespace SmartMediaPlatform.Session
             string id,
             MediaPlayer player,
             IMediaCatalog catalog,
-            RecommendationEngine engine,
+            IRecommendationEngine engine,
             Random random = null,
-            IBackendLogger logger = null)
+            IBackendLogger logger = null,
+            IQueueRefiller refiller = null)
         {
             if (string.IsNullOrWhiteSpace(id))
                 throw new ArgumentException("PlayerSession requires a non-empty id.", nameof(id));
@@ -65,6 +85,10 @@ namespace SmartMediaPlatform.Session
             _engine = engine ?? throw new ArgumentNullException(nameof(engine));
             _random = random ?? new Random();
             _logger = logger ?? NullBackendLogger.Instance;
+
+            // 既定は Phase2-3(B) と同じ振る舞いの補充(ふるい無し・緩和無し・カタログ補完無し)。
+            _ownsRefiller = refiller == null;
+            _refiller = refiller ?? CreateDefaultRefiller();
 
             _readOnlyTracks = _tracks.AsReadOnly();
             _readOnlyHistory = _history.AsReadOnly();
@@ -114,6 +138,43 @@ namespace SmartMediaPlatform.Session
 
         /// <summary>おすすめによる自動補充を使うか。</summary>
         public bool AutoQueueEnabled { get; set; } = true;
+
+        /// <summary>
+        /// Queue の補充の仕方。Phase3-4 で差し替え可能にしました。
+        ///
+        /// <b>これを渡すのが、利用側が補充に手を入れる正しいやり方です。</b>
+        /// Phase3-3 では利用側が <see cref="AutoQueueEnabled"/> を false にして
+        /// 自前で積んでいましたが、それは「セッションの設定を外から書き換える」形で、
+        /// セッションの意思(自動補充する/しない)と補充の手段が混ざっていました。
+        /// 手段だけを差し替えられるようにしたので、
+        /// <see cref="AutoQueueEnabled"/> は本来の意味(補充するかどうか)のまま使えます。
+        ///
+        /// null を入れると既定の補充に戻ります。
+        ///
+        /// <b>渡した補充の設定はこのクラスが書き換えません。</b>
+        /// <see cref="RecentMemory"/> を押し込むのは、自分で作った既定の補充のときだけです
+        /// (渡した側が意図した設定を、セッションの既定値で潰さないため)。
+        /// </summary>
+        public IQueueRefiller QueueRefiller
+        {
+            get => _refiller;
+            set
+            {
+                _ownsRefiller = value == null;
+                _refiller = value ?? CreateDefaultRefiller();
+            }
+        }
+
+        /// <summary>Phase2-3(B) と同じ振る舞いの補充を作る。</summary>
+        private RecommendationQueueRefiller CreateDefaultRefiller()
+        {
+            return new RecommendationQueueRefiller(_catalog, _engine)
+            {
+                RecentMemory = RecentMemory,
+                AllowRepeatWhenExhausted = false,
+                AllowCatalogFallback = false,
+            };
+        }
 
         /// <summary>Backend が報告している状態(低レベル)。</summary>
         public BackendState BackendState => _player.GetState();
@@ -198,7 +259,7 @@ namespace SmartMediaPlatform.Session
         public int RebuildQueue()
         {
             _dispatched.Clear();
-            _recentlyRecommended.Clear();
+            _refiller.ForgetRecent();
             _exhausted = false;
             Queue.Clear();
 
@@ -416,25 +477,15 @@ namespace SmartMediaPlatform.Session
             string seedId = ResolveSeedId();
             if (string.IsNullOrEmpty(seedId)) return 0;
 
-            var ranked = _engine.GetNextRecommendations(seedId, _catalog.Count);
-            if (ranked.Length == 0) return 0;
-
-            string currentId = CurrentMediaId;
-            int added = 0;
-
-            for (int i = 0; i < ranked.Length && added < wanted; i++)
+            // 「直近何件を避けるか」はセッションの設定なので、毎回渡しておく。
+            // ただし押し込むのは自分で作った補充だけ(渡された補充は渡した側の持ち物)。
+            if (_ownsRefiller && _refiller is RecommendationQueueRefiller tuned)
             {
-                var item = ranked[i].Item;
-                string id = item.Id;
-
-                if (string.Equals(id, currentId, StringComparison.OrdinalIgnoreCase)) continue;
-                if (ContainsIgnoreCase(_recentlyRecommended, id)) continue;
-                if (Queue.Contains(id)) continue;
-
-                Queue.Enqueue(item, QueueItemSource.Recommendation);
-                RememberRecommendation(id);
-                added++;
+                tuned.RecentMemory = RecentMemory;
             }
+
+            // 積み方そのものは共有実装に任せる(種を決めるのがこのクラスの仕事)
+            int added = _refiller.Refill(Queue, seedId, wanted, CurrentMediaId);
 
             if (added > 0)
             {
@@ -464,15 +515,6 @@ namespace SmartMediaPlatform.Session
 
             var random = _catalog.GetRandom();
             return random != null ? random.Id : null;
-        }
-
-        private void RememberRecommendation(string mediaId)
-        {
-            _recentlyRecommended.Add(mediaId);
-            while (_recentlyRecommended.Count > RecentMemory && _recentlyRecommended.Count > 0)
-            {
-                _recentlyRecommended.RemoveAt(0);
-            }
         }
 
         private void PushHistory(string mediaId)

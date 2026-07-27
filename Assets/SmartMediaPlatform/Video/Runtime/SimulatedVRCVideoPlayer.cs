@@ -51,11 +51,19 @@ namespace SmartMediaPlatform.Video
         /// <summary>次の <see cref="LoadURL"/> を失敗させる(ベイク表にあっても false を返す)。</summary>
         public bool FailNextLoad { get; set; }
 
+        /// <summary>
+        /// <b>すべての</b> <see cref="LoadURL"/> を失敗させる。
+        /// 「URL が軒並み切れている」状況を再現して、
+        /// 立て直しが暴走しないかを確かめるために使います。
+        /// </summary>
+        public bool FailAllLoads { get; set; }
+
         /// <summary>いま読み込んでいる URL。</summary>
         public string CurrentUrl => _url;
 
         public bool LoadURL(string url)
         {
+            if (FailAllLoads) return false;
             if (FailNextLoad)
             {
                 FailNextLoad = false;

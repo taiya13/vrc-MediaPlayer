@@ -45,27 +45,32 @@ namespace SmartMediaPlatform.AutoPlay.Tests
         }
 
         [Test]
-        public void Service_ObservesBackendEvents()
+        public void Service_InstallsItsRefillerOnTheSession()
         {
-            Assert.IsInstanceOf<IBackendObserver>(_rig.Service,
-                "Ended を受け取って先に補充するため");
+            Assert.AreSame(_rig.Service.Refiller, _rig.Session.QueueRefiller,
+                "補充の実装はプロジェクト全体で 1 つ(セッションにも同じ実体を渡す)");
         }
 
         [Test]
-        public void Service_TakesOverTheSessionAutoQueue()
+        public void Service_DoesNotTouchTheSessionSettings()
         {
-            Assert.IsFalse(_rig.Session.AutoQueueEnabled,
-                "補充の入口を 1 つに保つ(PlayerSession 側の無フィルタ補充を止める)");
-            Assert.IsTrue(_rig.Service.TakesOverAutoQueue);
+            Assert.IsTrue(_rig.Session.AutoQueueEnabled,
+                "Phase3-4: 設定を書き換えるのではなく、補充の手段を渡すだけにした");
         }
 
         [Test]
-        public void Service_CanLeaveTheSessionAutoQueueAlone()
+        public void Session_UsesTheInjectedRefillerForItsOwnRefill()
         {
-            var rig = new Rig(new VideoCatalogSource(), takeOverAutoQueue: false);
+            _rig.Service.Start("video-001");
+            _rig.Session.ClearQueue();
 
-            Assert.IsTrue(rig.Session.AutoQueueEnabled);
-            Assert.IsFalse(rig.Service.TakesOverAutoQueue);
+            int added = _rig.Session.EnsureQueueFilled();
+
+            Assert.Greater(added, 0, "セッション自身の補充が、渡した refiller 経由で動く");
+            foreach (var entry in _rig.Session.Queue.GetAll())
+            {
+                Assert.AreEqual(MediaType.Video, entry.Item.Type, "ふるいが効いている");
+            }
         }
 
         [Test]
@@ -176,7 +181,7 @@ namespace SmartMediaPlatform.AutoPlay.Tests
             }
 
             Assert.AreEqual(13, played.Count);
-            Assert.AreEqual(12, _rig.Service.EndedCount);
+            Assert.AreEqual(12, _rig.Controller.EndedCount);
             CollectionAssert.AllItemsAreNotNull(played);
         }
 
@@ -485,7 +490,7 @@ namespace SmartMediaPlatform.AutoPlay.Tests
             string text = _rig.Service.Describe();
 
             StringAssert.Contains("seed=video-001", text);
-            StringAssert.Contains("ended=1", text);
+            StringAssert.Contains("refills=", text);
         }
 
         [Test]
@@ -517,9 +522,10 @@ namespace SmartMediaPlatform.AutoPlay.Tests
 
             private readonly SimulatedVRCVideoPlayer _player;
 
+            public readonly AutoPlayController Controller;
+
             public Rig(
                 IMediaCatalogSource source,
-                bool takeOverAutoQueue = true,
                 bool musicOnlyCatalog = false)
             {
                 var logger = new ListBackendLogger();
@@ -543,10 +549,10 @@ namespace SmartMediaPlatform.AutoPlay.Tests
                 Session = new PlayerSession(
                     "test", mediaPlayer, Catalog, Engine, new System.Random(1), logger);
 
-                Service = new RecommendationPlaybackService(
-                    Session, Catalog, Engine,
-                    new BackendPlaybackFilter(BackendManager), logger, takeOverAutoQueue);
-                Service.RegisterBackend(Adapter);
+                Controller = AutoPlayController.Create(
+                    Session, Catalog, Engine, new BackendPlaybackFilter(BackendManager), logger);
+                Service = Controller.Playback;
+                Controller.RegisterBackend(Adapter);
             }
 
             /// <summary>いま再生中の動画を最後まで再生させ、実機の OnVideoEnd を流す。</summary>
