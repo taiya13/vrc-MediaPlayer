@@ -1,0 +1,32 @@
+# 配布用にまとめた zip(リポジトリには入れない)
+SmartMediaPlatform_*.zip
+
+# Unity が生成するもの
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Visual Studio / Rider が生成するもの
+.vs/
+.idea/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.opendb
+*.VC.db
+
+# OS が生成するもの
+.DS_Store
+Thumbs.db
