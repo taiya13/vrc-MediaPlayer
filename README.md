@@ -97,7 +97,16 @@ MusicBackend と VideoBackend を同じ窓口で扱う Adapter 層。`IBackendAd
 
 > Phase2-4 は Backend Adapter(A)と Video Backend Adapter(B)の 2 本立てです。(A)の `DummyVideoBackendAdapter` と(B)の `VideoBackendAdapter` は役割が重なっており、Phase3 では後者への一本化を推奨します([詳細](docs/Phase2-4_VideoBackendAdapter.md#9-設計レビュー自己評価))。
 
+## Phase3-1: VRChat Video Backend(実装済み)
+
+Phase2-4(B) の `DummyVideoBackend`(ログのみ)を、**VRChat の VideoPlayer で実際に動画を再生する** `VRChatVideoBackend` へ置き換え。`IVideoBackend` を実装しているだけなので、**`VideoBackendAdapter` を 1 文字も変更せず**差し替えられる(`PlayerSession` / `Queue` / `Recommendation` も差分ゼロ)。`VRCUnityVideoPlayer` と `VRCAVProVideoPlayer` は共通基底 `BaseVRCVideoPlayer` を包む 1 つのブリッジで両対応。**動画 URL は Catalog から編集時に焼き込んだ `VRCUrl` のみ**を使い、実行時に URL を生成する処理はどこにも無い(ベイクされていない URL は `CanPlay` の時点で拒否)。読み込み完了・再生終了・エラーは、実機コールバック(プッシュ)と `Tick()`(ポーリング)の両経路で拾い、通知は必ず 1 回。SDK 依存は 3 ファイル + 専用 asmdef(`defineConstraints: VRC_SDK_VRCSDK3`)に閉じ込めてあるので、**SDK が無い環境でも既存テストはそのまま通る**。
+
+- コード: `Assets/SmartMediaPlatform/Video/Runtime`(純粋C#)、`Video/VRChat`(SDK 依存)、`Demo` / `Editor` / `Scenes` / `Tests`
+- ConsoleDemo(SDK 不要): `Video/Scenes/Phase3VRChatVideoDemoScene.unity` を開いて **Play**
+- DemoScene(SDK で実際に再生): メニュー **Tools > Smart Media Platform > Create Phase3 VRChat SDK Video Scene (実際に再生)** で生成して **Play**
+- 設計ドキュメント(差分の全体像 / 2段構成の理由 / 実行時URL生成をしない仕組み / 非同期読み込みの吸収 / API一覧 / テスト方法 / 設計レビュー / 引き継ぎ): [docs/Phase3-1_VRChatVideoBackend.md](docs/Phase3-1_VRChatVideoBackend.md)
+
 ## テスト
 
-EditMode テスト計 **474 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 49)。
+EditMode テスト計 **530 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 105)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
