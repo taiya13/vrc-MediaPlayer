@@ -1,7 +1,5 @@
 #if UNITY_EDITOR
-using System;
 using System.IO;
-using System.Reflection;
 using SmartMediaPlatform.AutoPlay.Demo;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -10,6 +8,7 @@ using UnityEngine;
 using SmartMediaPlatform.AutoPlay.VRChat;
 using SmartMediaPlatform.Catalog;
 using SmartMediaPlatform.Video.Data;
+using SmartMediaPlatform.Video.EditorTools;
 using SmartMediaPlatform.Video.Udon;
 using SmartMediaPlatform.Video.VRChat;
 using VRC.SDK3.Video.Components;
@@ -97,8 +96,11 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
             audioSource.spatialBlend = 0f;
             var videoPlayer = playerObject.AddComponent<VRCUnityVideoPlayer>();
 
-            var relay = playerObject.AddComponent<UdonVRCVideoEventRelay>();
-            EnsureUdonBehaviour(relay);
+            // UdonSharp は「プロキシ + UdonBehaviour + プログラム」の 3 点が揃って初めて動く。
+            // 素の AddComponent<T>() ではプロキシしか付かず、
+            // 「Unable to find valid U# program asset」になる。
+            var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
+                playerObject, typeof(UdonVRCVideoEventRelay));
 
             var host = playerObject.AddComponent<VRChatVideoBackendHost>();
             playerObject.AddComponent<UdonVideoEventPump>();
@@ -119,42 +121,19 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
             Debug.Log(
                 "[Phase3RecommendationPlaybackSceneBuilder] SDK シーンを作成しました: "
                 + SdkScenePath + "\n"
-                + $"  {videoPlayer.GetType().Name} / {relay.GetType().Name} / {demo.GetType().Name}\n"
+                + $"  {videoPlayer.GetType().Name} / {demo.GetType().Name}\n"
+                + $"  Udon 中継: {(relay != null ? relay.GetType().Name : "未追加")}\n"
                 + $"  ベイク済み URL: {baked} 件(VideoCatalogSource の動画 10 本)\n"
                 + $"  映像の出力先({screen.name})に RenderTexture / Material を割り当ててください。\n"
                 + "  Play を押すと、おすすめだけで動画が次々に切り替わる様子が Console に出ます。\n"
                 + "  ※ VideoCatalogSource の URL は架空のアドレスです。実際に映像を出すには\n"
-                + "     実在する動画 URL に差し替えてから焼き直してください。");
+                + "     実在する動画 URL に差し替えてから焼き直してください。"
+                + (relay == null
+                    ? "\n\n" + UdonSharpSceneUtility.ManualSetupInstruction(
+                        playerObject, typeof(UdonVRCVideoEventRelay))
+                    : ""));
         }
 
-        /// <summary>
-        /// UdonSharp の proxy に対応する UdonBehaviour を用意する。
-        /// API 名がバージョンで変わっても壊れないようリフレクションで呼ぶ
-        /// (Phase1-2 の UdonCatalogBaker と同じ方針)。
-        /// </summary>
-        private static void EnsureUdonBehaviour(MonoBehaviour proxy)
-        {
-            try
-            {
-                Type util = null;
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    util = asm.GetType("UdonSharpEditor.UdonSharpEditorUtility");
-                    if (util != null) break;
-                }
-                if (util == null) return;
-
-                MethodInfo create = util.GetMethod(
-                    "CreateBehaviourForProxy", BindingFlags.Public | BindingFlags.Static);
-                create?.Invoke(null, new object[] { proxy });
-            }
-            catch (Exception e)
-            {
-                Debug.LogWarning(
-                    "[Phase3RecommendationPlaybackSceneBuilder] UdonBehaviour の自動生成をスキップしました: "
-                    + e.Message);
-            }
-        }
 #endif
     }
 }

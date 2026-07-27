@@ -278,6 +278,31 @@ Play すると、おすすめだけで動画が次々に切り替わる様子が
 > 実在する動画 URL に差し替えてから **Bake Catalog Urls Into Selected Video Host** で
 > 焼き直してください。
 
+#### UdonSharp コンポーネントの追加について
+
+`UdonVRCVideoEventRelay` は UdonSharpBehaviour です。実際に動くには
+
+1. その クラス に対応する `UdonSharpProgramAsset`(U# プログラム)
+2. それを差した `UdonBehaviour`
+3. Inspector 用のプロキシ(= `UdonSharpBehaviour` コンポーネント)
+
+の 3 つが揃っている必要があります。
+`GameObject.AddComponent<T>()` は **3 番しか付けない**ため、そのままでは
+
+```
+[UdonSharp] Unable to find valid U# program asset associated with script '...UdonVRCVideoEventRelay'
+NullReferenceException at UdonSharpEditor.UdonSharpEditorUtility.RunBehaviourSetup
+```
+
+になります。シーン生成ツールは `UdonSharpSceneUtility.AddUdonSharpComponent()` 経由で
+`UdonSharpEditor.UdonSharpUndo.AddComponent` を呼び、3 つをまとめて用意します。
+この API が見つからない場合は**何も付けず**、手動追加の手順を Console に出します
+(壊れたコンポーネントをシーンに残さないため)。
+
+その場合は Hierarchy で `VRCVideoPlayer` を選び、Inspector の **Add Component** から
+`Udon VRC Video Event Relay` を追加してください。追加しなくても再生は動きます
+(`VideoEventBridge` のポーリングが保険になります)が、実機イベント経由の確認にはなりません。
+
 ### 成功条件の対応表
 
 | 成功条件 | 確認方法 |

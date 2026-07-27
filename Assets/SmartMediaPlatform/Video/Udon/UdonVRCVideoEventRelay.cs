@@ -26,8 +26,11 @@ namespace SmartMediaPlatform.Video.Udon
     /// <b>使い方</b>:VRCUnityVideoPlayer / VRCAVProVideoPlayer と<b>同じ GameObject</b>に
     /// このコンポーネントを付けるだけです。設定項目はありません。
     /// </summary>
+    // 属性は Phase1-2 の UdonMediaCatalog と揃えてあります。
+    // [AddComponentMenu] は付けません — UdonSharp は Add Component メニューへの
+    // 登録と U# プログラムの生成を自分で行うため、表示位置を差し替えると
+    // その経路から外れることがあります(動作実績のある既存クラスにも付けていません)。
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
-    [AddComponentMenu("Smart Media Platform/Udon VRC Video Event Relay")]
     public class UdonVRCVideoEventRelay : UdonSharpBehaviour
     {
         // イベント種別のコード。VideoEventKind と一致させること。
