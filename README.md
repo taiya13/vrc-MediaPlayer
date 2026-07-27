@@ -106,7 +106,16 @@ Phase2-4(B) の `DummyVideoBackend`(ログのみ)を、**VRChat の VideoPlayer 
 - DemoScene(SDK で実際に再生): メニュー **Tools > Smart Media Platform > Create Phase3 VRChat SDK Video Scene (実際に再生)** で生成して **Play**
 - 設計ドキュメント(差分の全体像 / 2段構成の理由 / 実行時URL生成をしない仕組み / 非同期読み込みの吸収 / API一覧 / テスト方法 / 設計レビュー / 引き継ぎ): [docs/Phase3-1_VRChatVideoBackend.md](docs/Phase3-1_VRChatVideoBackend.md)
 
+## Phase3-2: VRChat Video Event Bridge(実装済み)
+
+Phase3-1 の `Tick()` によるポーリング(状態を見て「終わったはず」と推測する)に加えて、**VRChat の VideoPlayer が実際に発火したイベントを Backend へ届ける経路**を正式に用意。中心は `VideoEventBridge`(純粋C#)で、**重複排除**(同じイベントが何度届いても上位への通知は 1 回)、**`Tick()` との調停**(イベントが届いたらポーリングによる終了推測を自動で降ろす。タイムアウト監視は保険として残す)、**証跡**(受理/棄却の集計と履歴。「イベントで動いた」ことを Console で証明できる)の 3 つを担当する。VRChat はイベントを同じ GameObject の UdonBehaviour にしか送らず UdonSharp は interface を扱えないため、`UdonVRCVideoEventRelay`(UdonSharp)がイベントを int のリングバッファへ記録し、`UdonVideoEventPump` が累計カウンタの差分だけを読み出して運ぶ。**判断ロジックは SDK 側に 1 つも無く**、符号の解釈(`VideoEventCodec`)も重複排除も純粋C#側にあるので EditMode で検証できる。`PlayerSession` / `Queue` / `Recommendation` / `BackendAdapter` は 1 行も変更していない。
+
+- コード: `Assets/SmartMediaPlatform/Video/Runtime`(ブリッジ本体)、`Video/Udon`(Udon 中継)、`Video/VRChat`(運搬役)、`Demo` / `Editor` / `Scenes` / `Tests`
+- ConsoleDemo(SDK 不要): **Tools > Smart Media Platform > Open Phase3-2 Video Event Demo Scene** → **Play**
+- DemoScene(SDK で実機イベント): **Tools > Smart Media Platform > Create Phase3-2 VRChat SDK Video Event Scene (実機イベント)** で生成して **Play**
+- 設計ドキュメント(なぜブリッジが要るか / 重複排除 / Tick 調停 / Udon からの運び方 / テスト方法 / 設計レビュー / 引き継ぎ): [docs/Phase3-2_VRChatVideoEventBridge.md](docs/Phase3-2_VRChatVideoEventBridge.md)
+
 ## テスト
 
-EditMode テスト計 **530 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 105)。
+EditMode テスト計 **568 ケース**(Catalog 63 / Recommendation 13 / Queue 44 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。

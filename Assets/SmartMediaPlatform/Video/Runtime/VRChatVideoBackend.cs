@@ -114,6 +114,14 @@ namespace SmartMediaPlatform.Video
         /// <summary>再生開始の回数(繰り返し再生の検証用。Dummy と揃えてある)。</summary>
         public int PlayCallCount { get; private set; }
 
+        /// <summary>
+        /// <see cref="Load"/> に成功するたびに 1 増える世代番号。
+        ///
+        /// Phase3-2 の <see cref="VideoEventBridge"/> が「読み込みが切り替わった」ことを
+        /// 検知して、1 回の読み込みごとの集計をやり直すために使います。
+        /// </summary>
+        public int LoadGeneration { get; private set; }
+
         // ───────── 問い合わせ ─────────
 
         public VideoPlayerState GetState() => _state;
@@ -200,6 +208,7 @@ namespace SmartMediaPlatform.Video
             _loadingSeconds = 0f;
             _playOnReady = false;
             LastErrorKind = VideoErrorKind.None;
+            LoadGeneration++;
 
             Log($"Load {url}(読み込み中 — 完了は OnVideoReady で通知される)");
 
@@ -329,64 +338,89 @@ namespace SmartMediaPlatform.Video
         }
 
         // ───────── 実機のコールバック(プッシュ) ─────────
+        //
+        // Phase3-2: すべて「受理したか」を bool で返します。
+        // 同じ出来事が二度届いても 2 回目は false になり、観測者へは 1 回しか流れません。
+        // 受理/棄却の集計は VideoEventBridge が行います。
 
         /// <summary>実機の <c>OnVideoReady</c>。読み込みが終わって再生できる。</summary>
-        public void NotifyVideoReady()
+        /// <returns>読み込み中だったので受理した場合 true。</returns>
+        public bool NotifyVideoReady()
         {
-            CompleteLoading();
+            return CompleteLoading();
         }
 
         /// <summary>実機の <c>OnVideoStart</c>。プレイヤーが自発的に再生を始めた場合に備える。</summary>
-        public void NotifyVideoStart()
+        public bool NotifyVideoStart()
         {
-            if (_url == null || _state == VideoPlayerState.Playing) return;
+            if (_url == null || _state == VideoPlayerState.Playing) return false;
 
             _state = VideoPlayerState.Playing;
             _playOnReady = false;   // すでに始まったので予約は不要
             Log($"再生開始の通知: {_url}");
             Notify(o => o.OnVideoStart(_url));
+            return true;
         }
 
         /// <summary>実機の <c>OnVideoPlay</c>(一時停止からの再開)。</summary>
-        public void NotifyVideoPlay()
+        public bool NotifyVideoPlay()
         {
-            NotifyVideoStart();
+            return NotifyVideoStart();
         }
 
         /// <summary>実機の <c>OnVideoPause</c>。プレイヤー側の都合で止まった場合を拾う。</summary>
-        public void NotifyVideoPause()
+        public bool NotifyVideoPause()
         {
-            if (_state != VideoPlayerState.Playing) return;
+            if (_state != VideoPlayerState.Playing) return false;
 
             _state = VideoPlayerState.Paused;
             Log($"一時停止の通知: {_url}");
             Notify(o => o.OnVideoPause(_url));
+            return true;
         }
 
         /// <summary>
         /// 実機の <c>OnVideoEnd</c>。<b>上位の自動送りの起点</b>になる。
         /// <see cref="VideoBackendAdapter"/> がこれを <c>BackendEventType.Ended</c> へ翻訳する。
         /// </summary>
-        public void NotifyVideoEnd()
+        public bool NotifyVideoEnd()
         {
-            if (_url == null) return;
-            if (_state != VideoPlayerState.Playing && _state != VideoPlayerState.Paused) return;
+            if (_url == null) return false;
+            if (_state != VideoPlayerState.Playing && _state != VideoPlayerState.Paused) return false;
 
             _state = VideoPlayerState.Finished;
             Log($"再生終了の通知: {_url}");
             Notify(o => o.OnVideoEnd(_url));
+            return true;
         }
 
         /// <summary>実機の <c>OnVideoLoop</c>。Loop は切っているので通常は来ない。</summary>
-        public void NotifyVideoLoop()
+        public bool NotifyVideoLoop()
         {
             Log($"ループの通知: {_url}(Loop は無効のはずです)");
+
+            // ループしても状態は変わらない。上位に伝えることも無いので受理しない。
+            return false;
         }
 
-        /// <summary>実機の <c>OnVideoError(VideoError)</c>。</summary>
-        public void NotifyVideoError(VideoErrorKind kind, string message = null)
+        /// <summary>
+        /// 実機の <c>OnVideoError(VideoError)</c>。
+        ///
+        /// <b>同じ失敗が二度届いても 2 回目は無視します。</b>
+        /// VRChat は 1 回の読み込み失敗に対して複数回コールバックを送ることがあり、
+        /// そのまま流すと <c>BackendEventType.Error</c> が重複して上位に届くためです。
+        /// 次の <see cref="Load"/> で解除されます。
+        /// </summary>
+        public bool NotifyVideoError(VideoErrorKind kind, string message = null)
         {
+            if (_state == VideoPlayerState.Failed && LastErrorKind == kind)
+            {
+                Log($"エラー通知を無視: {kind} は既に報告済みです");
+                return false;
+            }
+
             Fail(_url, kind, message ?? DescribeError(kind));
+            return true;
         }
 
         // ───────── 毎フレームの補足(ポーリング) ─────────
@@ -434,9 +468,9 @@ namespace SmartMediaPlatform.Video
 
         // ───────── 内部 ─────────
 
-        private void CompleteLoading()
+        private bool CompleteLoading()
         {
-            if (_state != VideoPlayerState.Loading) return;
+            if (_state != VideoPlayerState.Loading) return false;
 
             _state = VideoPlayerState.Ready;
             _loadingSeconds = 0f;
@@ -445,6 +479,7 @@ namespace SmartMediaPlatform.Video
 
             // 読み込み中に来ていた Play 要求をここで実行する。
             if (_playOnReady) StartPlayback("Play(予約分)");
+            return true;
         }
 
         private void Fail(string url, VideoErrorKind kind, string message)

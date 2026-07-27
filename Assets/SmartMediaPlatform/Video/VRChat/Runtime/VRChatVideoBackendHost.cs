@@ -14,22 +14,23 @@ namespace SmartMediaPlatform.Video.VRChat
     /// <list type="number">
     /// <item>シーンの VRCUnityVideoPlayer / VRCAVProVideoPlayer を包んで Backend を組み立てる</item>
     /// <item>組み立てた Backend を <see cref="VideoBackendAdapter"/> に載せて上位へ渡す</item>
-    /// <item>毎フレーム <see cref="VRChatVideoBackend.Tick"/> を呼び、読み込み完了と再生終了を拾う</item>
-    /// <item>実機の動画コールバックを Backend へ中継する</item>
+    /// <item>実機の動画イベントを <see cref="VideoEventBridge"/> へ中継する(Phase3-2)</item>
+    /// <item>毎フレーム <see cref="VideoEventBridge.Tick"/> を呼ぶ(保険のポーリング)</item>
     /// </list>
     ///
     /// <b>ロジックはこのクラスに入れていません</b>(テストできなくなるため)。
-    /// 状態機械はすべて <see cref="VRChatVideoBackend"/>(純粋 C#)側にあります。
+    /// 状態機械は <see cref="VRChatVideoBackend"/>、
+    /// イベントの重複排除と調停は <see cref="VideoEventBridge"/>(どちらも純粋 C#)にあります。
     ///
-    /// <b>コールバックについて</b><br/>
-    /// 実機(Udon)では動画プレイヤーは<b>同じ GameObject の UdonBehaviour</b> へ
+    /// <b>イベントの届き方(Phase3-2)</b><br/>
+    /// VRChat の動画プレイヤーは<b>同じ GameObject の UdonBehaviour</b> へ
     /// <c>OnVideoReady</c> / <c>OnVideoEnd</c> / <c>OnVideoError</c> …を送ります。
-    /// UdonSharp は インターフェース を扱えないため、その中継は Phase3-2(Udon 版)の課題です。
-    /// それまでの間、および Unity エディタでの確認では、
-    /// <see cref="Update"/> のポーリング(<see cref="VRChatVideoBackend.Tick"/>)が
-    /// 読み込み完了・再生終了・タイムアウトを検出します。
-    /// コールバックを繋げられる場合は、下の <c>OnVideoXxx</c> をそのまま呼んでください
-    /// (プッシュとポーリングのどちらから来ても通知は 1 回だけです)。
+    /// UdonSharp は インターフェース を扱えないため、直接この C# クラスは呼べません。
+    /// そこで <c>UdonVRCVideoEventRelay</c>(UdonSharp)がイベントを受けて記録し、
+    /// <c>UdonVideoEventPump</c> がそれを読み出して下の <c>OnVideoXxx</c> を呼びます。
+    ///
+    /// <c>OnVideoXxx</c> は誰が呼んでも構いません(Udon 中継 / UnityEvent / テスト)。
+    /// 重複しても、ポーリングと重なっても、上位への通知は 1 回だけです。
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class VRChatVideoBackendHost : MonoBehaviour
@@ -46,6 +47,9 @@ namespace SmartMediaPlatform.Video.VRChat
         [Tooltip("読み込みがこの秒数を超えたら Error にする(0 で無効)")]
         [SerializeField] private float _loadTimeoutSeconds = 20f;
 
+        [Tooltip("実機イベントが届いたら、ポーリングによる再生終了の推測を止める")]
+        [SerializeField] private bool _suppressPollingWhenEventsArrive = true;
+
         [Header("ベイク済み URL(実行時に VRCUrl は作れない)")]
         [Tooltip("Tools > Smart Media Platform > Bake Catalog Urls Into Selected Video Host で焼き込む")]
         [SerializeField] private VRCUrlTable _urls = new VRCUrlTable();
@@ -60,6 +64,12 @@ namespace SmartMediaPlatform.Video.VRChat
         /// </summary>
         public VideoBackendAdapter Adapter { get; private set; }
 
+        /// <summary>
+        /// Phase3-2: 実機イベントの受け口。重複排除と <c>Tick</c> との調停はここが行う。
+        /// <c>UdonVideoEventPump</c> もこの <see cref="IVideoEventSink"/> へ流し込む。
+        /// </summary>
+        public VideoEventBridge Bridge { get; private set; }
+
         /// <summary>ベイク済み URL 表。</summary>
         public VRCUrlTable Urls => _urls;
 
@@ -72,8 +82,9 @@ namespace SmartMediaPlatform.Video.VRChat
 
         private void Update()
         {
-            // 読み込み完了・タイムアウト・再生終了を拾う。
-            Backend?.Tick(Time.deltaTime);
+            // Phase3-2: ポーリングもブリッジ経由にする。
+            // イベントが届いている構成では、ブリッジが再生終了の推測を自動で止める。
+            Bridge?.Tick(Time.deltaTime);
         }
 
         /// <summary>
@@ -98,11 +109,17 @@ namespace SmartMediaPlatform.Video.VRChat
                 return null;
             }
 
-            var bridge = new VRCVideoPlayerBridge(_videoPlayer, _urls);
+            var playerBridge = new VRCVideoPlayerBridge(_videoPlayer, _urls);
 
-            Backend = new VRChatVideoBackend(_backendName, bridge, _urls, logger)
+            Backend = new VRChatVideoBackend(_backendName, playerBridge, _urls, logger)
             {
                 LoadTimeoutSeconds = _loadTimeoutSeconds,
+            };
+
+            // Phase3-2: 実機イベントはすべてこのブリッジを通す。
+            Bridge = new VideoEventBridge(Backend, logger)
+            {
+                SuppressPollingWhenEventsArrive = _suppressPollingWhenEventsArrive,
             };
 
             // ここが Phase3-1 の要点:
@@ -133,22 +150,22 @@ namespace SmartMediaPlatform.Video.VRChat
         // メソッド名は VRChat の動画イベントに合わせてあります。
         // Udon 側から中継する場合はそのままこれらを呼んでください。
 
-        public void OnVideoReady() => Backend?.NotifyVideoReady();
+        public void OnVideoReady() => Bridge?.OnVideoReady();
 
-        public void OnVideoStart() => Backend?.NotifyVideoStart();
+        public void OnVideoStart() => Bridge?.OnVideoStart();
 
-        public void OnVideoPlay() => Backend?.NotifyVideoPlay();
+        public void OnVideoPlay() => Bridge?.OnVideoPlay();
 
-        public void OnVideoPause() => Backend?.NotifyVideoPause();
+        public void OnVideoPause() => Bridge?.OnVideoPause();
 
-        public void OnVideoEnd() => Backend?.NotifyVideoEnd();
+        public void OnVideoEnd() => Bridge?.OnVideoEnd();
 
-        public void OnVideoLoop() => Backend?.NotifyVideoLoop();
+        public void OnVideoLoop() => Bridge?.OnVideoLoop();
 
         /// <summary>実機の <c>OnVideoError(VideoError)</c>。SDK の enum をこちらの enum へ翻訳する。</summary>
         public void OnVideoError(VideoError videoError)
         {
-            Backend?.NotifyVideoError(Translate(videoError));
+            Bridge?.OnVideoError(Translate(videoError));
         }
 
         /// <summary>
