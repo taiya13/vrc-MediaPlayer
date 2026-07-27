@@ -105,7 +105,10 @@ namespace SmartMediaPlatform.Video
         /// <summary>直近に届いたイベント(棄却したものを含む)。</summary>
         public VideoEventKind LastReceived { get; private set; } = VideoEventKind.None;
 
-        /// <summary>受理/棄却の履歴(古い順)。</summary>
+        /// <summary>
+        /// 受理/棄却の履歴(古い順)。<see cref="MaxLogEntries"/> 件まで保持する。
+        /// ログ出力そのものではなく<b>イベントの証跡</b>です。
+        /// </summary>
         public IReadOnlyList<VideoEventRecord> Log => _log;
 
         public int TotalAccepted { get; private set; }
@@ -154,7 +157,7 @@ namespace SmartMediaPlatform.Video
             if (SuppressPollingWhenEventsArrive && EventsObserved && _backend.DetectEndByPolling)
             {
                 _backend.DetectEndByPolling = false;
-                Log("イベントが届いているので、ポーリングによる再生終了の推測を止めます");
+                LogMessage("イベントが届いているので、ポーリングによる再生終了の推測を止めます");
             }
 
             _backend.Tick(deltaSeconds);
@@ -219,7 +222,7 @@ namespace SmartMediaPlatform.Video
             {
                 _rejected[(int)kind]++;
                 TotalRejected++;
-                Log($"{kind} を無視しました({record.RejectReason})");
+                LogMessage($"{kind} を無視しました({record.RejectReason})");
             }
 
             Append(record);
@@ -272,7 +275,13 @@ namespace SmartMediaPlatform.Video
             while (MaxLogEntries > 0 && _log.Count > MaxLogEntries) _log.RemoveAt(0);
         }
 
-        private void Log(string message)
+        /// <summary>
+        /// ログ出力先へ 1 行書く。
+        ///
+        /// 公開プロパティの <see cref="Log"/>(受理/棄却の履歴)と名前がぶつかるため、
+        /// 他クラスの <c>Log(string)</c> とは違う名前にしてあります。
+        /// </summary>
+        private void LogMessage(string message)
         {
             _logger.Log($"[VideoEventBridge] {message}");
         }
