@@ -3,6 +3,7 @@
     "rootNamespace": "SmartMediaPlatform.Catalog.Tests",
     "references": [
         "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Catalog.Assets",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

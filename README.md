@@ -152,7 +152,19 @@ UI は **Game ビューに一覧を描いてクリックで選べる画面**(`Me
 - ConsoleDemo: 同じシーンで **Play**(1 つの GameObject に両方載っています)
 - 設計ドキュメント(責務の守り方 / クラス一覧 / UI の方針 / バックエンド切り替え / テスト方法 / 引き継ぎ): [docs/Phase4-1_MediaLibrary.md](docs/Phase4-1_MediaLibrary.md)
 
+## Phase4-2: 関連動画 UI と Catalog 接続(実装済み)
+
+**関連動画 UI を Catalog システムへつなぎ、将来の Catalog Builder / サーバー連携に備えた層。** 中心は 3 つの新しい型です。**`DisplayMeta`**(表示用・**URL を持たない**)、**`PlayableRef`**(再生用・**MediaId と Type だけ**を運ぶ struct)、そして **`ICatalogStore` / `CatalogStore`**(唯一のデータ取得窓口)。`ICatalogStore` には **`MediaItem` を返すメンバーが 1 つもない**ので、利用側はカタログの内部構造を知りません。Phase4-1 では `MediaItem` を UI へ渡していて `MediaItem.Url` が見えていましたが、いまは型のレベルで塞がっています。
+
+**関連動画は `RelatedMediaView`** が担当します。`起点の MediaId → IRelatedMediaProvider(関連 ID の並び)→ CatalogStore(DisplayMeta へ変換)→ UI → PlayableRef → PlayerSession` という流れで、**`RelatedMediaView` は「なぜ関連なのか」を知りません**。だから関連の出どころがカタログの `RelatedIds`(いま)でも、Catalog Builder の事前計算でも、**サーバーが返した ID**でも、この層から上は 1 行も変わりません。カタログに無い ID がサーバーから返ってきても `CatalogStore` が黙って落とすので、残りはそのまま並びます。
+
+**将来の差し込み口は 2 つだけ**です。Catalog Builder は **`MediaCatalogAsset`**(`ScriptableObject`, `IMediaCatalogSource` 実装)へ書き込むだけ、サーバー連携は **`IRelatedMediaProvider`**(用意済みの `StaticRelatedMediaProvider` に `Set(id, ids)` するだけ)。どちらも利用側の変更は最小です。あわせて「並べて 1 つ選ぶ」共通契約 `IMediaListView` を切り出したので、**カタログ全体の一覧と関連動画の一覧が同じ UI・同じ Formatter・同じ `LibraryPlaybackBridge` で扱えます**。再生エンジン(`PlayerSession` / `BackendAdapter` / `Queue` / `Recommendation` / `VideoBackend`)と `MediaItem` / `IMediaCatalog` は**差分ゼロ**です。
+
+- コード: `Assets/SmartMediaPlatform/Catalog/Runtime/Store/`(DisplayMeta / PlayableRef / CatalogStore / IRelatedMediaProvider)、`Catalog/Assets/`(MediaCatalogAsset)、`Library/Runtime/`(IMediaListView / RelatedMediaView)
+- DemoScene: **Tools > Smart Media Platform > Open Phase4-1 Media Library Demo Scene** → **Play**(右下に関連動画パネル。▶ を押すと再生が切り替わり、関連一覧も追従します)
+- 設計ドキュメント(追加クラス一覧 / データの流れ / Catalog Builder・サーバーとの接続点 / 確認項目): [docs/Phase4-2_RelatedMediaAndCatalogStore.md](docs/Phase4-2_RelatedMediaAndCatalogStore.md)
+
 ## テスト
 
-EditMode テスト計 **766 ケース**(Catalog 63 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 76)。
+EditMode テスト計 **829 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 107)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。

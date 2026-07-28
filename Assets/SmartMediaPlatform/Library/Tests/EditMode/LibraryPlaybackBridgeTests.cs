@@ -3,6 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using SmartMediaPlatform.Backend;
 using SmartMediaPlatform.Catalog;
+using SmartMediaPlatform.Catalog.Store;
 using SmartMediaPlatform.Library.Playback;
 using SmartMediaPlatform.Player;
 using SmartMediaPlatform.Queue;
@@ -24,6 +25,7 @@ namespace SmartMediaPlatform.Library.Tests
     public sealed class LibraryPlaybackBridgeTests
     {
         private IMediaCatalog _catalog;
+        private CatalogStore _store;
         private MediaLibrary _library;
         private PlayerSession _session;
         private LibraryPlaybackBridge _bridge;
@@ -34,7 +36,8 @@ namespace SmartMediaPlatform.Library.Tests
             var logger = new ListBackendLogger();
             _catalog = new MediaCatalog(new MixedCatalogSource(), new System.Random(1));
 
-            _library = new MediaLibrary(_catalog);
+            _store = new CatalogStore(_catalog);
+            _library = new MediaLibrary(_store);
 
             var queue = new MediaQueue();
             var backendManager = new BackendManager(queue, logger);
@@ -100,7 +103,7 @@ namespace SmartMediaPlatform.Library.Tests
             Assert.IsTrue(_bridge.PlayAt(1));
 
             Assert.AreEqual(1, _library.SelectedIndex, "一覧のクリックが選択にもなる");
-            Assert.AreEqual(_library.GetAt(1).Id, _session.CurrentMediaId);
+            Assert.AreEqual(_library.GetAt(1).MediaId, _session.CurrentMediaId);
         }
 
         [Test]
@@ -140,7 +143,7 @@ namespace SmartMediaPlatform.Library.Tests
 
             // MediaPlayer.Play() は「何も読み込んでいないときだけ」Queue の先頭を読むので、
             // 再生中に呼び直しても切り替わらない。Bridge が Next() で移す必要がある。
-            Assert.AreEqual(_library.GetAt(1).Id, _session.CurrentMediaId,
+            Assert.AreEqual(_library.GetAt(1).MediaId, _session.CurrentMediaId,
                 "選び直したものへ実際に切り替わる");
             Assert.AreNotEqual(first, _session.CurrentMediaId);
             Assert.IsTrue(_session.IsPlaying, "切り替えたあとも鳴っている");
@@ -154,7 +157,7 @@ namespace SmartMediaPlatform.Library.Tests
             for (int i = 0; i < 5; i++)
             {
                 Assert.IsTrue(_bridge.PlayAt(i), $"{i + 1} 回目の選び直しで失敗した");
-                Assert.AreEqual(_library.GetAt(i).Id, _session.CurrentMediaId,
+                Assert.AreEqual(_library.GetAt(i).MediaId, _session.CurrentMediaId,
                     $"{i + 1} 回目で狙ったものに切り替わっていない");
             }
 
@@ -170,7 +173,7 @@ namespace SmartMediaPlatform.Library.Tests
 
             _bridge.PlayAt(2);
 
-            Assert.AreEqual(_library.GetAt(2).Id, _session.CurrentMediaId);
+            Assert.AreEqual(_library.GetAt(2).MediaId, _session.CurrentMediaId);
             Assert.IsTrue(_session.IsPlaying, "一時停止から選び直しても鳴り始める");
         }
 
@@ -255,7 +258,7 @@ namespace SmartMediaPlatform.Library.Tests
             _bridge.PlaySelected();
 
             Assert.IsInstanceOf<string>(_bridge.LastHandedOffId);
-            Assert.AreEqual(_library.SelectedItem.Id, _bridge.LastHandedOffId);
+            Assert.AreEqual(_library.SelectedItem.MediaId, _bridge.LastHandedOffId);
 
             // URL を受け取る口も、返す口も無い
             var type = typeof(LibraryPlaybackBridge);

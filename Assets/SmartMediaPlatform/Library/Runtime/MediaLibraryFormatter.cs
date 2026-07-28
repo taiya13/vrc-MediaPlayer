@@ -1,5 +1,5 @@
 using System.Text;
-using SmartMediaPlatform.Catalog;
+using SmartMediaPlatform.Catalog.Store;
 
 namespace SmartMediaPlatform.Library
 {
@@ -20,7 +20,7 @@ namespace SmartMediaPlatform.Library
         /// &gt; 1. Neon Skyline (Official Video)  / Aurora Drive  [Video] Synthwave  #mv #night #retro  4:22
         /// </code>
         /// </summary>
-        public static string FormatEntry(MediaItem item, int number, bool selected = false)
+        public static string FormatEntry(DisplayMeta item, int number, bool selected = false)
         {
             if (item == null) return "";
 
@@ -42,7 +42,7 @@ namespace SmartMediaPlatform.Library
         }
 
         /// <summary>タグを <c>#mv #night</c> の形に。タグが無ければ空文字。</summary>
-        public static string FormatTags(MediaItem item)
+        public static string FormatTags(DisplayMeta item)
         {
             if (item == null || item.Tags.Count == 0) return "";
 
@@ -66,7 +66,7 @@ namespace SmartMediaPlatform.Library
         }
 
         /// <summary>一覧全体。ヘッダに件数と絞り込みの状態が出ます。</summary>
-        public static string FormatLibrary(IMediaLibrary library, string header = "Media Library")
+        public static string FormatLibrary(IMediaListView library, string header = "Media Library")
         {
             if (library == null) return header + "\n(なし)";
 
@@ -88,32 +88,46 @@ namespace SmartMediaPlatform.Library
             return sb.ToString();
         }
 
-        /// <summary>「10 件 / 種別 Video / 並び CatalogOrder」のような 1 行。</summary>
-        public static string FormatSummary(IMediaLibrary library)
+        /// <summary>
+        /// 「10 件 / 種別 Video / 並び CatalogOrder」のような 1 行。
+        ///
+        /// 絞り込みと並び順は <see cref="IMediaLibrary"/>(カタログ全体)だけが持つので、
+        /// 関連動画の一覧(<see cref="RelatedMediaView"/>)では
+        /// 件数と起点だけを出します。
+        /// </summary>
+        public static string FormatSummary(IMediaListView view)
         {
-            if (library == null) return "";
+            if (view == null) return "";
 
             var sb = new StringBuilder();
-            sb.Append(library.Count).Append(" 件");
+            sb.Append(view.Count).Append(" 件");
 
-            sb.Append(" / 種別 ");
-            var types = library.VisibleTypes;
-            if (types.Count >= 5) sb.Append("すべて");
-            else
+            if (view is IMediaLibrary library)
             {
-                for (int i = 0; i < types.Count; i++)
+                sb.Append(" / 種別 ");
+                var types = library.VisibleTypes;
+                if (types.Count >= 5) sb.Append("すべて");
+                else
                 {
-                    if (i > 0) sb.Append('+');
-                    sb.Append(types[i]);
+                    for (int i = 0; i < types.Count; i++)
+                    {
+                        if (i > 0) sb.Append('+');
+                        sb.Append(types[i]);
+                    }
                 }
+
+                sb.Append(" / 並び ").Append(library.SortOrder);
+            }
+            else if (view is RelatedMediaView related)
+            {
+                sb.Append(" / 起点 ").Append(related.SourceMediaId ?? "なし");
             }
 
-            sb.Append(" / 並び ").Append(library.SortOrder);
             return sb.ToString();
         }
 
         /// <summary>選択中の 1 件の詳細(UI の「詳細パネル」に相当)。</summary>
-        public static string FormatSelection(IMediaLibrary library)
+        public static string FormatSelection(IMediaListView library)
         {
             if (library == null || !library.HasSelection) return "選択なし";
 
@@ -130,7 +144,7 @@ namespace SmartMediaPlatform.Library
 
             sb.Append("  種別         : ").Append(item.Type).AppendLine();
             sb.Append("  長さ         : ").Append(FormatDuration(item.DurationSeconds)).AppendLine();
-            sb.Append("  MediaId      : ").Append(item.Id);
+            sb.Append("  MediaId      : ").Append(item.MediaId);
             return sb.ToString();
         }
     }

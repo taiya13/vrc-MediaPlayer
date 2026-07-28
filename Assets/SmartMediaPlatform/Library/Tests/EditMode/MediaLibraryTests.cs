@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using SmartMediaPlatform.Catalog;
+using SmartMediaPlatform.Catalog.Store;
 using SmartMediaPlatform.Video.Data;
 
 namespace SmartMediaPlatform.Library.Tests
@@ -16,23 +17,25 @@ namespace SmartMediaPlatform.Library.Tests
     public sealed class MediaLibraryTests
     {
         private IMediaCatalog _catalog;
+        private CatalogStore _store;
         private MediaLibrary _library;
 
         [SetUp]
         public void SetUp()
         {
             _catalog = new MediaCatalog(new MixedCatalogSource(), new System.Random(1));
-            _library = new MediaLibrary(_catalog);
+            _store = new CatalogStore(_catalog);
+            _library = new MediaLibrary(_store);
         }
 
-        private string[] Ids() => _library.Entries.Select(x => x.Id).ToArray();
+        private string[] Ids() => _library.Entries.Select(x => x.MediaId).ToArray();
 
         // ───────── 前提 ─────────
 
         [Test]
         public void Constructor_RejectsNull()
         {
-            Assert.Throws<ArgumentNullException>(() => new MediaLibrary(null));
+            Assert.Throws<ArgumentNullException>(() => new MediaLibrary((ICatalogStore)null));
         }
 
         [Test]
@@ -44,9 +47,9 @@ namespace SmartMediaPlatform.Library.Tests
         [Test]
         public void NewLibrary_ShowsEverythingInCatalogOrder()
         {
-            Assert.AreEqual(_catalog.Count, _library.Count);
+            Assert.AreEqual(_store.Count, _library.Count);
             CollectionAssert.AreEqual(
-                _catalog.GetAll().Select(x => x.Id).ToArray(), Ids(),
+                _store.GetAllIds().ToArray(), Ids(),
                 "既定はカタログの登録順そのまま");
             Assert.AreEqual(LibrarySortOrder.CatalogOrder, _library.SortOrder);
         }
@@ -63,7 +66,7 @@ namespace SmartMediaPlatform.Library.Tests
         [Test]
         public void Constructor_CanStartFilteredToOneType()
         {
-            var videos = new MediaLibrary(_catalog, MediaType.Video);
+            var videos = new MediaLibrary(_store, MediaType.Video);
 
             Assert.Greater(videos.Count, 0);
             foreach (var item in videos.Entries) Assert.AreEqual(MediaType.Video, item.Type);
@@ -123,7 +126,7 @@ namespace SmartMediaPlatform.Library.Tests
             _library.ShowOnly(MediaType.Video);
             _library.ShowAll();
 
-            Assert.AreEqual(_catalog.Count, _library.Count);
+            Assert.AreEqual(_store.Count, _library.Count);
         }
 
         [Test]
@@ -132,7 +135,7 @@ namespace SmartMediaPlatform.Library.Tests
             _library.ShowOnly(MediaType.Video);
             _library.ShowOnly();
 
-            Assert.AreEqual(_catalog.Count, _library.Count);
+            Assert.AreEqual(_store.Count, _library.Count);
         }
 
         [Test]
@@ -218,7 +221,7 @@ namespace SmartMediaPlatform.Library.Tests
 
             Assert.AreEqual(2, _library.SelectedIndex);
             Assert.AreSame(_library.GetAt(2), _library.SelectedItem);
-            Assert.AreEqual(_library.GetAt(2).Id, _library.SelectedMediaId);
+            Assert.AreEqual(_library.GetAt(2).MediaId, _library.SelectedMediaId);
             Assert.IsTrue(_library.HasSelection);
         }
 
@@ -351,7 +354,7 @@ namespace SmartMediaPlatform.Library.Tests
             int index = _library.IndexOf("video-004");
 
             Assert.GreaterOrEqual(index, 0);
-            Assert.AreEqual("video-004", _library.GetAt(index).Id);
+            Assert.AreEqual("video-004", _library.GetAt(index).MediaId);
             Assert.AreEqual(-1, _library.IndexOf("music-001"));
             Assert.AreEqual(-1, _library.IndexOf(null));
         }
@@ -458,6 +461,10 @@ namespace SmartMediaPlatform.Library.Tests
             Assert.IsNull(type.GetMethod("GetUrl"));
             Assert.IsNull(type.GetProperty("SelectedUrl"));
             Assert.IsNull(type.GetProperty("Url"));
+
+            // Phase4-2: UI へ渡る型そのものに URL の口が無い
+            Assert.IsNull(typeof(DisplayMeta).GetProperty("Url"),
+                "DisplayMeta は表示用だけ — URL を持ってはいけない");
             Assert.IsInstanceOf<string>(_library.Select(0) ? _library.SelectedMediaId : "");
         }
 
@@ -509,7 +516,7 @@ namespace SmartMediaPlatform.Library.Tests
         {
             _library.ShowOnly(MediaType.Video);
             _library.Select(0);
-            string url = _library.SelectedItem.Url;
+            string url = _catalog.FindById(_library.SelectedMediaId).Url;
 
             Assert.IsNotEmpty(url, "この検証はカタログに URL がある前提");
             StringAssert.DoesNotContain(url, MediaLibraryFormatter.FormatLibrary(_library));
@@ -577,20 +584,20 @@ namespace SmartMediaPlatform.Library.Tests
         [Test]
         public void Entries_AreReadOnlyToCallers()
         {
-            Assert.IsNotInstanceOf<List<MediaItem>>(_library.Entries,
+            Assert.IsNotInstanceOf<List<DisplayMeta>>(_library.Entries,
                 "UI が一覧を書き換えられないようにする");
         }
 
         /// <summary>通知を数えるだけの観測者。</summary>
-        private sealed class Watcher : IMediaLibraryObserver
+        private sealed class Watcher : IMediaListObserver
         {
             public int LibraryChanged { get; private set; }
             public int SelectionChanged { get; private set; }
-            public MediaItem LastSelected { get; private set; }
+            public DisplayMeta LastSelected { get; private set; }
 
-            public void OnLibraryChanged(IMediaLibrary library) => LibraryChanged++;
+            public void OnListChanged(IMediaListView view) => LibraryChanged++;
 
-            public void OnSelectionChanged(IMediaLibrary library, MediaItem selected)
+            public void OnSelectionChanged(IMediaListView view, DisplayMeta selected)
             {
                 SelectionChanged++;
                 LastSelected = selected;

@@ -1,5 +1,6 @@
 using System;
 using SmartMediaPlatform.Backend;
+using SmartMediaPlatform.Catalog.Store;
 using SmartMediaPlatform.Session;
 
 namespace SmartMediaPlatform.Library.Playback
@@ -19,9 +20,13 @@ namespace SmartMediaPlatform.Library.Playback
     /// <c>Backend</c> も<b>そもそも見えません</b>。
     /// 見える場所をこの 1 クラスに閉じ込めてあります。
     ///
-    /// <b>境界を越えるのは MediaId(string)だけ</b>です。
-    /// <c>MediaItem</c> も URL も渡しません。
+    /// <b>境界を越えるのは <see cref="PlayableRef"/>(中身は MediaId だけ)</b>です。
+    /// <c>MediaItem</c> も <c>DisplayMeta</c> も URL も渡しません。
     /// Phase3 から通している「URL を知るのは VideoBackend だけ」がそのまま保たれます。
+    ///
+    /// <b>Phase4-2:</b> 受け取る一覧を <see cref="IMediaListView"/> に広げました。
+    /// カタログ全体(<see cref="MediaLibrary"/>)でも
+    /// 関連動画(<see cref="RelatedMediaView"/>)でも、<b>同じこのクラスで再生へつなげます</b>。
     ///
     /// <b>再生エンジンには何も足していません。</b>
     /// 呼んでいるのは <c>PlayerSession</c> の既存 API
@@ -33,16 +38,16 @@ namespace SmartMediaPlatform.Library.Playback
     /// </summary>
     public sealed class LibraryPlaybackBridge
     {
-        private readonly IMediaLibrary _library;
+        private readonly IMediaListView _library;
         private readonly PlayerSession _session;
 
         private IBackendLogger _logger;
 
-        /// <param name="library">閲覧・選択している一覧。</param>
+        /// <param name="library">閲覧・選択している一覧(カタログ全体でも関連動画でも可)。</param>
         /// <param name="session">再生を任せるセッション。</param>
         /// <param name="logger">ログ出力先。</param>
         public LibraryPlaybackBridge(
-            IMediaLibrary library,
+            IMediaListView library,
             PlayerSession session,
             IBackendLogger logger = null)
         {
@@ -63,7 +68,7 @@ namespace SmartMediaPlatform.Library.Playback
         public string LastHandedOffId { get; private set; }
 
         /// <summary>つないでいる一覧。</summary>
-        public IMediaLibrary Library => _library;
+        public IMediaListView Library => _library;
 
         /// <summary>つないでいるセッション。</summary>
         public PlayerSession Session => _session;
@@ -81,13 +86,36 @@ namespace SmartMediaPlatform.Library.Playback
         /// <returns>再生を始められたら true。未選択なら false。</returns>
         public bool PlaySelected()
         {
-            string id = _library.SelectedMediaId;
-            if (id == null)
+            var playable = _library.SelectedRef;
+            if (!playable.IsValid)
             {
                 Log("再生できません: 何も選ばれていません");
                 return false;
             }
-            return Play(id);
+            return Play(playable);
+        }
+
+        /// <summary>
+        /// <b><see cref="PlayableRef"/> を渡して再生する(Phase4-2 の入口)。</b>
+        ///
+        /// <see cref="PlayableRef"/> は <c>ICatalogStore</c> を通ったものだけが
+        /// <c>IsValid</c> になるので、<b>カタログに無い ID が再生系まで流れません</b>。
+        /// 中で運ばれるのは <c>MediaId</c> だけで、URL は入っていません。
+        /// </summary>
+        public bool Play(PlayableRef playable)
+        {
+            if (!playable.IsValid)
+            {
+                Log("再生できません: 指定が空です");
+                return false;
+            }
+            return Play(playable.MediaId);
+        }
+
+        /// <summary><see cref="PlayableRef"/> を Queue の末尾に足す。</summary>
+        public bool Enqueue(PlayableRef playable)
+        {
+            return playable.IsValid && Enqueue(playable.MediaId);
         }
 
         /// <summary>
@@ -96,13 +124,13 @@ namespace SmartMediaPlatform.Library.Playback
         /// <returns>足せたら true。</returns>
         public bool EnqueueSelected()
         {
-            string id = _library.SelectedMediaId;
-            if (id == null)
+            var playable = _library.SelectedRef;
+            if (!playable.IsValid)
             {
                 Log("Queue に足せません: 何も選ばれていません");
                 return false;
             }
-            return Enqueue(id);
+            return Enqueue(playable.MediaId);
         }
 
         /// <summary>

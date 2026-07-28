@@ -259,6 +259,7 @@ MonoBehaviour:
   _initialTab: 0
   _initialSort: 0
   _fontSize: 12
+  _relatedCount: 5
 --- !u!114 &1863251068
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -273,6 +274,8 @@ MonoBehaviour:
   m_EditorClassIdentifier:
   _runOnStart: 1
   _maxListedEntries: 8
+  _relatedSeedId: video-001
+  _relatedCount: 5
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

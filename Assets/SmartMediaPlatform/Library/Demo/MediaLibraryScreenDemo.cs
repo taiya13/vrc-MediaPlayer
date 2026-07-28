@@ -1,5 +1,6 @@
 using SmartMediaPlatform.Backend;
 using SmartMediaPlatform.Catalog;
+using SmartMediaPlatform.Catalog.Store;
 using SmartMediaPlatform.Library.Playback;
 using SmartMediaPlatform.Player;
 using SmartMediaPlatform.Queue;
@@ -28,7 +29,7 @@ namespace SmartMediaPlatform.Library.Demo
     /// ここは<b>描いて、押されたことを伝えるだけ</b>です
     /// — だから uGUI や Udon の UI に差し替えても、下は 1 行も変わりません。
     /// </summary>
-    public sealed class MediaLibraryScreenDemo : MonoBehaviour, IMediaLibraryObserver
+    public sealed class MediaLibraryScreenDemo : MonoBehaviour, IMediaListObserver
     {
         [Header("表示")]
         [Tooltip("最初に表示する種別(すべて / Music / Video)")]
@@ -39,13 +40,22 @@ namespace SmartMediaPlatform.Library.Demo
         [Tooltip("画面が小さいときに文字を詰める")]
         [SerializeField] private int _fontSize = 12;
 
+        [Header("関連動画(Phase4-2)")]
+        [Tooltip("関連動画を何件まで出すか(0 で制限なし)")]
+        [SerializeField] private int _relatedCount = 5;
+
+        private CatalogStore _store;
         private MediaLibrary _library;
+        private RelatedMediaView _related;
+        private StaticRelatedMediaProvider _relatedProvider;
         private PlayerSession _session;
         private LibraryPlaybackBridge _bridge;
+        private LibraryPlaybackBridge _relatedBridge;
         private ListBackendLogger _logger;
 
         private LibraryTypeTab _tab;
         private Vector2 _scroll;
+        private Vector2 _relatedScroll;
         private string _status = "一覧から選んでください。";
 
         /// <summary>絞り込みのタブ。</summary>
@@ -56,8 +66,17 @@ namespace SmartMediaPlatform.Library.Demo
             Video = 2,
         }
 
+        /// <summary>データを引く唯一の窓口。</summary>
+        public CatalogStore Store => _store;
+
         /// <summary>組み立て済みの一覧(テスト・外部からの操作用)。</summary>
         public MediaLibrary Library => _library;
+
+        /// <summary>関連動画の一覧(Phase4-2)。</summary>
+        public RelatedMediaView Related => _related;
+
+        /// <summary>関連 ID の差し替え口(サーバー連携の受け皿)。</summary>
+        public StaticRelatedMediaProvider RelatedProvider => _relatedProvider;
 
         /// <summary>受け渡し役。</summary>
         public LibraryPlaybackBridge Bridge => _bridge;
@@ -66,10 +85,20 @@ namespace SmartMediaPlatform.Library.Demo
         {
             _logger = new ListBackendLogger();
 
-            // ── Library に必要なのは Catalog だけ
+            // ── データの取得口は CatalogStore ただ 1 つ
             IMediaCatalog catalog = new MediaCatalog(new MixedCatalogSource(), new System.Random(1));
-            _library = new MediaLibrary(catalog) { SortOrder = _initialSort };
+            _store = new CatalogStore(catalog);
+
+            _library = new MediaLibrary(_store) { SortOrder = _initialSort };
             _library.AddObserver(this);
+
+            // ── 関連動画(Phase4-2)
+            //    いまはカタログの RelatedIds を使う。サーバー連携になったら
+            //    _relatedProvider.Set(id, idsFromServer) を呼ぶだけで差し替わる。
+            _relatedProvider = new StaticRelatedMediaProvider(
+                new CatalogRelatedMediaProvider(catalog));
+            _related = new RelatedMediaView(_store, _relatedProvider, _relatedCount);
+            _related.AddObserver(this);
 
             // ── 再生側は Phase1〜3 の組み立てをそのまま使う(変更なし)
             var queue = new MediaQueue();
@@ -82,6 +111,7 @@ namespace SmartMediaPlatform.Library.Demo
                 "library-screen", mediaPlayer, catalog, engine, new System.Random(1), _logger);
 
             _bridge = new LibraryPlaybackBridge(_library, _session, _logger);
+            _relatedBridge = new LibraryPlaybackBridge(_related, _session, _logger);
 
             _tab = _initialTab;
             ApplyTab();
@@ -103,7 +133,10 @@ namespace SmartMediaPlatform.Library.Demo
 
             GUILayout.BeginHorizontal();
             DrawList();
+            GUILayout.BeginVertical();
             DrawDetails();
+            DrawRelated();
+            GUILayout.EndVertical();
             GUILayout.EndHorizontal();
 
             GUILayout.Space(6f);
@@ -114,7 +147,7 @@ namespace SmartMediaPlatform.Library.Demo
 
         private void DrawHeader()
         {
-            GUILayout.Label("<b>Phase4-1  Media Library</b>  " +
+            GUILayout.Label("<b>Phase4-2  Media Library + 関連動画</b>  " +
                             MediaLibraryFormatter.FormatSummary(_library),
                             RichLabel());
 
@@ -160,7 +193,7 @@ namespace SmartMediaPlatform.Library.Demo
 
         private void DrawList()
         {
-            GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(Screen.width * 0.6f));
+            GUILayout.BeginVertical(GUI.skin.box, GUILayout.Width(Screen.width * 0.55f));
 
             _scroll = GUILayout.BeginScrollView(_scroll);
 
@@ -185,7 +218,7 @@ namespace SmartMediaPlatform.Library.Demo
             GUILayout.EndVertical();
         }
 
-        private string RowLabel(MediaItem item, int index)
+        private string RowLabel(DisplayMeta item, int index)
         {
             string tags = MediaLibraryFormatter.FormatTags(item);
             return $"{index + 1,3}. {item.Title}\n"
@@ -233,6 +266,61 @@ namespace SmartMediaPlatform.Library.Demo
             GUILayout.EndVertical();
         }
 
+        /// <summary>
+        /// <b>Phase4-2 の関連動画パネル。</b>
+        ///
+        /// この描画コードは <see cref="RelatedMediaView"/> しか見ていません。
+        /// 関連 ID の出どころ(カタログ / Catalog Builder / サーバー)が変わっても、
+        /// <b>ここは 1 行も変わりません。</b>
+        /// </summary>
+        private void DrawRelated()
+        {
+            GUILayout.BeginVertical(GUI.skin.box);
+
+            GUILayout.Label("<b>関連動画</b>  " + MediaLibraryFormatter.FormatSummary(_related),
+                            RichLabel());
+
+            if (_related.SourceMediaId == null)
+            {
+                GUILayout.Label("左の一覧から選ぶと、関連するものが出ます。");
+                GUILayout.EndVertical();
+                return;
+            }
+
+            if (_related.Count == 0)
+            {
+                GUILayout.Label("関連するメディアが登録されていません。");
+                GUILayout.EndVertical();
+                return;
+            }
+
+            _relatedScroll = GUILayout.BeginScrollView(_relatedScroll, GUILayout.MinHeight(120f));
+
+            for (int i = 0; i < _related.Count; i++)
+            {
+                var item = _related.GetAt(i);
+                string tags = MediaLibraryFormatter.FormatTags(item);
+
+                if (GUILayout.Button(
+                        $"▶ {item.Title}\n"
+                        + $"   {item.Artist}  |  {item.Genre}  "
+                        + $"{(tags.Length > 0 ? "|  " + tags : "")}  "
+                        + $"|  {MediaLibraryFormatter.FormatDuration(item.DurationSeconds)}"))
+                {
+                    // 関連側の一覧から、そのまま再生へ渡す
+                    bool ok = _relatedBridge.PlayAt(i);
+                    _status = ok
+                        ? $"関連動画 {item.MediaId} を再生します。"
+                        : "関連動画を再生できませんでした。";
+                }
+            }
+
+            GUILayout.EndScrollView();
+
+            GUILayout.Label($"関連 ID の出どころ: {_related.Provider}");
+            GUILayout.EndVertical();
+        }
+
         private void DrawPlayerState()
         {
             GUILayout.BeginVertical(GUI.skin.box);
@@ -263,19 +351,55 @@ namespace SmartMediaPlatform.Library.Demo
 
         // ───────── Library からの通知 ─────────
 
-        public void OnLibraryChanged(IMediaLibrary library)
+        public void OnListChanged(IMediaListView view)
         {
-            _scroll = Vector2.zero;
+            if (ReferenceEquals(view, _library)) _scroll = Vector2.zero;
+            else _relatedScroll = Vector2.zero;
         }
 
-        public void OnSelectionChanged(IMediaLibrary library, MediaItem selected)
+        public void OnSelectionChanged(IMediaListView view, DisplayMeta selected)
         {
+            if (!ReferenceEquals(view, _library)) return;   // 関連側の選択は状態行に出さない
+
             _status = selected != null
                 ? $"選択: {selected.Title} / {selected.Artist}"
                 : "選択を外しました。";
+
+            FollowSource();
         }
 
         // ───────── 内部 ─────────
+
+        private void Update()
+        {
+            // 再生が切り替わったら関連動画も追従させる
+            // (関連の一覧から再生したときも、その先の関連へ進める)
+            if (_session != null && _session.CurrentMediaId != _lastPlayingId)
+            {
+                _lastPlayingId = _session.CurrentMediaId;
+                FollowSource();
+            }
+        }
+
+        private string _lastPlayingId;
+
+        /// <summary>
+        /// <b>関連動画の起点を決める。</b>
+        /// 再生中ならそれに、していなければ一覧で選んでいるものに追従します。
+        ///
+        /// <b>ここが「関連 UI と再生の接続点」です。</b>
+        /// 渡しているのは MediaId(string)だけで、
+        /// 起点が変わったあと何を並べるかは <see cref="RelatedMediaView"/> と
+        /// <c>IRelatedMediaProvider</c> が決めます。
+        /// </summary>
+        private void FollowSource()
+        {
+            string source = _session != null && _session.CurrentMediaId != null
+                ? _session.CurrentMediaId
+                : _library.SelectedMediaId;
+
+            _related.SetSource(source);
+        }
 
         private void ApplyTab()
         {
