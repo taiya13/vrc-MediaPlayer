@@ -128,31 +128,80 @@ namespace SmartMediaPlatform.Library.Tests
         }
 
         [Test]
-        public void PlaySelected_ReplacesTheTrackListByDefault()
+        public void PlaySelected_SwitchesWhileSomethingElseIsAlreadyPlaying()
         {
             _library.ShowOnly(MediaType.Video);
 
             _bridge.PlayAt(0);
             string first = _session.CurrentMediaId;
+            Assert.IsTrue(_session.IsPlaying, "この検証は 1 本目が鳴っている前提");
 
             _bridge.PlayAt(1);
 
+            // MediaPlayer.Play() は「何も読み込んでいないときだけ」Queue の先頭を読むので、
+            // 再生中に呼び直しても切り替わらない。Bridge が Next() で移す必要がある。
+            Assert.AreEqual(_library.GetAt(1).Id, _session.CurrentMediaId,
+                "選び直したものへ実際に切り替わる");
             Assert.AreNotEqual(first, _session.CurrentMediaId);
-            CollectionAssert.AreEqual(new[] { _session.CurrentMediaId }, _session.Tracks,
-                "選んだ 1 件から始めて、続きはセッションの自動補充に任せる");
+            Assert.IsTrue(_session.IsPlaying, "切り替えたあとも鳴っている");
         }
 
         [Test]
-        public void PlaySelected_CanKeepTheExistingTrackList()
+        public void Play_SwitchesAcrossSeveralPicksInARow()
         {
-            _bridge.ReplaceTracksOnPlay = false;
             _library.ShowOnly(MediaType.Video);
 
-            _bridge.PlayAt(0);
-            _bridge.PlayAt(1);
+            for (int i = 0; i < 5; i++)
+            {
+                Assert.IsTrue(_bridge.PlayAt(i), $"{i + 1} 回目の選び直しで失敗した");
+                Assert.AreEqual(_library.GetAt(i).Id, _session.CurrentMediaId,
+                    $"{i + 1} 回目で狙ったものに切り替わっていない");
+            }
 
-            Assert.GreaterOrEqual(_session.Tracks.Count, 2,
-                "いまの曲一覧を残したまま足す");
+            Assert.AreEqual(5, _bridge.PlayCount);
+        }
+
+        [Test]
+        public void Play_SwitchesFromAPausedState()
+        {
+            _library.ShowOnly(MediaType.Video);
+            _bridge.PlayAt(0);
+            _session.Pause();
+
+            _bridge.PlayAt(2);
+
+            Assert.AreEqual(_library.GetAt(2).Id, _session.CurrentMediaId);
+            Assert.IsTrue(_session.IsPlaying, "一時停止から選び直しても鳴り始める");
+        }
+
+        [Test]
+        public void Play_OnTheAlreadyPlayingMediaKeepsItGoing()
+        {
+            _library.ShowOnly(MediaType.Video);
+            _bridge.PlayAt(0);
+            string playing = _session.CurrentMediaId;
+
+            Assert.IsTrue(_bridge.PlaySelected(), "同じものを選び直しても失敗しない");
+
+            Assert.AreEqual(playing, _session.CurrentMediaId);
+            Assert.IsTrue(_session.IsPlaying);
+        }
+
+        [Test]
+        public void Play_AddsToTheQueueOnlyWhenItIsNotThereAlready()
+        {
+            _library.ShowOnly(MediaType.Video);
+            _bridge.PlayAt(0);
+
+            // おすすめで既に Queue に入っているものを選び直しても、二重に積まない
+            string alreadyQueued = _session.Queue.GetAll()[1].MediaId;
+            int before = _session.Queue.Count;
+
+            _bridge.Play(alreadyQueued);
+
+            Assert.AreEqual(alreadyQueued, _session.CurrentMediaId);
+            Assert.LessOrEqual(_session.Queue.Count, before,
+                "Queue に居るものを選び直しても増えない");
         }
 
         // ───────── Queue へ足す ─────────

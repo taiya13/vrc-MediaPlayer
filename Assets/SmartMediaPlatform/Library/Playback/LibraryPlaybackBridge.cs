@@ -53,17 +53,6 @@ namespace SmartMediaPlatform.Library.Playback
 
         // ───────── 設定 ─────────
 
-        /// <summary>
-        /// <see cref="PlaySelected"/> のときに、いまの曲一覧を選んだ 1 件で置き換えるか。
-        ///
-        /// <list type="bullet">
-        /// <item><b>true(既定)</b> … 選んだものから再生を始める。
-        /// 続きはセッションの自動補充(おすすめ)に任せる</item>
-        /// <item><b>false</b> … いまの曲一覧を残したまま末尾に足して、そこへ飛ぶ</item>
-        /// </list>
-        /// </summary>
-        public bool ReplaceTracksOnPlay { get; set; } = true;
-
         /// <summary>これまでに再生を指示した回数(診断用)。</summary>
         public int PlayCount { get; private set; }
 
@@ -127,39 +116,60 @@ namespace SmartMediaPlatform.Library.Playback
         /// <summary>
         /// MediaId を指定して再生する。
         /// <b>渡すのは string だけ</b> — ここが Library と再生エンジンの境界です。
+        ///
+        /// <b>再生エンジンの 2 つの仕様に合わせて組み立てています</b>
+        /// (どちらも Phase1〜3 のまま。こちらが合わせる側です)。
+        /// <list type="number">
+        /// <item>
+        /// <c>MediaPlayer.Play()</c> は<b>何も読み込んでいないときだけ</b> Queue の先頭を読みます。
+        /// すでに何か鳴っている状態で呼んでも、鳴っているものが続くだけで切り替わりません。
+        /// </item>
+        /// <item>
+        /// <c>Queue</c> は<b>先頭 = いま鳴っているもの</b>という約束で、
+        /// <c>Next()</c> は<b>先頭を捨てて次を読み</b>ます。
+        /// </item>
+        /// </list>
+        /// つまり切り替えたいものは<b>先頭の次(index 1)</b>に置いてから <c>Next()</c> する、
+        /// というのが既存 API だけで成立する唯一の道です。
+        /// 何も鳴っていないときは素直に<b>先頭(index 0)</b>へ置いて <c>Play()</c> します。
         /// </summary>
         /// <returns>再生を始められたら true。</returns>
         public bool Play(string mediaId)
         {
             if (string.IsNullOrWhiteSpace(mediaId)) return false;
 
+            // すでにそれが鳴っているなら、わざわざ入れ直さない
+            if (Same(_session.CurrentMediaId, mediaId))
+            {
+                LastHandedOffId = mediaId;
+                return _session.IsPlaying || _session.Play();
+            }
+
+            var queue = _session.Queue;
+            bool somethingIsLoaded = _session.CurrentMediaId != null;
+
+            // Queue に無ければ足す。カタログに無い ID はここで弾かれる。
+            if (!queue.Contains(mediaId) && !_session.Enqueue(mediaId))
+            {
+                Log($"再生できません: {mediaId} はカタログにありません");
+                return false;
+            }
+
             LastHandedOffId = mediaId;
 
-            if (ReplaceTracksOnPlay)
-            {
-                // 選んだ 1 件から始めて、続きはセッションの自動補充に任せる
-                _session.SetTracks(new[] { mediaId });
-            }
-            else
-            {
-                // いまの一覧を残したまま末尾に足して、そこまで進める。
-                //
-                // ★ 進める回数に上限が要ります。
-                //   PlayerSession.Next() は毎回 EnsureQueueFilled() を呼ぶので
-                //   Queue の件数は減りません(「空になったら終わり」では止まらない)。
-                //   足したものは末尾にあり、補充はその後ろに積まれるので、
-                //   「足した時点の Queue の長さ」だけ進めば必ず届きます。
-                if (!_session.Enqueue(mediaId)) return false;
-
-                int steps = _session.Queue.Count;
-                while (steps-- > 0 && !Same(_session.CurrentMediaId, mediaId))
-                {
-                    if (!_session.Next()) break;
-                }
-            }
+            // 鳴っているなら「次」(index 1)、鳴っていないなら「先頭」(index 0)へ寄せる
+            int wanted = somethingIsLoaded ? 1 : 0;
+            int index = queue.IndexOf(mediaId);
+            if (index > wanted) queue.Move(index, wanted);
 
             PlayCount++;
-            bool started = _session.Play();
+
+            bool started = somethingIsLoaded ? _session.Next() : _session.Play();
+
+            // Next() は「直前が再生中/再生終了」のときだけ続けて鳴らす。
+            // 一時停止や停止から切り替えた場合はここで始める。
+            if (!_session.IsPlaying) started = _session.Play();
+
             Log($"{mediaId} を再生します -> {(started ? "開始" : "開始できませんでした")}");
             return started;
         }

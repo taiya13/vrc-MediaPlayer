@@ -154,5 +154,5 @@ UI は **Game ビューに一覧を描いてクリックで選べる画面**(`Me
 
 ## テスト
 
-EditMode テスト計 **763 ケース**(Catalog 63 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 73)。
+EditMode テスト計 **766 ケース**(Catalog 63 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 76)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。

@@ -138,14 +138,34 @@ void OnSelectionChanged(IMediaLibrary library, MediaItem selected);    // 選択
 | `Play(mediaId)` | ID を指定して再生 |
 | `EnqueueSelected()` / `Enqueue(mediaId)` | いまの再生を止めずに Queue の末尾へ足す |
 
-`ReplaceTracksOnPlay`(既定 true)で 2 つの動きを選べます。
+#### 「選び直したら切り替わる」をどう実現しているか
 
-- **true** … `PlayerSession.SetTracks(new[]{ id })` — 選んだ 1 件から始めて、続きはセッションの自動補充(おすすめ)に任せる
-- **false** … `PlayerSession.Enqueue(id)` してそこまで `Next()` で進む — いまの曲一覧を残す
+再生エンジン側の**2 つの仕様**に合わせる必要がありました(どちらも Phase1〜3 のままで、
+**こちらが合わせる側**です)。
 
-呼んでいるのは `PlayerSession` の**既存 API だけ**です。
+1. `MediaPlayer.Play()` は**何も読み込んでいないときだけ** Queue の先頭を読む
+   （すでに鳴っている状態で呼んでも、鳴っているものが続くだけ）
+2. Queue は**先頭 = いま鳴っているもの**という約束で、
+   `Next()` は**先頭を捨てて次を読む**
+
+つまり切り替えたいものは **先頭の次(index 1)** に置いてから `Next()` する、
+というのが既存 API だけで成立する唯一の道です。
+
+```csharp
+int wanted = somethingIsLoaded ? 1 : 0;          // 鳴っていなければ先頭でよい
+int index = queue.IndexOf(mediaId);
+if (index > wanted) queue.Move(index, wanted);   // IQueue.Move は Phase1-4 の API
+
+bool started = somethingIsLoaded ? _session.Next() : _session.Play();
+if (!_session.IsPlaying) started = _session.Play();   // 一時停止から切り替えた場合
+```
+
+呼んでいるのは `PlayerSession` / `IQueue` の**既存 API だけ**です。
 `AutoQueueEnabled` などの設定も書き換えません
 (Phase3-4 で「利用側がセッションの設定を書き換えない」形に整理した方針をそのまま守ります)。
+
+> この形にたどり着くまでの経緯は §8-1 に書いてあります
+> (最初は `SetTracks` + `Play()` で済むと思い込んでいて、テストで落ちました)。
 
 ---
 
@@ -239,7 +259,7 @@ Assets/SmartMediaPlatform/Library/
 │   └── Phase4MediaLibraryDemoScene.unity     カメラ + 上記 2 デモ
 └── Tests/EditMode/
     ├── MediaLibraryTests.cs                  52 ケース
-    └── LibraryPlaybackBridgeTests.cs         21 ケース
+    └── LibraryPlaybackBridgeTests.cs         24 ケース
 
 Assets/SmartMediaPlatform/Video/VRChat/Runtime/
 ├── VideoPlayerPreference.cs                  ★新規 Inspector で選ぶ enum
@@ -314,8 +334,8 @@ Game ビューに一覧が出ます。
 
 | 見るところ | 期待 |
 |---|---|
-| `SmartMediaPlatform.Library.Tests` | **73 ケース** すべて緑 |
-| 全体 | **763 ケース** すべて緑(既存 690 は変更なし) |
+| `SmartMediaPlatform.Library.Tests` | **76 ケース** すべて緑 |
+| 全体 | **766 ケース** すべて緑(既存 690 は変更なし) |
 
 要件との対応。
 
@@ -358,21 +378,65 @@ Game ビューに一覧が出ます。
 
 ## 8. 実装中に見つけた、報告しておきたいこと
 
-### 8-1. `Next()` は Queue を補充するので「空になるまで進める」は書けない
+### 8-1. 「再生中に別のものへ切り替える」は Phase4-1 で初めて必要になった
 
-`LibraryPlaybackBridge` の `ReplaceTracksOnPlay = false` で、
-足したものまで `Next()` で進める処理を書いたとき、最初は
+**最初の実装は間違っていて、EditMode テストで落ちました。**
+記録として残します。
+
+最初はこう書いていました。
 
 ```csharp
-while (_session.Queue.Count > 1 && !Same(_session.CurrentMediaId, mediaId)) _session.Next();
+_session.SetTracks(new[] { mediaId });   // Queue を作り直して
+bool started = _session.Play();          // 先頭から始める…つもりだった
 ```
 
-としていました。**これは止まらない可能性があります。**
-`PlayerSession.Next()` は中で `EnsureQueueFilled()` を 2 回呼ぶので、
-**Queue の件数は減らない**からです。
-回数に上限を付けて直しました(足した時点の Queue の長さぶんだけ進めれば必ず届く)。
+`RecommendationPlaybackService.Start()`(Phase3-3)と同じ形なので通ると思っていましたが、
+**再生中に呼ぶと切り替わりません。**
 
-同じ形の書き方が他にもないか確認しましたが、見つかりませんでした。
+```
+Expected: not equal to "video-001"
+  But was:  "video-001"
+```
+
+原因は `MediaPlayer.Play()`(Phase2-2)のこの 1 行です。
+
+```csharp
+if (_manager.GetCurrent() == null && !_manager.LoadCurrent()) { ... }
+```
+
+**何かが読み込まれていると `LoadCurrent()` を飛ばす**ので、Queue を作り直しても
+鳴っているものが続くだけでした。`Start()` が動いていたのは
+「まだ何も読み込んでいない」状態から呼んでいたからです。
+
+さらに `Next()` に逃げようとしても駄目でした。
+`BackendManager.Skip()` は**先頭を捨ててから次を読む**ので、
+`SetTracks` 直後(Queue の先頭 = 狙ったもの)に `Next()` すると
+**狙ったものを飛び越えます。**
+
+```csharp
+_queue.Skip();                  // 先頭を捨てる
+var head = _queue.Peek();       // その次を読む
+```
+
+つまり Queue には「**先頭 = いま鳴っているもの**」という約束があり、
+`Play()` も `Skip()` もその前提で書かれています。
+Phase1〜3 は Ended / Next だけで進んでいたのでこの前提で足りていて、
+**「利用者が任意の 1 件を選んで今すぐ鳴らす」は Phase4-1 で初めて出てきた要求**でした。
+
+制約が「`PlayerSession` / `MediaPlayer` の責務は変更しない」だったので、
+`Bridge` 側で既存 API を組み合わせて解決しています(§2 の `LibraryPlaybackBridge`)。
+`IQueue.Move`(Phase1-4 から並べ替え用にある API)で
+狙ったものを index 1 に寄せてから `Next()` する形です。
+
+**あわせて `ReplaceTracksOnPlay` を削除しました。**
+私が用意した「2 つの動きを選べる」オプションでしたが、要件には無く、
+どちらの経路も上記の前提を踏み外していました。
+動きを 1 つに絞ったほうが正しく保てます。
+
+> **設計上の提案(独断では入れていません)**:
+> この「任意の 1 件へ今すぐ切り替える」は Playlist の曲選択・履歴からの再生でも要ります。
+> `PlayerSession.PlayNow(string mediaId)` として本体に置くほうが素直かもしれません。
+> ただし今回の制約に触れるため、**Bridge 側に留めています。**
 
 ### 8-2. `MediaType` を増やしたときに 2 箇所直す必要がある
 
