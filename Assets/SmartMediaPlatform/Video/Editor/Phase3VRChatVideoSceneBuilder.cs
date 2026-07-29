@@ -87,17 +87,15 @@ namespace SmartMediaPlatform.Video.EditorTools
             var scene = EditorSceneManager.NewScene(
                 NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
-            // 1. 映像の出力先(RenderTexture を貼った板)
-            var screen = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            screen.name = "VideoScreen";
-            screen.transform.position = new Vector3(0f, 1.5f, 3f);
-            screen.transform.localScale = new Vector3(3.2f, 1.8f, 1f);
+            // 1. 映像の出力先
+            var screen = VRChatVideoPlayerFactory.CreateScreen();
 
-            // 2. VRChat の動画プレイヤー(Unity 版)+ 音声出力
+            // 2. VRChat の動画プレイヤー(Phase4-4 で AVPro が既定)+ 音声出力
             var playerObject = new GameObject("VRCVideoPlayer");
             var audioSource = playerObject.AddComponent<AudioSource>();
             audioSource.spatialBlend = 0f;
-            var videoPlayer = playerObject.AddComponent<VRCUnityVideoPlayer>();
+            var built = VRChatVideoPlayerFactory.AddPlayer(
+                playerObject, VideoPlayerPreference.AVPro, screen, audioSource);
 
             // 3. Backend のホスト(同じ GameObject に置く)
             var host = playerObject.AddComponent<VRChatVideoBackendHost>();
@@ -115,12 +113,11 @@ namespace SmartMediaPlatform.Video.EditorTools
 
             Debug.Log(
                 $"[Phase3VRChatVideoSceneBuilder] SDK シーンを作成しました: {SdkScenePath}\n"
-                + $"  VRCUnityVideoPlayer: {videoPlayer.name} / 進行役: {demo.GetType().Name}\n"
+                + built.Report
+                + $"  進行役        : {demo.GetType().Name}\n"
                 + $"  ベイク済み URL: {baked} 件\n"
-                + $"  映像の出力先({screen.name})に RenderTexture / Material を割り当ててから Play してください。\n"
                 + "  Play を押すと Load → Play → Pause → Resume → Stop → Ended → Error を Console に出力します。\n"
-                + "  VRCAVProVideoPlayer で試す場合は、VRCUnityVideoPlayer を置き換えて "
-                + "VRChatVideoBackendHost の Video Player に割り当て直してください。");
+                + "  Unity 版で試す場合は VRChatVideoBackendHost の Preferred Player を Unity にしてください。");
         }
 
         [MenuItem("Tools/Smart Media Platform/Bake Catalog Urls Into Selected Video Host")]

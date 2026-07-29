@@ -116,16 +116,15 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
             var world = UdonSharpSceneUtility.EnsureSceneDescriptor();
 
             // 2. 映像の出力先
-            var screen = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            screen.name = "VideoScreen";
-            screen.transform.position = new Vector3(0f, 1.5f, 3f);
-            screen.transform.localScale = new Vector3(3.2f, 1.8f, 1f);
+            var screen = VRChatVideoPlayerFactory.CreateScreen();
 
             // 3. 動画プレイヤー + Phase3-2 のイベント経路
             var playerObject = new GameObject("VRCVideoPlayer");
             var audioSource = playerObject.AddComponent<AudioSource>();
             audioSource.spatialBlend = 0f;
-            var videoPlayer = playerObject.AddComponent<VRCUnityVideoPlayer>();
+            // Phase4-4: 実機の標準は AVPro。切り替えは Host の Preferred Player。
+            var built = VRChatVideoPlayerFactory.AddPlayer(
+                playerObject, VideoPlayerPreference.AVPro, screen, audioSource);
 
             // UdonSharp は「プロキシ + UdonBehaviour + プログラム」の 3 点が揃って初めて動く。
             var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
@@ -165,7 +164,8 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
             Debug.Log(
                 "[Phase3AutoPlayRecoverySceneBuilder] SDK シーンを作成しました: "
                 + SdkScenePath + "\n"
-                + $"  {videoPlayer.GetType().Name} / {demo.GetType().Name}\n"
+                + built.Report
+                + $"  進行役         : {demo.GetType().Name}\n"
                 + $"  Udon 中継     : {(relay != null ? relay.GetType().Name : "未追加")}\n"
                 + $"  SceneDescriptor: {(world != null ? world.name : "未作成(ClientSim が起動しません)")}\n"
                 + $"  U# プログラム : {report}\n"
@@ -173,7 +173,7 @@ namespace SmartMediaPlatform.AutoPlay.EditorTools
                 + $"  わざと焼かなかった動画: {string.Join(", ", skipped)}\n"
                 + "     → この動画に当たると InvalidUrl で失敗します。\n"
                 + "       それでも再生が止まらないことが Phase3-4 の確認点です。\n"
-                + $"  映像の出力先({screen.name})に RenderTexture / Material を割り当ててください。\n"
+                
                 + "  ※ VideoCatalogSource の URL は架空のアドレスです。実際に映像を出すには\n"
                 + "     実在する動画 URL に差し替えてから焼き直してください。"
                 + (relay == null

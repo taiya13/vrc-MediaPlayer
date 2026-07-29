@@ -116,6 +116,51 @@ namespace SmartMediaPlatform.Library.EditorTools
                 + "  左で選んで「▶ 再生」→ Queue に積まれ、「曲を終わらせる(Ended)」で次へ進みます。\n"
                 + "  同時に Console へ一連の流れがまとめて出力されます。");
         }
+
+        // ───────── Phase4-4: VideoBackend まで通す(SDK 不要) ─────────
+
+        private const string VideoScenePath = SceneFolder + "/Phase4VideoBackendFlowDemoScene.unity";
+
+        [MenuItem("Tools/Smart Media Platform/Open Phase4-4 Video Backend Flow Demo Scene (SDK 不要)")]
+        public static void OpenVideoBackendScene()
+        {
+            if (!File.Exists(VideoScenePath))
+            {
+                if (!EditorUtility.DisplayDialog(
+                        "Smart Media Platform",
+                        "Phase4VideoBackendFlowDemoScene が見つかりません。新しく作成しますか?",
+                        "作成する", "キャンセル"))
+                {
+                    return;
+                }
+                CreateVideoBackendScene();
+                return;
+            }
+
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            EditorSceneManager.OpenScene(VideoScenePath);
+        }
+
+        [MenuItem("Tools/Smart Media Platform/Create Phase4-4 Video Backend Flow Demo Scene (再生成)")]
+        public static void CreateVideoBackendScene()
+        {
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+            var scene = EditorSceneManager.NewScene(
+                NewSceneSetup.EmptyScene, NewSceneMode.Single);
+
+            var go = new GameObject("Phase4VideoBackendFlowDemo");
+            go.AddComponent<VideoBackendFlowConsoleDemo>();
+
+            Directory.CreateDirectory(SceneFolder);
+            EditorSceneManager.SaveScene(scene, VideoScenePath);
+            AssetDatabase.Refresh();
+
+            Debug.Log(
+                "[Phase4MediaLibrarySceneBuilder] DemoScene を作成しました: " + VideoScenePath + "\n"
+                + "  Play を押すと Library → Queue → Player → VideoBackend の通しが Console に出ます。\n"
+                + "  VRChat SDK は不要です(動画プレイヤーの位置に SimulatedVRCVideoPlayer が入ります)。");
+        }
     }
 }
 #endif

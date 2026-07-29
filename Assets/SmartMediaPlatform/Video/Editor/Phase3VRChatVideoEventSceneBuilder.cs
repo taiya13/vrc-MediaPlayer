@@ -108,10 +108,7 @@ namespace SmartMediaPlatform.Video.EditorTools
             var world = UdonSharpSceneUtility.EnsureSceneDescriptor();
 
             // 1. 映像の出力先
-            var screen = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            screen.name = "VideoScreen";
-            screen.transform.position = new Vector3(0f, 1.5f, 3f);
-            screen.transform.localScale = new Vector3(3.2f, 1.8f, 1f);
+            var screenRenderer = VRChatVideoPlayerFactory.CreateScreen();
 
             // 2. 動画プレイヤー本体 + イベントの受け口
             //    VRChat はイベントを「同じ GameObject の UdonBehaviour」へ送るので、
@@ -119,7 +116,9 @@ namespace SmartMediaPlatform.Video.EditorTools
             var playerObject = new GameObject("VRCVideoPlayer");
             var audioSource = playerObject.AddComponent<AudioSource>();
             audioSource.spatialBlend = 0f;
-            var videoPlayer = playerObject.AddComponent<VRCUnityVideoPlayer>();
+            var built = VRChatVideoPlayerFactory.AddPlayer(
+                playerObject, VideoPlayerPreference.AVPro, screenRenderer, audioSource);
+            var videoPlayer = built.Player;
 
             // UdonSharp は「プロキシ + UdonBehaviour + プログラム」の 3 点が揃って初めて動く。
             // 素の AddComponent<T>() ではプロキシしか付かず、
@@ -149,7 +148,7 @@ namespace SmartMediaPlatform.Video.EditorTools
                 + $"  SceneDescriptor: {(world != null ? world.name : "未作成(ClientSim が起動しません)")}\n"
                 + $"  U# プログラム : {report}\n"
                 + $"  ベイク済み URL: {baked} 件\n"
-                + $"  映像の出力先({screen.name})に RenderTexture / Material を割り当ててください。\n"
+                + built.Report
                 + "  Play を押すと OnVideoReady / OnVideoStart / OnVideoEnd / OnVideoError の\n"
                 + "  受理・棄却の回数が Console に出ます。\n"
                 + (relay == null

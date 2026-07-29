@@ -176,7 +176,20 @@ UI は **Game ビューに一覧を描いてクリックで選べる画面**(`Me
 - DemoScene: **Tools > Smart Media Platform > Open Phase4-3 Playback Flow Demo Scene** → **Play**(上=再生中 / 左=Library / 中=関連 / 右=Queue の 4 区画を操作できます)
 - 設計ドキュメント(追加クラス / データフロー / 接続ポイント / 確認項目): [docs/Phase4-3_PlaybackFlow.md](docs/Phase4-3_PlaybackFlow.md)
 
+## Phase4-4: VRChat VideoPlayer への接続(実装済み)
+
+**Phase4-3 までのデモは `DummyBackend`(ログのみ)でした。それを実機の動画バックエンドへ差し替え、あわせて実機の標準を AVPro にした層。** 差し替えは **1 行**です — `backendManager.RegisterBackend(new DummyBackend(...))` を `RegisterBackend(host.EnsureBuilt(logger))` に変えるだけ。`host.EnsureBuilt()` が返すのは `VideoBackendAdapter`(= `IMediaBackend`)なので **`DummyBackend` と同じ口に入り**、`PlaybackFlow` も `PlayerSession` も `Queue` も `MediaLibrary` もこの違いを知りません。
+
+**AVPro を既定にしました。** シーンを作る 4 つのメニューがすべて **AVPro を生成**します。AVPro と Unity 版では配線の形が違う（AVPro は出力先の側に `VRCAVProVideoScreen` / `VRCAVProVideoSpeaker` を付けてプレイヤーを指す）ため、その違いを吸収する **`VRChatVideoPlayerFactory`** を追加しました。SDK の型は**名前で探す**ので（`VRCVideoPlayerBridge.DetectKind` と同じ方針）、SDK 更新で名前空間が変わってもコンパイルは壊れず、配線できなかったものは Console に報告されます。実行時の切り替えは従来どおり `VRChatVideoBackendHost` の `Preferred Player`(Inspector)1 箇所です。
+
+**SDK 無しでも通しを確認できます。** 実機バックエンドの検証を SDK 必須にすると SDK 未導入の環境で検証できなくなるため、`SimulatedVRCVideoPlayer` を使った `VideoBackendFlowConsoleDemo` と 16 ケースのテストを用意しました。`IVRCVideoPlayer` から上は実機とまったく同じ経路を通るので、**実機でしか確かめられないのは SDK の API 呼び出しだけ**に絞ってあります。SDK 依存は新しい asmdef `SmartMediaPlatform.Library.VRChat`(`defineConstraints: VRC_SDK_VRCSDK3`)に閉じ込めました。再生エンジンと `PlaybackFlow` / `MediaLibrary` / `QueueView` / `NowPlayingView` は**差分ゼロ**です。
+
+- コード: `Assets/SmartMediaPlatform/Library/VRChat/`(SDK 版の画面)、`Video/Editor/VRChatVideoPlayerFactory.cs`、`Library/Demo/VideoBackendFlowConsoleDemo.cs`
+- DemoScene(SDK 不要): **Tools > Smart Media Platform > Open Phase4-4 Video Backend Flow Demo Scene (SDK 不要)** → **Play**
+- DemoScene(SDK で実際に再生): **Tools > Smart Media Platform > Create Phase4-4 VRChat Playback Scene (実際に再生)** で生成して **Play**(エディタで絵を見たい場合は Unity 版のメニュー)
+- 設計ドキュメント(追加クラス / 再生フロー / 接続ポイント / 確認項目): [docs/Phase4-4_VRChatVideoPlayerIntegration.md](docs/Phase4-4_VRChatVideoPlayerIntegration.md)
+
 ## テスト
 
-EditMode テスト計 **861 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 139)。
+EditMode テスト計 **877 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 155)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
