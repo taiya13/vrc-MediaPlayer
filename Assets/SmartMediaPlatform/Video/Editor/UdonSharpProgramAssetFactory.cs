@@ -96,6 +96,108 @@ namespace SmartMediaPlatform.Video.EditorTools
             EditorUtility.DisplayDialog("Smart Media Platform", message, "OK");
         }
 
+        [MenuItem(MenuRoot + "Repair Broken UdonSharp Program Assets")]
+        public static void RepairBrokenProgramAssetsMenu()
+        {
+            if (!IsAvailable)
+            {
+                EditorUtility.DisplayDialog(
+                    "Smart Media Platform",
+                    "UdonSharp が見つかりません。VRChat SDK(Worlds)を導入してください。",
+                    "OK");
+                return;
+            }
+
+            int repaired = RepairBrokenProgramAssets(out int removed, out var details);
+
+            string message = repaired == 0 && removed == 0
+                ? "壊れた U# プログラムはありませんでした。"
+                : $"修復 {repaired} 件 / 削除 {removed} 件\n\n{details}";
+
+            Debug.Log("[UdonSharpProgramAssetFactory] " + message);
+            EditorUtility.DisplayDialog("Smart Media Platform", message, "OK");
+        }
+
+        /// <summary>
+        /// <b>「Source C# script … is null」を直す。</b>
+        ///
+        /// <b>なぜ壊れるのか</b><br/>
+        /// プログラム(<c>.asset</c>)は元の <c>.cs</c> を <b>GUID</b> で指しています。
+        /// <c>.meta</c> ごと <c>.cs</c> を入れ替えると GUID が変わり、
+        /// 前に作られたプログラムは行き先を失って null になります。
+        /// U# は壊れたプログラムが 1 つでもあるとコンパイル全体を止めるので、
+        /// <b>何も動かなくなります</b>。
+        ///
+        /// ここでは、ファイル名から元の クラス を推測して繋ぎ直します。
+        /// 推測できないものは、放っておくとコンパイルを止め続けるので削除します。
+        /// </summary>
+        /// <param name="removed">繋ぎ直せずに消したプログラムの数。</param>
+        /// <param name="details">Console 用の内訳。</param>
+        /// <returns>繋ぎ直した数。</returns>
+        public static int RepairBrokenProgramAssets(out int removed, out string details)
+        {
+            removed = 0;
+            details = string.Empty;
+            if (!IsAvailable) return 0;
+
+            var scriptMember = FindMonoScriptMember(ProgramAssetType);
+            if (scriptMember == null) return 0;
+
+            var log = new StringBuilder();
+            int repaired = 0;
+
+            foreach (var guid in AssetDatabase.FindAssets("t:" + ProgramAssetType.Name))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var asset = AssetDatabase.LoadAssetAtPath<ScriptableObject>(path);
+                if (asset == null || !ProgramAssetType.IsInstanceOfType(asset)) continue;
+
+                // 生きているものは触らない
+                var current = scriptMember.GetValue(asset) as MonoScript;
+                if (current != null && current.GetClass() != null) continue;
+
+                // ファイル名 = クラス名 という前提で繋ぎ直す
+                //(EnsureProgramAsset が .cs の隣に同じ名前で作るため)
+                string typeName = Path.GetFileNameWithoutExtension(path);
+                var type = FindBehaviourTypeByName(typeName);
+                var script = type != null ? FindMonoScript(type) : null;
+
+                if (script != null)
+                {
+                    scriptMember.SetValue(asset, script);
+                    EditorUtility.SetDirty(asset);
+                    repaired++;
+                    log.AppendLine($"  繋ぎ直し: {path} -> {type.FullName}");
+                    continue;
+                }
+
+                AssetDatabase.DeleteAsset(path);
+                removed++;
+                log.AppendLine($"  削除    : {path}(対応する UdonSharpBehaviour が見つかりません)");
+            }
+
+            if (repaired > 0 || removed > 0)
+            {
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+
+            details = log.ToString();
+            return repaired;
+        }
+
+        /// <summary>名前から <c>UdonSharpBehaviour</c> を探す。</summary>
+        private static Type FindBehaviourTypeByName(string typeName)
+        {
+            if (string.IsNullOrEmpty(typeName)) return null;
+
+            foreach (var type in FindAllBehaviourTypes())
+            {
+                if (type.Name == typeName) return type;
+            }
+            return null;
+        }
+
         [MenuItem(MenuRoot + "Diagnose UdonSharp Setup")]
         public static void DiagnoseMenu()
         {

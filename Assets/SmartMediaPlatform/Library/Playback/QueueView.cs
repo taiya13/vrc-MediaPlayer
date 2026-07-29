@@ -128,8 +128,12 @@ namespace SmartMediaPlatform.Library.Playback
         /// </summary>
         public int ClearUpcoming()
         {
+            // ★ 見ているのは Queue そのものの件数です。
+            //   ここで表示側の Count(= 直近に組み直した並びの件数)を使うと、
+            //   1 件外しても表示は古いままなので次の RemoveAt が範囲外になり、
+            //   1 件だけ外して止まってしまいます。
             int removed = 0;
-            while (Count > 1 && _queue.RemoveAt(Count - 1)) removed++;
+            while (_queue.Count > 1 && _queue.RemoveAt(_queue.Count - 1)) removed++;
 
             if (removed > 0) Refresh();
             return removed;

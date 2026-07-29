@@ -155,6 +155,8 @@ namespace UnityEditor
         public string title { get; set; }
         public GUIContent titleContent { get; set; }
         public Rect position { get; set; }
+        public Vector2 minSize { get; set; }
+        public Vector2 maxSize { get; set; }
         public void Show() { }
         public void Close() { }
         public void Repaint() { }
@@ -186,31 +188,64 @@ namespace UnityEditor
 
     public static class EditorGUILayout
     {
-        public static void LabelField(string label) { }
-        public static void LabelField(string label, string value) { }
+        public static void LabelField(string label, params GUILayoutOption[] options) { }
+        public static void LabelField(string label, GUIStyle style, params GUILayoutOption[] options) { }
+        public static void LabelField(string label, string value, params GUILayoutOption[] options) { }
         public static void HelpBox(string message, MessageType type) { }
+        public static void HelpBox(string message, MessageType type, bool wide) { }
         public static void PropertyField(SerializedProperty property) { }
         public static void PropertyField(SerializedProperty property, bool includeChildren) { }
         public static void Space() { }
         public static void Space(float width) { }
-        public static bool Toggle(string label, bool value) { return false; }
-        public static int IntField(string label, int value) { return 0; }
-        public static float FloatField(string label, float value) { return 0f; }
-        public static string TextField(string label, string value) { return null; }
-        public static UnityEngine.Object ObjectField(string label, UnityEngine.Object obj, Type type, bool allowSceneObjects) { return null; }
+        public static bool Toggle(bool value, params GUILayoutOption[] options) { return false; }
+        public static bool Toggle(string label, bool value, params GUILayoutOption[] options) { return false; }
+        public static bool Foldout(bool foldout, string content) { return false; }
+        public static bool Foldout(bool foldout, string content, bool toggleOnLabelClick) { return false; }
+        public static int IntField(int value, params GUILayoutOption[] options) { return 0; }
+        public static int IntField(string label, int value, params GUILayoutOption[] options) { return 0; }
+        public static float FloatField(float value, params GUILayoutOption[] options) { return 0f; }
+        public static float FloatField(string label, float value, params GUILayoutOption[] options) { return 0f; }
+        public static string TextField(string value, params GUILayoutOption[] options) { return value; }
+        public static string TextField(string label, string value, params GUILayoutOption[] options) { return value; }
+        public static string TextArea(string value, params GUILayoutOption[] options) { return value; }
+        public static Enum EnumPopup(Enum selected, params GUILayoutOption[] options) { return selected; }
+        public static Enum EnumPopup(string label, Enum selected, params GUILayoutOption[] options) { return selected; }
+        public static int Popup(int index, string[] displayed, params GUILayoutOption[] options) { return index; }
+        public static UnityEngine.Object ObjectField(UnityEngine.Object obj, Type type, bool allowSceneObjects, params GUILayoutOption[] options) { return null; }
+        public static UnityEngine.Object ObjectField(string label, UnityEngine.Object obj, Type type, bool allowSceneObjects, params GUILayoutOption[] options) { return null; }
+        public static Vector2 BeginScrollView(Vector2 scrollPosition, params GUILayoutOption[] options) { return scrollPosition; }
+        public static void EndScrollView() { }
         public static void BeginHorizontal(params GUILayoutOption[] options) { }
+        public static void BeginHorizontal(GUIStyle style, params GUILayoutOption[] options) { }
         public static void EndHorizontal() { }
         public static void BeginVertical(params GUILayoutOption[] options) { }
+        public static void BeginVertical(GUIStyle style, params GUILayoutOption[] options) { }
         public static void EndVertical() { }
+        public static void Separator() { }
+    }
+
+    public static class EditorStyles
+    {
+        public static GUIStyle boldLabel { get { return null; } }
+        public static GUIStyle label { get { return null; } }
+        public static GUIStyle miniLabel { get { return null; } }
+        public static GUIStyle wordWrappedLabel { get { return null; } }
+        public static GUIStyle helpBox { get { return null; } }
+        public static GUIStyle textField { get { return null; } }
+        public static GUIStyle foldout { get { return null; } }
+        public static GUIStyle miniButton { get { return null; } }
+        public static GUIStyle toolbarButton { get { return null; } }
     }
     public enum MessageType { None, Info, Warning, Error }
 
     public static class EditorGUI
     {
+        public static int indentLevel { get; set; }
         public static void BeginChangeCheck() { }
         public static bool EndChangeCheck() { return false; }
         public static void BeginDisabledGroup(bool disabled) { }
         public static void EndDisabledGroup() { }
+        public static void DrawRect(UnityEngine.Rect rect, UnityEngine.Color color) { }
     }
 
     public static class EditorPrefs

@@ -194,16 +194,33 @@ VRChat の動画イベント(`OnVideoEnd` / `OnVideoError`)は
 
 ### 5-1. 準備
 
+**`Tools > Smart Media Platform > セットアップ`** を開いてください。
+やることが上から順に並んでいます。手で辿る場合は次のとおりです。
+
 1. `Tools > Smart Media Platform > Create SmartMediaPlayer Prefab (VRChat 実機・Udon)`
-2. Console に「Prefab を作成しました」と出るのを確認
-   (「Recompile が必要」と出たら、コンパイル完了後にもう一度メニューを実行)
-3. `SmartMediaPlayer.prefab` を Hierarchy へドラッグ
-4. `Screen/Surface` を見える位置へ動かす
-5. **URL を実在するものに差し替える**
-   `Catalog` の `UdonMediaCatalog` を選び、Inspector の `Urls` を編集
-   (同梱カタログの URL は架空のアドレスです。`VRCUrl` は実行時に作れないため、
-   ここで入れたものだけが再生できます)
-6. `VRChat SDK > Build & Test`
+   - Console に「Prefab を作成しました」と出るのを確認
+   - 「Recompile が必要」と出たら、コンパイル完了後にもう一度メニューを実行
+   - ⚠️ Prefabs フォルダにある **`SmartMediaPlayer_NoSDK.prefab` は別物**です
+     (エディタで仕組みを見るためのもの。音も映像も出ません)
+2. できた `SmartMediaPlayer.prefab` を Hierarchy へドラッグ
+3. `Screen/Surface` を見える位置へ動かす
+4. **URL を入れる** — `SmartMediaPlayer > Catalog` を選ぶと、Inspector に
+   **1 行 = 1 本**の一覧が出ます。URL を書いて「反映する」を押してください。
+
+   ```
+   1. [Sunrise Timelapse            ] ↑ ↓ ×
+      URL  [https://...             ]
+      作者 [Studio Aurora ] [Video ] 秒 [212]
+   ```
+
+   `UdonMediaCatalog` は Udon の制約で 11 本の並列配列としてデータを持つため、
+   素の Inspector では編集できません。この一覧はその代わりです
+   (書き戻しは `UdonCatalogBaker` に任せるので、タグや関連の
+   CSR オフセットは自動で組み直されます)。
+
+   同梱サンプルの URL は架空のアドレスです。
+   `VRCUrl` は実行時に作れないため、**ここで焼き込んだものだけが再生できます**。
+5. `VRChat SDK > Build & Test`
 
 ### 5-2. 確認する項目
 
@@ -226,6 +243,7 @@ VRChat の動画イベント(`OnVideoEnd` / `OnVideoError`)は
 | 15 | Queue が 2 本を切る | おすすめで自動補充されて 5 本に戻る |
 | 16 | 2 人で入る | それぞれのクライアントで再生される(**同期は未実装**。§6 参照) |
 
+
 ### 5-3. エディタ側の確認
 
 ```
@@ -233,18 +251,84 @@ Window > General > Test Runner > EditMode > Run All
 ```
 
 - `SmartMediaPlatform.World.UdonModel.Tests` … **37 ケース**(Phase5-2 で追加)
-- 既存のテストは全部そのまま通ります(Phase1〜5-1 のクラスは差分ゼロ)
+- 既存のテストで落ちていた 2 件は Phase5-2 で直しました(§6)
+
+**VRChat SDK 自身のテスト**(`UnityEditorTests.dll` の `GraphNodeTests` /
+`UdonGraphSettingsTests`)もここに混ざります。
+`CheckHelpURLsForSystemNodes` は SDK 側のドキュメント URL が 404 なだけなので
+このプロジェクトとは無関係です。
+`GetGraphFromSceneTest` が落ちるときは §5-4 を見てください。
+
+Unity を起動せずに確かめることもできます。
 
 ```
-python3 tools/typecheck/typecheck.py    # 全アセンブリの型検査(Unity 不要)
+python3 tools/typecheck/typecheck.py    # 全アセンブリを実際にコンパイルして型検査
+python3 tools/typecheck/runtests.py     # EditMode テストを mono で実行(841 ケース)
 python3 tools/typecheck/udon_lint.py    # Udon で書けない書き方の検出
 ```
 
 ---
 
-## 6. 今後残る課題
+### 5-4. 「Source C# script … is null」が出たとき
 
-### 6-1. 同期していない(いちばん大きい)
+`Tools > Smart Media Platform > セットアップ` の
+**「壊れた U# プログラムを修復する」**を押してください。
+
+U# のプログラム(`.asset`)は元の `.cs` を **GUID** で指しています。
+スクリプトを `.meta` ごと入れ替えると GUID が変わり、
+プログラムは行き先を失って `null` になります。
+**U# は壊れたプログラムが 1 つでもあるとコンパイル全体を止める**ので、
+「U# scripts have compile errors」と出て何も動かなくなります。
+
+Phase5-2 では、この事故が起きないように
+**すべてのスクリプトに `.meta` を同梱しました**。
+GUID がリポジトリ側で固定されるので、zip を展開し直しても変わりません。
+
+---
+
+## 6. Phase5-2 で見つかった既存バグ 2 件
+
+Unity の Test Runner で落ちていた 2 件は、Phase5-2 の変更ではなく
+**Phase4-3 / 4-4 から入っていたバグ**でした
+(Phase5-1 のコミットでも同じように落ちることを確認しています)。
+
+### `QueueView.ClearUpcoming()` が 1 件しか消せない
+
+```csharp
+while (Count > 1 && _queue.RemoveAt(Count - 1)) removed++;
+```
+
+`Count` は**表示側の件数**(直近に組み直した並び)です。
+1 件外しても表示は古いままなので、次の `RemoveAt` が範囲外になって止まります。
+結果、5 件の Queue で「先頭以外を全部消す」と 1 件しか消えませんでした。
+
+→ ループ中は `_queue.Count`(Queue そのものの件数)を見るようにしました。
+
+### 再生に失敗すると、次を読み込んでも鳴らない ★実機に影響
+
+```csharp
+bool shouldKeepPlaying = IsPlaying() || GetState() == BackendState.Ended;
+```
+
+`MediaPlayer.SkipNext()` は「さっきまで鳴っていたか」で
+次を自動再生するか決めます。ところが**エラー直後の状態は `Error`** で、
+`Playing` でも `Ended` でもないため、次を読み込んだまま `Ready` で止まっていました。
+
+**実機では「URL が 1 本切れていると、そこで再生が終わる」という挙動**です。
+壊れているものを飛ばして続ける、という Phase3-4 で決めた復帰の形が
+エラー経路だけ抜けていました。
+
+→ `Error` も「鳴っていた」に含めました。
+
+なお **Udon 版にはこのバグはありません**。
+`UdonPlayerSession.Next()` は必ず `Backend.LoadAndPlay()` を呼ぶ形なので、
+読み込んで鳴らさない状態になりません。
+
+---
+
+## 7. 今後残る課題
+
+### 7-1. 同期していない(いちばん大きい)
 
 いまの実装は **`BehaviourSyncMode.None`**、つまり**各自のクライアントで別々に再生**します。
 「みんなで同じものを同じ位置で観る」にはネットワーク同期が要ります。
@@ -259,7 +343,7 @@ python3 tools/typecheck/udon_lint.py    # Udon で書けない書き方の検出
 これは Phase5-3 相当の分量です。同期を入れると
 「誰の判断で次へ進むか」が変わるので、`UdonPlayerSession` の設計に踏み込みます。
 
-### 6-2. UI がまだ素朴
+### 7-2. UI がまだ素朴
 
 - `Text` を並べただけで、スクロールバーもサムネイルもありません
 - 一覧のページ送り(`ScrollLibraryUp` / `ScrollLibraryDown`)はメソッドだけあって、
@@ -269,7 +353,7 @@ python3 tools/typecheck/udon_lint.py    # Udon で書けない書き方の検出
 - ワールド内 uGUI の `Button` ではなく Collider + `Interact` で押しています。
   確実ですが、押した感(ハイライト)がありません
 
-### 6-3. 検証できていないところ
+### 7-3. 検証できていないところ
 
 - **UdonSharp のコンパイル自体は未検証**です。この環境に VRChat SDK が無いため、
   `tools/typecheck/udon_lint.py` で「Udon で書けない書き方」を機械的に排除してあるだけです。
@@ -281,7 +365,7 @@ python3 tools/typecheck/udon_lint.py    # Udon で書けない書き方の検出
   `VRChatVideoPlayerFactory` が名前で探して繋いでいます。SDK 側の名前が変わると
   Console に「配線できませんでした」と出ます(壊れはしません)。
 
-### 6-4. C# 版と Udon 版の二重管理
+### 7-4. C# 版と Udon 版の二重管理
 
 `PlaybackModel` ↔ `UdonPlayerSession` は手で写しています。
 片方だけ直すとずれます。いまは
@@ -292,7 +376,7 @@ python3 tools/typecheck/udon_lint.py    # Udon で書けない書き方の検出
 で守っていますが、**ずれを機械的に検出する仕組みはありません**。
 クラスが増えるなら、C# から U# を生成する方向を考える時期です。
 
-### 6-5. カタログの焼き込みが手作業寄り
+### 7-5. カタログの焼き込みが手作業寄り
 
 Prefab を作るときに同梱サンプル(動画 10 本)を焼き込みます。
 差し替えは `UdonMediaCatalog` の Inspector を直接編集する形で、

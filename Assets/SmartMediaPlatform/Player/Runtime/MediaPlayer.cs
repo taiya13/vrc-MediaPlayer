@@ -134,8 +134,17 @@ namespace SmartMediaPlatform.Player
         /// </summary>
         public bool SkipNext()
         {
-            // Ended 直後は状態が Playing ではないが、利用者の体感は「再生中だった」なので続けて鳴らす。
-            bool shouldKeepPlaying = IsPlaying() || GetState() == BackendState.Ended;
+            // Ended / Error 直後は状態が Playing ではないが、
+            // 利用者の体感は「再生中だった」なので続けて鳴らす。
+            //
+            // Error を含めるのが要点です。1 本 URL が切れているだけで
+            // 次を読み込んだまま鳴らさない(Ready で止まる)と、
+            // 実機では「壊れた動画に当たると再生が終わる」ことになります。
+            // 壊れているものを飛ばして続ける、が Phase3-4 で決めた復帰の形です。
+            var before = GetState();
+            bool shouldKeepPlaying = IsPlaying()
+                                     || before == BackendState.Ended
+                                     || before == BackendState.Error;
 
             var leaving = _manager.GetCurrent();
             string from = leaving != null ? leaving.Id : "(none)";

@@ -214,8 +214,12 @@ UI は **Game ビューに一覧を描いてクリックで選べる画面**(`Me
 
 > ⚠️ **同期はまだありません。** 現在は `BehaviourSyncMode.None` で、各自のクライアントで別々に再生されます。「みんなで同じものを同じ位置で観る」にはネットワーク同期が要ります(Phase5-3 相当)。
 
-- コード: `Assets/SmartMediaPlatform/World/Udon/`(9 クラス)、`World/UdonModel/`(検証用の正典)、`World/Editor/UdonSmartMediaPlayerPrefabBuilder.cs`
-- Prefab(実機): **Tools > Smart Media Platform > Create SmartMediaPlayer Prefab (VRChat 実機・Udon)** で生成 → **Hierarchy へドラッグ** → **VRChat SDK > Build & Test**
+**入口は 1 つにまとめました。** メニューが増えて「どれを使えばワールドで動くのか」が分からなくなっていたので、**Tools > Smart Media Platform > セットアップ** に手順を上から順に並べました。**URL は `Catalog` の Inspector に入れます** — `UdonMediaCatalog` は Udon の制約で 11 本の並列配列としてデータを持つため素の Inspector では編集できないので、**1 行 = 1 本**の一覧を出す専用 Inspector を用意しました。書き戻しは `UdonCatalogBaker` に任せるので、タグや関連の CSR オフセットは自動で組み直されます。
+
+**あわせて `.meta` を全スクリプトに同梱しました。** U# のプログラム(`.asset`)は元の `.cs` を GUID で指しており、`.meta` ごと入れ替えると行き先を失って `null` になります。U# は壊れたプログラムが 1 つでもあるとコンパイル全体を止めるため、これが「何も動かない」の原因になっていました。GUID をリポジトリ側で固定したので、zip を展開し直しても変わりません(既に壊れている場合は **セットアップ > 壊れた U# プログラムを修復する**)。
+
+- コード: `Assets/SmartMediaPlatform/World/Udon/`(9 クラス)、`World/UdonModel/`(検証用の正典)、`World/Editor/`(Prefab Builder / セットアップ窓)、`Catalog/Udon/Editor/UdonMediaCatalogEditor.cs`(URL 入力)
+- Prefab(実機): **Tools > Smart Media Platform > セットアップ** → 「SmartMediaPlayer.prefab を作る」 → **Hierarchy へドラッグ** → **VRChat SDK > Build & Test**
 - 設計ドキュメント(Udon 化したクラス / 変更したアーキテクチャ / Prefab の変更点 / 実機の確認項目 / 残る課題): [docs/Phase5-2_UdonPort.md](docs/Phase5-2_UdonPort.md)
 
 ## テスト
@@ -229,7 +233,8 @@ Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRCh
 apt-get install -y mono-mcs                # 初回のみ
 
 python3 tools/typecheck/typecheck.py       # 全アセンブリを実際にコンパイルして型検査
+python3 tools/typecheck/runtests.py        # EditMode テストを mono で実行(841 ケース)
 python3 tools/typecheck/udon_lint.py       # UdonSharp で書けない書き方を検出
 ```
 
-`typecheck.py` は Unity のコンパイル方式(asmdef ごとに 1 アセンブリ / 参照は宣言したものだけ / `defineConstraints` / `Assembly-CSharp-Editor`)をなぞって **mcs で本当にコンパイル**します。`udon_lint.py` はその先、UdonSharp が受け付けない構文(`List` / `?.` / `throw` / 文字列補間など)を `UdonSharpBehaviour` を継承したファイルだけに対して見ます。詳細は [tools/typecheck/README.md](tools/typecheck/README.md)。
+`typecheck.py` は Unity のコンパイル方式(asmdef ごとに 1 アセンブリ / 参照は宣言したものだけ / `defineConstraints` / `Assembly-CSharp-Editor`)をなぞって **mcs で本当にコンパイル**します。`runtests.py` はさらに一歩進めて、NUnit の代役に本物の判定を入れて **EditMode テストを実際に走らせます**(`AudioSource` など UnityEngine の実体が要る 6 つのテストクラスだけは Unity の Test Runner に任せます)。`udon_lint.py` は UdonSharp が受け付けない構文(`List` / `?.` / `throw` / 文字列補間など)を `UdonSharpBehaviour` を継承したファイルだけに対して見ます。詳細は [tools/typecheck/README.md](tools/typecheck/README.md)。

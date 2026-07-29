@@ -5,6 +5,7 @@
 | ツール | 見るもの |
 | --- | --- |
 | `typecheck.py` | C# として正しいか(mcs で本当にコンパイルする) |
+| `runtests.py` | EditMode テストが通るか(mono で本当に実行する) |
 | `udon_lint.py` | UdonSharp で書けるか(mcs を通っても U# が弾く書き方) |
 
 ---
@@ -76,6 +77,36 @@ python3 tools/typecheck/typecheck.py <project>  # プロジェクトを指定す
 mcs 6.8 は C# 7.3 までです。Unity 2022 は C# 9 なので、
 `??=` / switch 式 / `record` / target-typed `new()` などを書くとこのツールだけが
 落ちます。現状このプロジェクトは C# 7.3 の範囲に収まっています。
+
+---
+
+## runtests.py
+
+`typecheck.py` は「コンパイルが通るか」までしか見ません。
+こちらは **EditMode テストを本当に実行**します。
+
+```bash
+python3 tools/typecheck/runtests.py
+REPEAT=20 python3 tools/typecheck/runtests.py   # 乱数依存を疑うとき
+```
+
+`support/NUnitAsserting.cs` が NUnit の代役ですが、こちらは**本物の判定をします**
+(`Assert.AreEqual` が合わなければ例外を投げる)。だからテストが落ちればここでも落ちます。
+
+### 何が走らないか
+
+`AudioSource` を鳴らす、`GameObject` を作るといった
+**UnityEngine の実体が要るテスト**は動きません(stub には中身が無いため)。
+`runtests.py` の `NEEDS_REAL_UNITY` に列挙して除外しており、実行後に名前が出ます。
+そこは Unity の Test Runner に任せてください。
+
+### 実績
+
+Phase5-2 の時点で **841 ケースが通り**、Unity の Test Runner で落ちていた
+`PlaybackFlowTests.ClearUpcomingLeavesOnlyWhatIsPlaying` と
+`VideoBackendFlowTests.PlaybackCanContinueAfterAnError` を
+**同じ失敗メッセージで再現**できました。
+`git worktree` で前のコミットに当てて「いつから壊れていたか」を切り分けるのにも使えます。
 
 ---
 

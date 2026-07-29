@@ -535,6 +535,7 @@ namespace UnityEngine
     {
         public static GUISkin skin { get; set; }
         public static bool enabled { get; set; }
+        public static bool changed { get; set; }
         public static Color color { get; set; }
         public static Color backgroundColor { get; set; }
         public static Color contentColor { get; set; }
