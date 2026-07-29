@@ -36,6 +36,11 @@ Udon(UdonSharp)だけで、独自の MonoBehaviour は動きません。
 **制御層の Udon 移植が Phase5-2 の最重要項目**です(§6-2)。
 今回は「構造を固める β」と位置づけ、動作確認はエディタ / ClientSim で行います。
 
+> **【Phase5-2 で解決済み】** 制御層は 9 つの `UdonSharpBehaviour` へ移植され、
+> ワールドに置いて動く Prefab は `SmartMediaPlayer.prefab`(Udon 版)になりました。
+> 以下で説明する C# 版はそのまま残っており、**エディタ / ClientSim で
+> 仕組みを確かめる用**として使えます。→ [Phase5-2](Phase5-2_UdonPort.md)
+
 ---
 
 ## 1. Prefab 構成
@@ -217,21 +222,22 @@ Play すると Console に組み立て結果が出ます。
 
 SDK のバージョンを固定できる段階になったら、同梱に切り替えられます。
 
-### 6-2. 制御層の Udon 移植 ★最重要
+### 6-2. 制御層の Udon 移植 ★最重要 → **実施済み**
 
-冒頭のとおり、**アップロードしたワールドでは制御部分が動きません**。
-Phase1-2 で作った並列配列 + `int` index の方式をそのまま広げる形で、
-`PlayerSession` / `Queue` / `PlaybackFlow` 相当を UdonSharp へ移す必要があります。
+Phase5-2 で `PlayerSession` / `Queue` / `PlaybackFlow` 相当を
+`UdonPlayerSession` / `UdonCatalogStore` / `UdonVideoBackend` などへ移しました。
+Phase1-2 で作った並列配列 + `int` index の方式をそのまま広げた形です。
 
 移植しやすいよう、これまで
 **interface を使い、`event` を避け、例外ではなく bool を返す**方針を通してきました
-(Phase1-2 からの一貫した理由がこれです)。
+(Phase1-2 からの一貫した理由がこれです)。実際、移植で書き換えが要ったのは
+「interface で部品を探す」ところと「`MediaItem` を持ち回る」ところだけでした。
 
-### 6-3. UI を uGUI / ワールド内 Canvas へ
+### 6-3. UI を uGUI / ワールド内 Canvas へ → **実施済み**
 
 いまの `MediaPlayerUI` は IMGUI(`OnGUI`)で、**VR では見えません**。
-`IMediaPlayerUI` を実装した Canvas 版に差し替えるのが 5-2 の作業です。
-**下は 1 行も変わりません**。
+Phase5-2 で `UdonMediaPlayerUI`(World Space Canvas + `Text`)を用意しました。
+**下は 1 行も変わっていません**。
 
 ### 6-4. Screen / Controller / UI を個別 Prefab へ
 

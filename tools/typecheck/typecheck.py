@@ -27,7 +27,7 @@ ASSETS = os.path.join(PROJECT, "Assets")
 
 # Defines Unity would set. VRC_SDK_VRCSDK3 is on because the user's project has the SDK.
 DEFINES = ["UNITY_EDITOR", "UNITY_2022_3", "UNITY_STANDALONE", "VRC_SDK_VRCSDK3",
-           "UDONSHARP", "UNITY_INCLUDE_TESTS"]
+           "UDONSHARP", "UNITY_INCLUDE_TESTS", "UNITY_2022_2_OR_NEWER"]
 
 STUB_ASSEMBLIES = [
     ("UnityStubs", ["UnityEngine.cs", "UnityEditor.cs", "NUnit.cs", "VRC.cs"]),

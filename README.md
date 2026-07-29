@@ -197,14 +197,39 @@ UI は **Game ビューに一覧を描いてクリックで選べる画面**(`Me
 
 **将来の差し込み口は 2 つだけ**です。Catalog Builder は `ICatalogProvider`（`Catalog.asset` を割り当てるだけ）、バックエンド追加は `IMediaBackendProvider`（`DummyMediaBackendProvider` を `VRChatMediaBackendProvider` に置き換えるだけ）。Phase1〜4 のクラスは**すべて差分ゼロ**です。
 
-> ⚠️ **β の範囲**：このプレハブは Unity エディタ / ClientSim で動きます。**アップロードした VRChat ワールドでは制御部分が動きません**（独自 MonoBehaviour は実行されず、Udon だけが動くため）。制御層の Udon 移植が Phase5-2 の最重要項目です。
+> ℹ️ **この Prefab の役割は Phase5-2 で変わりました。** アップロードした VRChat ワールドでは独自 MonoBehaviour が動かないため、この C# 版は **エディタ / ClientSim で仕組みを確かめる用**になりました。ワールドに置いて実際に動かすのは Phase5-2 の Udon 版 (`SmartMediaPlayer.prefab`) です。
 
 - コード: `Assets/SmartMediaPlatform/World/`（Runtime / VRChat / Editor / Prefabs / Tests）
 - Prefab(SDK 不要): `World/Prefabs/SmartMediaPlayer_NoSDK.prefab` を **Hierarchy へドラッグ** → **Play**
 - Prefab(SDK・実際に再生): **Tools > Smart Media Platform > Create SmartMediaPlayer Prefab (実際に再生)** で生成
 - 設計ドキュメント(Prefab 構成 / Hierarchy / Inspector 項目 / 設置手順 / 5-2 の予定): [docs/Phase5-1_SmartMediaPlayerPrefab.md](docs/Phase5-1_SmartMediaPlayerPrefab.md)
 
+## Phase5-2: 制御層の UdonSharp 移植(実装済み)
+
+**Phase5-1 の Prefab を「アップロードしたワールドでそのまま動く」ところまで持っていった層。** VRChat のワールドで実行されるのは Udon だけなので、`SmartMediaPlayerRoot` / `MediaController` / `MediaPlayerUI` といった MonoBehaviour の制御層を **9 つの `UdonSharpBehaviour` へ移植**しました。`SmartMediaPlayer.prefab` を Hierarchy へドラッグして **Build & Test するだけで動きます**。
+
+**責務の線は 1 本も動かしていません。** URL を知ってよいのは `UdonVideoBackend` だけ(`UdonCatalogStore` に `GetUrl` はありません)、再生の判断は `UdonPlayerSession` だけ(根っこに `Play` / `Next` / `Stop` は生やしていません)、Queue の先頭 = いま鳴っているもの、`VRCUrl` は実行時に作らない — Phase1〜4 で決めた約束はそのままです。変わったのは**実現の仕方**だけで、interface → Inspector 参照、`MediaItem` → catalog index、`List` → 固定長配列、`OnGUI` → uGUI の `Text` になりました。
+
+**Udon へ写す前に純粋 C# で検証しています。** `UdonPlayerSession` のアルゴリズムは `PlaybackModel`(`World/UdonModel/`・EditMode **37 ケース**)で先に確かめ、それを 1 対 1 で写したものです。Phase1-2(`ParallelMediaCatalog` → `UdonMediaCatalog`)、Phase1-3(`RecommendationEngine` → `UdonRecommendationEngine`)と同じ手順です。Phase1〜5-1 のクラスは**すべて差分ゼロ**で、C# 版 Prefab も残してあります。
+
+> ⚠️ **同期はまだありません。** 現在は `BehaviourSyncMode.None` で、各自のクライアントで別々に再生されます。「みんなで同じものを同じ位置で観る」にはネットワーク同期が要ります(Phase5-3 相当)。
+
+- コード: `Assets/SmartMediaPlatform/World/Udon/`(9 クラス)、`World/UdonModel/`(検証用の正典)、`World/Editor/UdonSmartMediaPlayerPrefabBuilder.cs`
+- Prefab(実機): **Tools > Smart Media Platform > Create SmartMediaPlayer Prefab (VRChat 実機・Udon)** で生成 → **Hierarchy へドラッグ** → **VRChat SDK > Build & Test**
+- 設計ドキュメント(Udon 化したクラス / 変更したアーキテクチャ / Prefab の変更点 / 実機の確認項目 / 残る課題): [docs/Phase5-2_UdonPort.md](docs/Phase5-2_UdonPort.md)
+
 ## テスト
 
-EditMode テスト計 **895 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 155 / World 18)。
+EditMode テスト計 **932 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 155 / World 18 / World.UdonModel 37)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
+
+### Unity を起動しない静的チェック
+
+```bash
+apt-get install -y mono-mcs                # 初回のみ
+
+python3 tools/typecheck/typecheck.py       # 全アセンブリを実際にコンパイルして型検査
+python3 tools/typecheck/udon_lint.py       # UdonSharp で書けない書き方を検出
+```
+
+`typecheck.py` は Unity のコンパイル方式(asmdef ごとに 1 アセンブリ / 参照は宣言したものだけ / `defineConstraints` / `Assembly-CSharp-Editor`)をなぞって **mcs で本当にコンパイル**します。`udon_lint.py` はその先、UdonSharp が受け付けない構文(`List` / `?.` / `throw` / 文字列補間など)を `UdonSharpBehaviour` を継承したファイルだけに対して見ます。詳細は [tools/typecheck/README.md](tools/typecheck/README.md)。

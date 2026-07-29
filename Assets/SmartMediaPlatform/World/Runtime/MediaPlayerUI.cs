@@ -13,10 +13,14 @@ namespace SmartMediaPlatform.World
     /// だから<b>この画面ごと差し替えても、下は 1 行も変わりません</b>。
     ///
     /// <b>なぜ IMGUI(OnGUI)なのか</b><br/>
-    /// β 版として「アセットを 1 つも作らずに、ドラッグしただけで触れる」ことを優先しました。
-    /// uGUI の Canvas やワールド内 UI は Prefab とレイアウトの作り込みが本体になるため、
-    /// <b>Phase5-2 で差し替える前提</b>です
-    /// (差し替え先は <see cref="IMediaPlayerUI"/> を実装するだけで済みます)。
+    /// 「アセットを 1 つも作らずに、ドラッグしただけで触れる」ことを優先したためです。
+    ///
+    /// <b>これはエディタ / ClientSim 専用です。</b>
+    /// <c>OnGUI</c> はアップロードした VRChat ワールドでは動きません
+    /// (そもそも独自 MonoBehaviour が動きません)。
+    /// 実機の画面は Phase5-2 の <c>UdonMediaPlayerUI</c>
+    /// (World Space Canvas + <c>Text</c>)が担当します。
+    /// <b>差し替えても下は 1 行も変わらない</b>という設計はそのまま活きています。
     /// </summary>
     [AddComponentMenu("Smart Media Platform/Media Player UI")]
     public sealed class MediaPlayerUI : MonoBehaviour, IMediaPlayerUI

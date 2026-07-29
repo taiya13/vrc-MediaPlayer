@@ -581,8 +581,36 @@ namespace UnityEngine.SceneManagement
 
 namespace UnityEngine.UI
 {
-    public class Graphic : UnityEngine.Behaviour { public UnityEngine.Color color { get; set; } }
-    public class Text : Graphic { public string text { get; set; } public int fontSize { get; set; } }
+    public class Graphic : UnityEngine.Behaviour
+    {
+        public UnityEngine.Color color { get; set; }
+        public bool raycastTarget { get; set; }
+        public UnityEngine.RectTransform rectTransform { get { return null; } }
+    }
+    public class Text : Graphic
+    {
+        public string text { get; set; }
+        public int fontSize { get; set; }
+        public UnityEngine.Font font { get; set; }
+        public UnityEngine.FontStyle fontStyle { get; set; }
+        public UnityEngine.TextAnchor alignment { get; set; }
+        public float lineSpacing { get; set; }
+        public bool supportRichText { get; set; }
+        public bool resizeTextForBestFit { get; set; }
+        public HorizontalWrapMode horizontalOverflow { get; set; }
+        public VerticalWrapMode verticalOverflow { get; set; }
+    }
+    public enum HorizontalWrapMode { Wrap, Overflow }
+    public enum VerticalWrapMode { Truncate, Overflow }
+    public class CanvasScaler : UnityEngine.Behaviour
+    {
+        public enum ScaleMode { ConstantPixelSize, ScaleWithScreenSize, ConstantPhysicalSize }
+        public ScaleMode uiScaleMode { get; set; }
+        public float dynamicPixelsPerUnit { get; set; }
+        public float referencePixelsPerUnit { get; set; }
+    }
+    public class GraphicRaycaster : UnityEngine.Behaviour { public bool ignoreReversedGraphics { get; set; } }
+    public class LayoutElement : UnityEngine.Behaviour { public float preferredHeight { get; set; } }
     public class Image : Graphic { public UnityEngine.Sprite sprite { get; set; } }
     public class Selectable : UnityEngine.Behaviour { public bool interactable { get; set; } }
     public class Button : Selectable { public UnityEngine.Events.UnityEvent onClick { get; set; } }
@@ -595,8 +623,25 @@ namespace UnityEngine.UI
 namespace UnityEngine
 {
     public class Sprite : Object { }
+    public class Font : Object { }
+    public static class Resources
+    {
+        public static T Load<T>(string path) where T : Object { return default(T); }
+        public static Object Load(string path) { return null; }
+        public static T GetBuiltinResource<T>(string path) where T : Object { return default(T); }
+        public static Object GetBuiltinResource(Type type, string path) { return null; }
+    }
     public class TextAsset : Object { public string text { get { return null; } } }
-    public class RectTransform : Transform { public Vector2 anchoredPosition { get; set; } public Vector2 sizeDelta { get; set; } }
+    public class RectTransform : Transform
+    {
+        public Vector2 anchoredPosition { get; set; }
+        public Vector2 sizeDelta { get; set; }
+        public Vector2 anchorMin { get; set; }
+        public Vector2 anchorMax { get; set; }
+        public Vector2 pivot { get; set; }
+        public Vector2 offsetMin { get; set; }
+        public Vector2 offsetMax { get; set; }
+    }
 }
 
 namespace UnityEngine.Video

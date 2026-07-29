@@ -1,6 +1,17 @@
-# typecheck — Unity を起動せずに全アセンブリを型検査する
+# typecheck — Unity を起動せずにコードを検査する
 
-## これは何のためにあるか
+2 つあります。
+
+| ツール | 見るもの |
+| --- | --- |
+| `typecheck.py` | C# として正しいか(mcs で本当にコンパイルする) |
+| `udon_lint.py` | UdonSharp で書けるか(mcs を通っても U# が弾く書き方) |
+
+---
+
+## typecheck.py
+
+### これは何のためにあるか
 
 Phase5-1 で `MediaPlayerUI.cs` に **CS0266 / CS1662**(`bool?` を `bool` へ渡していた)
 を混入させ、Unity 上でコンパイルが通らない状態のまま納品してしまいました。
@@ -15,7 +26,7 @@ Phase5-1 で `MediaPlayerUI.cs` に **CS0266 / CS1662**(`bool?` を `bool` へ�
 「読んで確かめる」では同じ事故が繰り返されるため、
 **本物の C# コンパイラに通す**ようにしたのがこのツールです。
 
-## 使い方
+### 使い方
 
 ```bash
 # 初回のみ(Ubuntu/Debian)
@@ -29,7 +40,7 @@ python3 tools/typecheck/typecheck.py <project>  # プロジェクトを指定す
 1 件でもあれば `ファイル(行,列): error CSxxxx: 内容` の形で、Unity の Console と
 同じ書式で出力し、終了コード 1 を返します。
 
-## Unity のコンパイル方式をどこまで真似ているか
+### Unity のコンパイル方式をどこまで真似ているか
 
 | Unity の挙動 | このツール |
 | --- | --- |
@@ -44,7 +55,7 @@ python3 tools/typecheck/typecheck.py <project>  # プロジェクトを指定す
 `DEFINES` には `UNITY_INCLUDE_TESTS` も入れてあるので、**テストアセンブリも検査されます**
 (テストコードの型の誤りは Test Runner を回さないと分からなかった部分です)。
 
-## stubs/ について
+### stubs/ について
 
 `stubs/` は Unity と VRChat SDK の **API の形だけ**を写した代役です。中身は空で、
 実行はできません。型検査に必要なシグネチャしか持っていません。
@@ -60,8 +71,41 @@ python3 tools/typecheck/typecheck.py <project>  # プロジェクトを指定す
 「明らかな型の誤りを混ぜたまま出さない」ための関門**です。
 最終確認は今までどおり Unity 上のコンパイルと Test Runner で行ってください。
 
-## C# のバージョン
+### C# のバージョン
 
 mcs 6.8 は C# 7.3 までです。Unity 2022 は C# 9 なので、
 `??=` / switch 式 / `record` / target-typed `new()` などを書くとこのツールだけが
 落ちます。現状このプロジェクトは C# 7.3 の範囲に収まっています。
+
+---
+
+## udon_lint.py
+
+`typecheck.py` は「C# として正しいか」しか見ません。UdonSharp はその C# の
+**さらに狭い部分集合**しか受け付けないので、mcs を通っても U# のコンパイルで
+落ちるコードは書けてしまいます。その差分を見るのがこちらです。
+
+```bash
+python3 tools/typecheck/udon_lint.py
+```
+
+対象は **`UdonSharpBehaviour` を継承しているファイルだけ**です
+(コメントで名前に触れているだけのファイルは対象外)。
+
+見ているもの:
+
+`List` / `Dictionary` / `HashSet` / `IEnumerable` / LINQ / `?.` / `??` / `??=` /
+`throw` / `try` / `catch` / `yield` / `event` / `delegate` / `Action` / `Func` /
+`interface` 宣言 / `struct` 宣言 / `enum` 宣言 / `params` / 自作メソッドの `out`・`ref` /
+多次元配列 / ジャグ配列 / `abstract` / 文字列補間 / ジェネリックメソッド /
+`static` フィールド(`const` 以外)/ 引数の既定値
+
+### 限界
+
+これは**構文の目視の代わり**であって、UdonSharp のコンパイラではありません。
+
+- **偽陰性**: U# が弾く API(使えない BCL メソッドなど)は見ていません。
+- **偽陽性**: `TryGetValue` のような SDK 側の `out` は除外していますが、
+  他にも正当な例外があれば除外リストに足してください。
+
+最終確認は Unity 上で U# がコンパイルするところまで行ってください。
