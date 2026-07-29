@@ -8,6 +8,7 @@
         "SmartMediaPlatform.Backend",
         "SmartMediaPlatform.Player",
         "SmartMediaPlatform.Session",
+        "SmartMediaPlatform.Adapter",
         "SmartMediaPlatform.Video",
         "SmartMediaPlatform.Library",
         "SmartMediaPlatform.Library.Playback",
