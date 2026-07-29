@@ -189,7 +189,22 @@ UI は **Game ビューに一覧を描いてクリックで選べる画面**(`Me
 - DemoScene(SDK で実際に再生): **Tools > Smart Media Platform > Create Phase4-4 VRChat Playback Scene (実際に再生)** で生成して **Play**(エディタで絵を見たい場合は Unity 版のメニュー)
 - 設計ドキュメント(追加クラス / 再生フロー / 接続ポイント / 確認項目): [docs/Phase4-4_VRChatVideoPlayerIntegration.md](docs/Phase4-4_VRChatVideoPlayerIntegration.md)
 
+## Phase5-1: SmartMediaPlayer Prefab(β)
+
+**再生フローを「ワールドに置ける 1 つの Prefab」にまとめた層。** `SmartMediaPlayer` は 5 つの子（**Screen / Player / Controller / UI / Catalog**）を持ち、根っこの `SmartMediaPlayerRoot` は**組み立てだけ**を担当します。再生の判断は今までどおり `PlayerSession` の仕事で、`Play` / `Next` / `Stop` は根っこに生やしていません。
+
+**部品はインターフェースで探します**（`IMediaScreen` / `IMediaController` / `IMediaPlayerUI` / `IMediaBackendProvider` / `ICatalogProvider`）。だから**子オブジェクトを差し替えるだけ**で交換でき、根っこも他の子も変わりません。見つからない部品には代役を立てるので、**Inspector の必須設定はゼロ** — Prefab をドラッグして `Screen/Surface` を見える位置へ動かすだけで動きます。部品が受け取るのは `MediaPlayerContext`（`ICatalogStore` / `PlaybackFlow` / `PlayerSession`）だけで、カタログの作り方もどのバックエンドが繋がっているかも見えず、**URL の口もありません**。
+
+**将来の差し込み口は 2 つだけ**です。Catalog Builder は `ICatalogProvider`（`Catalog.asset` を割り当てるだけ）、バックエンド追加は `IMediaBackendProvider`（`DummyMediaBackendProvider` を `VRChatMediaBackendProvider` に置き換えるだけ）。Phase1〜4 のクラスは**すべて差分ゼロ**です。
+
+> ⚠️ **β の範囲**：このプレハブは Unity エディタ / ClientSim で動きます。**アップロードした VRChat ワールドでは制御部分が動きません**（独自 MonoBehaviour は実行されず、Udon だけが動くため）。制御層の Udon 移植が Phase5-2 の最重要項目です。
+
+- コード: `Assets/SmartMediaPlatform/World/`（Runtime / VRChat / Editor / Prefabs / Tests）
+- Prefab(SDK 不要): `World/Prefabs/SmartMediaPlayer_NoSDK.prefab` を **Hierarchy へドラッグ** → **Play**
+- Prefab(SDK・実際に再生): **Tools > Smart Media Platform > Create SmartMediaPlayer Prefab (実際に再生)** で生成
+- 設計ドキュメント(Prefab 構成 / Hierarchy / Inspector 項目 / 設置手順 / 5-2 の予定): [docs/Phase5-1_SmartMediaPlayerPrefab.md](docs/Phase5-1_SmartMediaPlayerPrefab.md)
+
 ## テスト
 
-EditMode テスト計 **877 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 155)。
+EditMode テスト計 **895 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 155 / World 18)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
