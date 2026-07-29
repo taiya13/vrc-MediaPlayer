@@ -68,6 +68,54 @@ namespace SmartMediaPlatform.Library.EditorTools
                 + "  Play を押すと Game ビューに一覧が出ます(クリックで選択 → 「▶ この曲を再生する」)。\n"
                 + "  同時に Console へ Media Library の動作がまとめて出力されます。");
         }
+
+        // ───────── Phase4-3: Library → Queue → Player ─────────
+
+        private const string FlowScenePath = SceneFolder + "/Phase4PlaybackFlowDemoScene.unity";
+
+        [MenuItem("Tools/Smart Media Platform/Open Phase4-3 Playback Flow Demo Scene")]
+        public static void OpenFlowScene()
+        {
+            if (!File.Exists(FlowScenePath))
+            {
+                if (!EditorUtility.DisplayDialog(
+                        "Smart Media Platform",
+                        "Phase4PlaybackFlowDemoScene が見つかりません。新しく作成しますか?",
+                        "作成する", "キャンセル"))
+                {
+                    return;
+                }
+                CreateFlowScene();
+                return;
+            }
+
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+            EditorSceneManager.OpenScene(FlowScenePath);
+        }
+
+        [MenuItem("Tools/Smart Media Platform/Create Phase4-3 Playback Flow Demo Scene (再生成)")]
+        public static void CreateFlowScene()
+        {
+            if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+
+            var scene = EditorSceneManager.NewScene(
+                NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
+
+            var go = new GameObject("Phase4PlaybackFlowDemo");
+            go.AddComponent<PlaybackFlowScreenDemo>();
+            go.AddComponent<PlaybackFlowConsoleDemo>();
+
+            Directory.CreateDirectory(SceneFolder);
+            EditorSceneManager.SaveScene(scene, FlowScenePath);
+            AssetDatabase.Refresh();
+
+            Debug.Log(
+                "[Phase4MediaLibrarySceneBuilder] Playback Flow の DemoScene を作成しました: "
+                + FlowScenePath + "\n"
+                + "  Play を押すと Library / 関連動画 / Queue / いま再生中 が並びます。\n"
+                + "  左で選んで「▶ 再生」→ Queue に積まれ、「曲を終わらせる(Ended)」で次へ進みます。\n"
+                + "  同時に Console へ一連の流れがまとめて出力されます。");
+        }
     }
 }
 #endif

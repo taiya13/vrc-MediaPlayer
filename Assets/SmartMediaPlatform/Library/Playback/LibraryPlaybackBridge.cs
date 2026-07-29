@@ -203,6 +203,60 @@ namespace SmartMediaPlatform.Library.Playback
         }
 
         /// <summary>
+        /// <b>いま選んでいるものを「次に再生」する</b>(Phase4-3)。
+        /// いまの再生は止めず、Queue の <b>2 番目</b>(先頭の次)へ入れます。
+        /// </summary>
+        public bool PlayNextSelected()
+        {
+            var playable = _library.SelectedRef;
+            if (!playable.IsValid)
+            {
+                Log("「次に再生」できません: 何も選ばれていません");
+                return false;
+            }
+            return PlayNext(playable.MediaId);
+        }
+
+        /// <summary>
+        /// <b>MediaId を「次に再生」する</b>(Phase4-3)。
+        ///
+        /// Queue は「先頭 = いま鳴っているもの」という約束なので、
+        /// <b>index 1 が「次」</b>です。末尾に足してからそこへ動かします
+        /// (<c>IQueue.Move</c> は Phase1-4 からある並べ替え用の API)。
+        /// </summary>
+        /// <returns>入れられたら true。</returns>
+        public bool PlayNext(string mediaId)
+        {
+            if (string.IsNullOrWhiteSpace(mediaId)) return false;
+
+            // すでにそれが鳴っているなら、次に入れる意味がない
+            if (Same(_session.CurrentMediaId, mediaId)) return false;
+
+            var queue = _session.Queue;
+            if (!queue.Contains(mediaId) && !_session.Enqueue(mediaId))
+            {
+                Log($"「次に再生」できません: {mediaId} はカタログにありません");
+                return false;
+            }
+
+            // 何も鳴っていなければ先頭が「次」。鳴っていれば先頭の次。
+            int wanted = _session.CurrentMediaId != null ? 1 : 0;
+            int index = queue.IndexOf(mediaId);
+            if (index > wanted) queue.Move(index, wanted);
+
+            EnqueueCount++;
+            LastHandedOffId = mediaId;
+            Log($"{mediaId} を次に再生します(Queue: {queue.Count} 件)");
+            return true;
+        }
+
+        /// <summary><see cref="PlayableRef"/> を「次に再生」する。</summary>
+        public bool PlayNext(PlayableRef playable)
+        {
+            return playable.IsValid && PlayNext(playable.MediaId);
+        }
+
+        /// <summary>
         /// MediaId を指定して Queue の末尾に足す。
         /// </summary>
         /// <returns>足せたら true(カタログに無い ID なら false)。</returns>

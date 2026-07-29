@@ -164,7 +164,19 @@ UI は **Game ビューに一覧を描いてクリックで選べる画面**(`Me
 - DemoScene: **Tools > Smart Media Platform > Open Phase4-1 Media Library Demo Scene** → **Play**(右下に関連動画パネル。▶ を押すと再生が切り替わり、関連一覧も追従します)
 - 設計ドキュメント(追加クラス一覧 / データの流れ / Catalog Builder・サーバーとの接続点 / 確認項目): [docs/Phase4-2_RelatedMediaAndCatalogStore.md](docs/Phase4-2_RelatedMediaAndCatalogStore.md)
 
+## Phase4-3: 再生フローの完成(Library → Queue → Player)(実装済み)
+
+**選んだものが Queue を経て再生されるまでを通しで触れるようにした層。** 追加は 3 クラスだけです。**`QueueView`**(Queue の中身を `DisplayMeta` で見せ、並べ替え・削除の窓口になる)、**`NowPlayingView`**(再生中を `MediaId → Catalog` で引き直して見せる。進捗も持つ)、**`PlaybackFlow`**(部品の組み立てと `Tick()` による同期)。`PlaybackFlow.Create(catalog, session)` の **1 行**で Library / 関連 / Queue / 再生中 が繋がります。
+
+**`QueueView` が必要だった理由**は、`IQueue.GetAll()` が返す `QueueItem` が `MediaItem`(= `Url`)を抱えているためです。そのまま UI へ渡すと **Phase4-2 で塞いだ穴が Queue 経由で開きます**。`QueueView` は `MediaId` だけ取り出して `ICatalogStore` から引き直すので、URL は Queue の外へ出ません。**Queue の責務は増やしておらず**、並べ替えも削除も `IQueue` が Phase1-4 から持つ `Move` / `RemoveAt` / `Clear` を呼ぶだけです。Queue は「先頭 = いま鳴っているもの」で動くため、**先頭への並べ替え・削除は表示層で弾いています**(再生と Queue がずれないように)。
+
+**`NowPlayingView` は「PlayerSession は MediaId 中心、表示は Catalog から」の実装そのもの**です。`PlayerSession.CurrentItem`(`MediaItem` を返す)は使わず、`CurrentMediaId`(string)から `CatalogStore` を引き直します。あわせて `LibraryPlaybackBridge` に **`PlayNext()`**(Queue の 2 番目へ入れる)を追加しました。**`PlaybackFlow` は再生の判断を持ちません** — `Play` / `Next` / `Stop` はあえて生やさず、次に何を再生するかは今までどおり `PlayerSession` の仕事です。再生エンジンと `IQueue` / `MediaItem` / `IMediaCatalog` は**差分ゼロ**。Catalog Builder・サーバー連携・AVPro 切り替えの差し込み口も **Phase4-2 から増えていません**。
+
+- コード: `Assets/SmartMediaPlatform/Library/Playback/`(QueueView / NowPlayingView / PlaybackFlow)、`Library/Demo/`(Console / Screen)
+- DemoScene: **Tools > Smart Media Platform > Open Phase4-3 Playback Flow Demo Scene** → **Play**(上=再生中 / 左=Library / 中=関連 / 右=Queue の 4 区画を操作できます)
+- 設計ドキュメント(追加クラス / データフロー / 接続ポイント / 確認項目): [docs/Phase4-3_PlaybackFlow.md](docs/Phase4-3_PlaybackFlow.md)
+
 ## テスト
 
-EditMode テスト計 **829 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 107)。
+EditMode テスト計 **861 ケース**(Catalog 95 / Recommendation 13 / Queue 72 / Backend 44 / Integration 9 / Audio 54 / Player 35 / Playlists 70 / Session 58 / Adapter 35 / Video 143 / AutoPlay 94 / Library 139)。
 Unity の **Window > General > Test Runner > EditMode > Run All** で実行(VRChat SDK 不要)。
