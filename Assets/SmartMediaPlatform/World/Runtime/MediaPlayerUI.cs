@@ -88,10 +88,23 @@ namespace SmartMediaPlatform.World
                             RichLabel());
 
             GUILayout.BeginHorizontal();
-            if (GUILayout.Button("再生/一時停止")) Do(() => _controller?.TogglePlayPause());
-            if (GUILayout.Button("次へ", GUILayout.Width(60f))) Do(() => _controller?.Next());
-            if (GUILayout.Button("前へ", GUILayout.Width(60f))) Do(() => _controller?.Previous());
-            if (GUILayout.Button("停止", GUILayout.Width(60f))) Do(() => _controller?.Stop());
+            if (GUILayout.Button("再生/一時停止"))
+            {
+                _status = Report(
+                    _controller != null && _controller.TogglePlayPause(), "再生/一時停止");
+            }
+            if (GUILayout.Button("次へ", GUILayout.Width(60f)))
+            {
+                _status = Report(_controller != null && _controller.Next(), "次へ");
+            }
+            if (GUILayout.Button("前へ", GUILayout.Width(60f)))
+            {
+                _status = Report(_controller != null && _controller.Previous(), "前へ");
+            }
+            if (GUILayout.Button("停止", GUILayout.Width(60f)))
+            {
+                _status = Report(_controller != null && _controller.Stop(), "停止");
+            }
             GUILayout.EndHorizontal();
         }
 
@@ -192,12 +205,6 @@ namespace SmartMediaPlatform.World
             return $"{index + 1,3}. {item.Title}\n"
                    + $"      {item.Artist}  |  "
                    + MediaLibraryFormatter.FormatDuration(item.DurationSeconds);
-        }
-
-        private void Do(System.Func<bool> action)
-        {
-            if (action == null) return;
-            action();
         }
 
         private static string Report(bool ok, string what)
