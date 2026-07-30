@@ -56,7 +56,15 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>いまの持ち主だけが操作できる(手放すまで独占)。</summary>
         public const int AccessOwnerOnly = 2;
 
-        [Header("つなぎ先")]
+        [Header("★ よく触る設定")]
+        [Tooltip("false にすると完全に 1 人用に戻る(全員が別々のものを見る)")]
+        public bool Enabled = true;
+
+        [Tooltip("誰が操作できるか。0=誰でも / 1=マスターだけ / 2=いまの持ち主だけ")]
+        [Range(0, 2)]
+        public int AccessPolicy = AccessEveryone;
+
+        [Header("つなぎ先(Prefab が配線済み)")]
         [Tooltip("状態を読み書きする相手")]
         public UdonPlayerSession Session;
 
@@ -66,12 +74,7 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("画面へ「書き直して」と伝える窓口")]
         public UdonMediaController Controller;
 
-        [Header("同期")]
-        [Tooltip("false にすると完全に 1 人用に戻る(Phase5-3 と同じ動き)")]
-        public bool Enabled = true;
-
-        [Tooltip("0=誰でも / 1=マスターだけ / 2=いまの持ち主だけ")]
-        public int AccessPolicy = AccessEveryone;
+        [Header("合わせ方")]
 
         [Tooltip("この秒数より大きくずれていたら合わせ直す")]
         [Range(0.2f, 5f)]
@@ -81,6 +84,7 @@ namespace SmartMediaPlatform.World.Udon
         [Range(0.25f, 10f)]
         public float CheckInterval = 1.0f;
 
+        [Header("困ったとき")]
         [Tooltip("同期の様子を Console に出す")]
         public bool LogSync;
 

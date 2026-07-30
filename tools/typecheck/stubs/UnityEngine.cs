@@ -384,6 +384,11 @@ namespace UnityEngine
         public static Color blue { get { return default(Color); } }
         public static Color yellow { get { return default(Color); } }
         public static Color cyan { get { return default(Color); } }
+        public static bool operator ==(Color a, Color b) { return false; }
+        public static bool operator !=(Color a, Color b) { return true; }
+        public override bool Equals(object other) { return false; }
+        public override int GetHashCode() { return 0; }
+        public static Color Lerp(Color a, Color b, float t) { return default(Color); }
         public static Color clear { get { return default(Color); } }
     }
 

@@ -28,12 +28,17 @@ namespace SmartMediaPlatform.World.Udon.UI
     /// <b>URL は見えません。</b>引くのは <see cref="UdonCatalogStore"/> 越しだけなので、
     /// Phase4-2 で決めた「URL を知るのは <c>UdonVideoBackend</c> だけ」は保たれています。
     ///
-    /// <b>ページの数え方は
-    /// <see cref="SmartMediaPlatform.World.UdonModel.ListPageModel"/> の写しです。</b>
+    /// <b>スクロールの数え方は
+    /// <see cref="SmartMediaPlatform.World.UdonModel.ListScrollModel"/> の写しです。</b>
     /// あちらは純粋 C# で EditMode テスト済み、こちらはそれを UdonSharp の書き方へ
     /// 1 対 1 で移したものです(Phase5-2 の <c>PlaybackModel</c> →
     /// <see cref="UdonPlayerSession"/> と同じ手順)。
     /// <b>数え方を変えるときは必ず両方を直してください。</b>
+    ///
+    /// <b>Phase5-5 でページ送りをやめました。</b>
+    /// ページ送りは最終ページが半端に空き、1 件だけ先を見ることもできません。
+    /// いまは<b>「先頭に見えている位置」<see cref="Offset"/> だけ</b>を持ち、
+    /// 最後まで送っても行が埋まったままになります。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonMediaListView : UdonSharpBehaviour
@@ -67,27 +72,41 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("表示用データの窓口(URL は見えない)")]
         public UdonCatalogStore Store;
 
-        [Header("行(この数がそのまま 1 ページの行数)")]
+        [Header("行(この数がそのまま一度に見える行数)")]
         public UdonMediaListRow[] Rows;
 
-        [Header("見出し / ページ送り(空でも動く)")]
+        [Header("見出し / スクロール(空でも動く)")]
         public Text HeaderText;
 
-        [Tooltip("「2 / 5」の形で出す")]
-        public Text PageText;
+        [Tooltip("「7〜12 / 24 件」の形で出す")]
+        public Text RangeText;
 
-        [Tooltip("先頭ページでは隠す")]
-        public GameObject PreviousPageButton;
+        [Tooltip("先頭では隠す")]
+        public GameObject ScrollUpButton;
 
-        [Tooltip("最終ページでは隠す")]
-        public GameObject NextPageButton;
+        [Tooltip("末尾では隠す")]
+        public GameObject ScrollDownButton;
+
+        [Tooltip("いまどのあたりを見ているかを示すつまみ(RectTransform を動かす)")]
+        public RectTransform ScrollHandle;
 
         [Tooltip("1 件も無いときだけ出す")]
         public GameObject EmptyMessage;
 
-        [Header("表示")]
-        [Tooltip("いま何ページ目か(0 から)")]
-        public int Page;
+        [Header("スクロール")]
+        [Tooltip("先頭に見えている位置(0 から)")]
+        public int Offset;
+
+        [Tooltip("▲▼ 1 回で動く行数。0 なら 1 画面ぶん")]
+        public int ScrollStep;
+
+        [Tooltip("曲が変わったら、鳴っている行が見えるところまで自動で戻す")]
+        public bool FollowNowPlaying;
+
+        [Header("押した感じ")]
+        [Tooltip("押した行に印を出す秒数。0 で無効")]
+        [Range(0f, 2f)]
+        public float TouchFeedbackSeconds = 0.6f;
 
         [Tooltip("同じ行をこの秒数以内に 2 回押されたら 2 回目を捨てる。0 で無効")]
         public float DoubleFireGuard = 0.25f;
@@ -98,10 +117,18 @@ namespace SmartMediaPlatform.World.Udon.UI
         private int[] _shown;
         private bool _initialized;
 
-        // 直近に受けた押下(二重発火よけ)
+        // 直近に受けた押下(二重発火よけ + 押した感じの表示)
         private int _lastRow = -1;
         private int _lastKind = -1;
         private float _lastAt = -999f;
+
+        // 押した行の印。位置で覚えるのは、スクロールしても
+        // 「押したのはこの曲」がずれないようにするため。
+        private int _touchedPosition = -1;
+        private float _touchedAt = -999f;
+
+        // 追いかけ済みの曲(FollowNowPlaying 用)
+        private int _followedIndex = -2;
 
         void Start()
         {
@@ -156,9 +183,20 @@ namespace SmartMediaPlatform.World.Udon.UI
                 total = Store != null ? Store.Count : 0;
             }
 
-            ClampPage(total, rows);
+            ClampOffset(total, rows);
 
-            int first = Page * rows;
+            // 曲が変わったときだけ追いかける。毎回追いかけると、
+            // 眺めている最中に画面が飛んで操作できなくなる。
+            if (FollowNowPlaying && Session != null && Session.CurrentIndex != _followedIndex)
+            {
+                _followedIndex = Session.CurrentIndex;
+                RevealNowPlaying();
+                ClampOffset(total, rows);
+            }
+
+            int first = Offset;
+            bool pressedStillOn = TouchFeedbackSeconds > 0f
+                                  && Time.time - _touchedAt < TouchFeedbackSeconds;
 
             for (int row = 0; row < rows; row++)
             {
@@ -196,6 +234,11 @@ namespace SmartMediaPlatform.World.Udon.UI
                     Store != null ? Store.FormatDuration(catalogIndex) : "",
                     IsNowPlaying(catalogIndex),
                     HasSecondary(position));
+
+                // 押した行に短く印を出す。
+                // uGUI の色変化は「使う」で押したときには出ないので、
+                // どちらの押し方でも手応えが返るようにここで出す。
+                target.SetPressed(pressedStillOn && position == _touchedPosition);
             }
 
             RefreshChrome(total, rows);
@@ -218,10 +261,11 @@ namespace SmartMediaPlatform.World.Udon.UI
             // 後から引くと「1 つずれた曲名」を報告してしまう。
             string title = TitleAt(row);
 
+            MarkTouched(Offset + row);
+
             if (Source == SourceQueue)
             {
-                int position = Page * rows + row;
-                Report(Controller.JumpInQueue(position), "移動", title);
+                Report(Controller.JumpInQueue(Offset + row), "移動", title);
                 return;
             }
 
@@ -243,10 +287,11 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             string title = TitleAt(row);
 
+            MarkTouched(Offset + row);
+
             if (Source == SourceQueue)
             {
-                int position = Page * rows + row;
-                Report(Controller.RemoveFromQueue(position), "Queue から削除", title);
+                Report(Controller.RemoveFromQueue(Offset + row), "Queue から削除", title);
                 return;
             }
 
@@ -256,30 +301,99 @@ namespace SmartMediaPlatform.World.Udon.UI
             Report(Controller.EnqueueCatalogIndex(catalogIndex), "Queue に追加", title);
         }
 
-        // ───────── ページ送り(ボタンからそのまま呼べる)─────────
+        // ───────── スクロール(ボタンからそのまま呼べる)─────────
 
+        /// <summary>▲ 1 回ぶん戻す。</summary>
+        public void ScrollUp()
+        {
+            ScrollBy(-EffectiveStep());
+        }
+
+        /// <summary>▼ 1 回ぶん進める。</summary>
+        public void ScrollDown()
+        {
+            ScrollBy(EffectiveStep());
+        }
+
+        public void ScrollToTop()
+        {
+            ScrollBy(-TotalCount());
+        }
+
+        public void ScrollToBottom()
+        {
+            ScrollBy(TotalCount());
+        }
+
+        /// <summary>
+        /// <paramref name="lines"/> 行ぶん動かす。
+        /// <see cref="SmartMediaPlatform.World.UdonModel.ListScrollModel.ScrollBy"/> の写しです。
+        /// </summary>
+        public void ScrollBy(int lines)
+        {
+            int before = Offset;
+
+            Offset += lines;
+            ClampOffset(TotalCount(), RowCount());
+
+            if (Offset != before) Refresh();
+        }
+
+        /// <summary>いま鳴っているものが見えるところまで動かす。</summary>
+        public void RevealNowPlaying()
+        {
+            if (Session == null) return;
+
+            int current = Session.CurrentIndex;
+            if (current < 0) return;
+
+            int position = -1;
+
+            if (Source == SourceQueue) position = Session.IndexInQueue(current);
+            else if (Source == SourceLibrary && Store != null) position = Store.GetPositionOf(current);
+
+            if (position < 0) return;
+
+            int rows = RowCount();
+            if (rows <= 0) return;
+
+            // すでに見えているなら動かさない(勝手に画面が飛ぶのを避ける)
+            if (position >= Offset && position < Offset + rows) return;
+
+            if (position < Offset) ScrollBy(position - Offset);
+            else ScrollBy(position - (Offset + rows - 1));
+        }
+
+        // ── Phase5-3 の名前でも呼べるようにしておく(既存 Prefab のボタン向け)
         public void NextPage()
         {
-            int rows = RowCount();
-            if (rows == 0) return;
-            if ((Page + 1) * rows >= TotalCount()) return;
-
-            Page++;
-            Refresh();
+            ScrollDown();
         }
 
         public void PreviousPage()
         {
-            if (Page <= 0) return;
-
-            Page--;
-            Refresh();
+            ScrollUp();
         }
 
         public void FirstPage()
         {
-            Page = 0;
-            Refresh();
+            ScrollToTop();
+        }
+
+        /// <summary>▲▼ 1 回で動く行数。0 なら 1 画面ぶん。</summary>
+        public int EffectiveStep()
+        {
+            if (ScrollStep > 0) return ScrollStep;
+
+            int rows = RowCount();
+            return rows > 0 ? rows : 1;
+        }
+
+        /// <summary>これ以上は送れない位置。</summary>
+        public int MaxOffset()
+        {
+            int max = TotalCount() - RowCount();
+            return max > 0 ? max : 0;
         }
 
         // ───────── 内部 ─────────
@@ -305,6 +419,13 @@ namespace SmartMediaPlatform.World.Udon.UI
             return true;
         }
 
+        /// <summary>押した行を覚える(短く印を出すため)。</summary>
+        private void MarkTouched(int position)
+        {
+            _touchedPosition = position;
+            _touchedAt = Time.time;
+        }
+
         private int[] ResolveRelated()
         {
             if (Session == null || Store == null) return new int[0];
@@ -315,35 +436,74 @@ namespace SmartMediaPlatform.World.Udon.UI
             return Store.GetRelatedIndices(current);
         }
 
-        private void ClampPage(int total, int rows)
+        /// <summary>
+        /// 行き過ぎた位置を戻す。
+        ///
+        /// <b>上限は「総件数 − 行数」</b>です。ページ送りと違い、
+        /// 最後まで送っても行が空かないのはこれが理由です。
+        /// </summary>
+        private void ClampOffset(int total, int rows)
         {
-            if (Page < 0) Page = 0;
-            if (rows <= 0) return;
+            if (Offset < 0) Offset = 0;
 
-            // 端数があるぶんもう 1 ページ。0 件でも 1 ページとして扱う。
-            int pages = total <= 0 ? 1 : (total + rows - 1) / rows;
-            if (Page >= pages) Page = pages - 1;
+            int max = total - rows;
+            if (max < 0) max = 0;
+
+            if (Offset > max) Offset = max;
         }
 
         private void RefreshChrome(int total, int rows)
         {
-            if (HeaderText != null)
+            if (HeaderText != null && HeaderText.text != HeaderLabel)
             {
-                string label = HeaderLabel + "  " + total;
-                if (HeaderText.text != label) HeaderText.text = label;
+                HeaderText.text = HeaderLabel;
             }
 
-            int pages = total <= 0 ? 1 : (total + rows - 1) / rows;
+            int filled = total - Offset;
+            if (filled < 0) filled = 0;
+            if (filled > rows) filled = rows;
 
-            if (PageText != null)
+            if (RangeText != null)
             {
-                string label = (Page + 1) + " / " + pages;
-                if (PageText.text != label) PageText.text = label;
+                // 「7〜12 / 24 件」。総数だけでなく、いま何番目を見ているかまで出す。
+                string label = total <= 0
+                    ? "0 件"
+                    : (Offset + 1) + "〜" + (Offset + filled) + " / " + total + " 件";
+
+                if (RangeText.text != label) RangeText.text = label;
             }
 
-            SetActive(PreviousPageButton, Page > 0);
-            SetActive(NextPageButton, Page + 1 < pages);
+            int max = total - rows;
+            if (max < 0) max = 0;
+
+            SetActive(ScrollUpButton, Offset > 0);
+            SetActive(ScrollDownButton, Offset < max);
             SetActive(EmptyMessage, total <= 0);
+
+            RefreshScrollHandle(total, rows, max);
+        }
+
+        /// <summary>
+        /// つまみを動かす。長さが「見えている割合」、位置が「どこまで送ったか」。
+        /// 一覧が短くて全部見えているときは、つまみが track いっぱいになります。
+        /// </summary>
+        private void RefreshScrollHandle(int total, int rows, int max)
+        {
+            if (ScrollHandle == null) return;
+
+            float visible = total <= 0 || rows >= total ? 1f : (float)rows / total;
+            float progress = max <= 0 ? 0f : (float)Offset / max;
+
+            float top = 1f - (1f - visible) * progress;
+            float bottom = top - visible;
+
+            if (bottom < 0f) bottom = 0f;
+            if (top > 1f) top = 1f;
+
+            ScrollHandle.anchorMin = new Vector2(0f, bottom);
+            ScrollHandle.anchorMax = new Vector2(1f, top);
+            ScrollHandle.offsetMin = new Vector2(0f, 0f);
+            ScrollHandle.offsetMax = new Vector2(0f, 0f);
         }
 
         /// <summary>行の頭に出す印。Queue だけ「♪ / 1. / 2. …」の並びにする。</summary>

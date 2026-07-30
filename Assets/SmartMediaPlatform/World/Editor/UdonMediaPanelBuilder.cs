@@ -9,17 +9,25 @@ using UnityEngine.UI;
 namespace SmartMediaPlatform.World.EditorTools
 {
     /// <summary>
-    /// <b>操作 UI(パネル)を組み立てるエディタツール。</b>Phase5-3。
+    /// <b>操作 UI(パネル)を組み立てるエディタツール。</b>Phase5-3 → Phase5-5。
     ///
     /// <b>ここが「Controller は差し替え可能」の実体です。</b>
     /// 壁パネルも手持ちリモコンも<b>同じ <see cref="UdonMediaPanel"/> 1 クラス</b>で、
     /// 違うのは「どの表示を、どの大きさで並べたか」だけです。
-    /// <list type="bullet">
-    /// <item><see cref="BuildWallPanel"/> …… いま鳴っているもの + 操作 + Library / 関連 / Queue</item>
-    /// <item><see cref="BuildRemotePanel"/> …… いま鳴っているもの + 操作 + Queue</item>
-    /// </list>
     /// タブレットや別レイアウトを足したくなったら、
     /// <b>ここにメソッドを 1 つ増やすだけ</b>です。Udon 側のコードは変わりません。
+    ///
+    /// <b>Phase5-5 で変えたところ</b>
+    /// <list type="bullet">
+    /// <item><b>縦長 1 列 → 横長 2 列。</b>1 列だと 1.8 m の縦長になり、
+    ///       下半分(Queue と Status)が膝の高さに来て狙いにくかった。
+    ///       2 列にすると全部が胸〜目の高さに収まる</item>
+    /// <item><b>行を 56 → 72 px(約 9.4 cm)に。</b>ボタンはすべて
+    ///       <see cref="UdonWorldUiKit.ComfortableTouchMeters"/> 以上。下回ると組み立て時に警告が出る</item>
+    /// <item><b>ページ送り → スクロール。</b>「7〜12 / 24 件」の表示とつまみ付き</item>
+    /// <item><b>鳴っている行に左端の縦棒。</b>離れて見ても分かる</item>
+    /// <item><b>押した行が一瞬光る。</b>「使う」で押したときも手応えが返る</item>
+    /// </list>
     ///
     /// <b>組み立てはすべてコードで行います。</b>出来合いの Canvas を Prefab で同梱すると
     /// UdonSharp のプログラム(.asset)が SDK 更新で行方不明になるためです
@@ -48,17 +56,34 @@ namespace SmartMediaPlatform.World.EditorTools
             NeedsCompile = false;
         }
 
-        // ───────── 壁パネル ─────────
+        // ───────── 壁パネル(2 列)─────────
 
         /// <summary>
-        /// <b>壁に貼る全部入り。</b>900 × 1390 px ≒ 1.17 m × 1.81 m。
+        /// <b>壁に貼る全部入り。</b>1400 × 980 px ≒ 1.82 m × 1.27 m。
+        ///
+        /// <code>
+        /// ┌───────────────────────────────────────────────┐
+        /// │ Smart Media Player              操作中: ○○   │
+        /// ├──────────────────┬────────────────────────────┤
+        /// │ いま鳴っているもの │ Library     1〜6 / 24 件 ▲▼│
+        /// │ ▶ 前へ 再生 次へ  │ ─────────────────────────  │
+        /// │ ■ 音量 − 60% ＋   │ (6 行)                     │
+        /// │ Queue      ▲▼    │ 関連        1〜3 / 3 件    │
+        /// │ (4 行)            │ (3 行)                     │
+        /// │ 状態の 1 行        │                            │
+        /// └──────────────────┴────────────────────────────┘
+        /// </code>
         /// </summary>
         public static UdonMediaPanel BuildWallPanel(GameObject parent, string objectName)
         {
-            const float W = 900f;
-            const float H = 1390f;
-            const float Pad = 24f;
-            const float CW = W - Pad * 2f;
+            const float W = 1400f;
+            const float H = 980f;
+            const float Pad = 28f;
+            const float ColGap = 28f;
+
+            float colWidth = (W - Pad * 2f - ColGap) * 0.5f;   // 658
+            float leftX = Pad;
+            float rightX = Pad + colWidth + ColGap;
 
             GameObject root = NewChild(parent, objectName);
             RectTransform canvas = UdonWorldUiKit.WorldCanvas(root, "Canvas", W, H, 0.0013f);
@@ -67,70 +92,56 @@ namespace SmartMediaPlatform.World.EditorTools
             UdonWorldUiKit.Plate(body, "Backplate", 0f, 0f, W, H, UdonWorldUiKit.Backplate)
                 .raycastTarget = false;
 
+            // ── 見出し(2 列にまたがる)
             Text panelTitle = UdonWorldUiKit.Label(
-                body, "PanelTitle", Pad, 24f, CW * 0.5f, 44f, 30,
+                body, "PanelTitle", Pad, 24f, 700f, 52f, 34,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
 
-            // いま誰が操作しているか(同期していないときは空のまま)
             Text syncOwner = UdonWorldUiKit.Label(
-                body, "SyncOwner", Pad + CW * 0.5f, 24f, CW * 0.5f, 44f, 20,
+                body, "SyncOwner", 760f, 24f, W - 760f - Pad, 52f, 22,
                 TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
+
+            UdonWorldUiKit.Divider(body, "HeaderRule", Pad, 86f, W - Pad * 2f, UdonWorldUiKit.Section);
 
             var panel = Add<UdonMediaPanel>(root);
             if (panel == null) return null;
 
-            // ── いま鳴っているもの
-            var nowPlaying = BuildNowPlaying(body, Pad, 76f, CW, 36, 22, 20);
+            // ── 左の列:いま鳴っているもの → 操作 → Queue
+            //    いちばん見るものといちばん押すものを、いちばん上(= 目の高さ)へ。
+            float leftY = 104f;
+
+            var nowPlaying = BuildNowPlaying(body, leftX, leftY, colWidth, 38, 24, 21, 16);
+            if (NeedsCompile) return panel;
             if (nowPlaying != null) nowPlaying.SyncText = syncOwner;
+            leftY += 176f;
+
+            var transport = BuildTransport(body, leftX, leftY, colWidth, 88f, 76f, 25, 21, true);
             if (NeedsCompile) return panel;
+            leftY += 196f;
 
-            // ── 操作
-            var transport = BuildTransport(body, Pad, 226f, CW, 68f, 52f, 24, 20, true);
-            if (NeedsCompile) return panel;
-
-            // ── 3 つの一覧
-            var librarySpec = new ListSpec();
-            librarySpec.Name = "Library";
-            librarySpec.Source = UdonMediaListView.SourceLibrary;
-            librarySpec.Header = "Library";
-            librarySpec.SecondaryCaption = "＋";
-            librarySpec.RowCount = 6;
-            librarySpec.Width = CW;
-
-            float libraryHeight;
-            var library = BuildList(body, Pad, 368f, librarySpec, out libraryHeight);
-            if (NeedsCompile) return panel;
-
-            var relatedSpec = new ListSpec();
-            relatedSpec.Name = "Related";
-            relatedSpec.Source = UdonMediaListView.SourceRelated;
-            relatedSpec.Header = "関連";
-            relatedSpec.SecondaryCaption = "＋";
-            relatedSpec.RowCount = 3;
-            relatedSpec.Width = CW;
-
-            float relatedHeight;
-            var related = BuildList(body, Pad, 368f + libraryHeight + 12f, relatedSpec, out relatedHeight);
-            if (NeedsCompile) return panel;
-
-            var queueSpec = new ListSpec();
-            queueSpec.Name = "Queue";
-            queueSpec.Source = UdonMediaListView.SourceQueue;
-            queueSpec.Header = "Queue";
-            queueSpec.SecondaryCaption = "×";
-            queueSpec.PrimaryCaption = "この曲へ移動";
-            queueSpec.SecondaryHint = "Queue から外す";
-            queueSpec.RowCount = 4;
-            queueSpec.Width = CW;
-
+            var queueSpec = QueueSpec(colWidth, 4);
             float queueHeight;
-            float queueY = 368f + libraryHeight + 12f + relatedHeight + 12f;
-            var queue = BuildList(body, Pad, queueY, queueSpec, out queueHeight);
+            var queue = BuildList(body, leftX, leftY, queueSpec, out queueHeight);
             if (NeedsCompile) return panel;
+            leftY += queueHeight + 20f;
 
             Text status = UdonWorldUiKit.Label(
-                body, "Status", Pad, queueY + queueHeight + 14f, CW, 36f, 20,
+                body, "Status", leftX, leftY, colWidth, 44f, 21,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextSecondary);
+
+            // ── 右の列:Library → 関連
+            float rightY = 104f;
+
+            var librarySpec = LibrarySpec(colWidth, 6);
+            float libraryHeight;
+            var library = BuildList(body, rightX, rightY, librarySpec, out libraryHeight);
+            if (NeedsCompile) return panel;
+            rightY += libraryHeight + 20f;
+
+            var relatedSpec = RelatedSpec(colWidth, 3);
+            float relatedHeight;
+            var related = BuildList(body, rightX, rightY, relatedSpec, out relatedHeight);
+            if (NeedsCompile) return panel;
 
             Finish(panel, body, panelTitle, status, "Smart Media Player",
                    nowPlaying, transport, new[] { library, related, queue });
@@ -141,64 +152,61 @@ namespace SmartMediaPlatform.World.EditorTools
         // ───────── 手持ちリモコン ─────────
 
         /// <summary>
-        /// <b>最小構成。</b>620 × 590 px ≒ 0.50 m × 0.47 m。
+        /// <b>最小構成。</b>760 × 770 px ≒ 0.65 m × 0.65 m。
         ///
         /// <b>Library も関連も持ちません。</b>それでも動くことが
         /// 「UI がロジックを持っていない」ことの一番わかりやすい証明になります。
         /// </summary>
         public static UdonMediaPanel BuildRemotePanel(GameObject parent, string objectName)
         {
-            const float W = 620f;
-            const float H = 590f;
-            const float Pad = 20f;
-            const float CW = W - Pad * 2f;
+            const float W = 760f;
+            const float H = 770f;
+            const float Pad = 24f;
+            const float CW = W - Pad * 2f;   // 712
 
             GameObject root = NewChild(parent, objectName);
-            RectTransform canvas = UdonWorldUiKit.WorldCanvas(root, "Canvas", W, H, 0.0008f);
+            RectTransform canvas = UdonWorldUiKit.WorldCanvas(root, "Canvas", W, H, 0.00085f);
             RectTransform body = UdonWorldUiKit.Place(canvas, "Body", 0f, 0f, W, H);
 
             UdonWorldUiKit.Plate(body, "Backplate", 0f, 0f, W, H, UdonWorldUiKit.Backplate)
                 .raycastTarget = false;
 
             Text panelTitle = UdonWorldUiKit.Label(
-                body, "PanelTitle", Pad, 16f, CW * 0.45f, 36f, 24,
+                body, "PanelTitle", Pad, 20f, 320f, 48f, 26,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
 
             Text syncOwner = UdonWorldUiKit.Label(
-                body, "SyncOwner", Pad + CW * 0.45f, 16f, CW * 0.55f, 36f, 16,
+                body, "SyncOwner", Pad + 330f, 20f, CW - 330f, 48f, 18,
                 TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
 
             var panel = Add<UdonMediaPanel>(root);
             if (panel == null) return null;
 
-            var nowPlaying = BuildNowPlaying(body, Pad, 60f, CW, 26, 17, 17);
+            float y = 78f;
+
+            var nowPlaying = BuildNowPlaying(body, Pad, y, CW, 30, 19, 18, 14);
+            if (NeedsCompile) return panel;
             if (nowPlaying != null) nowPlaying.SyncText = syncOwner;
-            if (NeedsCompile) return panel;
+            y += 154f;
 
-            var transport = BuildTransport(body, Pad, 180f, CW, 60f, 44f, 20, 17, true);
+            var transport = BuildTransport(body, Pad, y, CW, 80f, 68f, 21, 18, true);
             if (NeedsCompile) return panel;
+            y += 178f;
 
-            var queueSpec = new ListSpec();
-            queueSpec.Name = "Queue";
-            queueSpec.Source = UdonMediaListView.SourceQueue;
-            queueSpec.Header = "Queue";
-            queueSpec.SecondaryCaption = "×";
-            queueSpec.PrimaryCaption = "この曲へ移動";
-            queueSpec.SecondaryHint = "Queue から外す";
-            queueSpec.RowCount = 3;
-            queueSpec.Width = CW;
-            queueSpec.RowHeight = 52f;
-            queueSpec.HeaderHeight = 34f;
-            queueSpec.HeaderSize = 20;
-            queueSpec.TitleSize = 19;
-            queueSpec.SubSize = 14;
+            var queueSpec = QueueSpec(CW, 3);
+            queueSpec.RowHeight = 68f;
+            queueSpec.HeaderHeight = 56f;   // ▲▼ が 4.5 cm を割らない大きさ
+            queueSpec.HeaderSize = 21;
+            queueSpec.TitleSize = 21;
+            queueSpec.SubSize = 15;
 
             float queueHeight;
-            var queue = BuildList(body, Pad, 306f, queueSpec, out queueHeight);
+            var queue = BuildList(body, Pad, y, queueSpec, out queueHeight);
             if (NeedsCompile) return panel;
+            y += queueHeight + 16f;
 
             Text status = UdonWorldUiKit.Label(
-                body, "Status", Pad, 306f + queueHeight + 12f, CW, 30f, 16,
+                body, "Status", Pad, y, CW, 38f, 17,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextSecondary);
 
             Finish(panel, body, panelTitle, status, "リモコン",
@@ -207,19 +215,18 @@ namespace SmartMediaPlatform.World.EditorTools
             return panel;
         }
 
-        // ───────── 中身 ─────────
+        // ───────── いま鳴っているもの ─────────
 
         private static UdonNowPlayingView BuildNowPlaying(
             RectTransform body, float x, float y, float width,
-            int titleSize, int artistSize, int metaSize)
+            int titleSize, int artistSize, int metaSize, float barHeight)
         {
-            float titleHeight = titleSize * 1.35f;
-            float artistHeight = artistSize * 1.4f;
-            float metaHeight = metaSize * 1.5f;
+            float titleHeight = Mathf.Round(titleSize * 1.45f);
+            float artistHeight = Mathf.Round(artistSize * 1.45f);
+            float metaHeight = Mathf.Round(metaSize * 1.6f);
+            float total = titleHeight + 4f + artistHeight + 10f + barHeight + 8f + metaHeight;
 
-            RectTransform section = UdonWorldUiKit.Place(
-                body, "NowPlaying", x, y, width,
-                titleHeight + artistHeight + 12f + 12f + metaHeight + 6f);
+            RectTransform section = UdonWorldUiKit.Place(body, "NowPlaying", x, y, width, total);
 
             var view = Add<UdonNowPlayingView>(section.gameObject);
             if (view == null) return null;
@@ -229,24 +236,27 @@ namespace SmartMediaPlatform.World.EditorTools
             view.TitleText = UdonWorldUiKit.Label(
                 section, "Title", 0f, cursor, width, titleHeight, titleSize,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
-            cursor += titleHeight + 2f;
+            cursor += titleHeight + 4f;
 
             view.ArtistText = UdonWorldUiKit.Label(
                 section, "Artist", 0f, cursor, width, artistHeight, artistSize,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextSecondary);
-            cursor += artistHeight + 8f;
+            cursor += artistHeight + 10f;
 
-            view.ProgressFill = UdonWorldUiKit.ProgressBar(section, "Progress", 0f, cursor, width, 12f);
-            cursor += 12f + 6f;
+            view.ProgressFill = UdonWorldUiKit.ProgressBar(
+                section, "Progress", 0f, cursor, width, barHeight);
+            cursor += barHeight + 8f;
 
+            // 経過 / 残り / 状態 を 3 つに割る。
+            // 残り時間を出すのは「あと何分で次に行くか」が一番聞かれるため。
             float third = (width - 24f) / 3f;
 
             view.TimeText = UdonWorldUiKit.Label(
                 section, "Time", 0f, cursor, third, metaHeight, metaSize,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextSecondary);
 
-            view.QueueCountText = UdonWorldUiKit.Label(
-                section, "QueueCount", third + 12f, cursor, third, metaHeight, metaSize,
+            view.RemainingText = UdonWorldUiKit.Label(
+                section, "Remaining", third + 12f, cursor, third, metaHeight, metaSize,
                 TextAnchor.MiddleCenter, UdonWorldUiKit.TextSecondary);
 
             view.StateText = UdonWorldUiKit.Label(
@@ -257,68 +267,73 @@ namespace SmartMediaPlatform.World.EditorTools
             return view;
         }
 
+        // ───────── 操作ボタン ─────────
+
         private static UdonTransportView BuildTransport(
             RectTransform body, float x, float y, float width,
             float mainHeight, float subHeight, int mainSize, int subSize, bool showClear)
         {
-            float gap = Mathf.Round(width * 0.023f);
-            float rowGap = 12f;
+            const float Gap = 16f;
+            const float RowGap = 16f;
 
             RectTransform section = UdonWorldUiKit.Place(
-                body, "Transport", x, y, width, mainHeight + rowGap + subHeight);
+                body, "Transport", x, y, width, mainHeight + RowGap + subHeight);
 
             var view = Add<UdonTransportView>(section.gameObject);
             if (view == null) return null;
 
-            // ── 1 段目:前へ / 再生・一時停止 / 次へ / 停止
-            // 再生ボタンだけ 2 倍幅。いちばん押すものがいちばん大きいのが望ましい。
-            float unit = Mathf.Floor((width - gap * 3f) / 5f);
-
-            Text unusedLabel;
+            Text unused;
             Text playPauseLabel;
 
+            // ── 1 段目:前へ / 再生・一時停止 / 次へ
+            //    いちばん押す「再生 / 一時停止」を 2 倍幅にして、まず狙えるようにする。
+            float unit = Mathf.Floor((width - Gap * 2f) / 4f);
+
             Button previous = UdonWorldUiKit.PushButton(
-                section, "Previous", 0f, 0f, unit, mainHeight, "◀◀  前へ", mainSize,
-                UdonWorldUiKit.ButtonFace, out unusedLabel);
+                section, "Previous", 0f, 0f, unit, mainHeight, "◀◀", mainSize + 4,
+                UdonWorldUiKit.ButtonFace, out unused);
 
             Button playPause = UdonWorldUiKit.PushButton(
-                section, "PlayPause", unit + gap, 0f, unit * 2f, mainHeight, "▶  再生", mainSize,
+                section, "PlayPause", unit + Gap, 0f, unit * 2f, mainHeight, "▶  再生", mainSize,
                 UdonWorldUiKit.ButtonAccent, out playPauseLabel);
 
+            float nextX = unit * 3f + Gap * 2f;
             Button next = UdonWorldUiKit.PushButton(
-                section, "Next", unit * 3f + gap * 2f, 0f, unit, mainHeight, "次へ  ▶▶", mainSize,
-                UdonWorldUiKit.ButtonFace, out unusedLabel);
+                section, "Next", nextX, 0f, width - nextX, mainHeight, "▶▶", mainSize + 4,
+                UdonWorldUiKit.ButtonFace, out unused);
 
-            float stopX = unit * 4f + gap * 3f;
-            Button stop = UdonWorldUiKit.PushButton(
-                section, "Stop", stopX, 0f, width - stopX, mainHeight, "■  停止", mainSize,
-                UdonWorldUiKit.ButtonFace, out unusedLabel);
+            // ── 2 段目:停止 / 音量 / Queue を空に
+            float subY = mainHeight + RowGap;
+            float stop = Mathf.Round(width * 0.19f);
+            float volumeButton = Mathf.Round(subHeight * 1.35f);
+            float volumeText = Mathf.Round(width * 0.20f);
 
-            // ── 2 段目:音量 と Queue の掃除
-            float subY = mainHeight + rowGap;
-            float volumeButton = Mathf.Round(subHeight * 1.7f);
-            float volumeText = Mathf.Round(subHeight * 4.2f);
+            Button stopButton = UdonWorldUiKit.PushButton(
+                section, "Stop", 0f, subY, stop, subHeight, "■", subSize + 4,
+                UdonWorldUiKit.ButtonFace, out unused);
 
+            float volumeDownX = stop + RowGap;
             Button volumeDown = UdonWorldUiKit.PushButton(
-                section, "VolumeDown", 0f, subY, volumeButton, subHeight, "−", subSize + 4,
-                UdonWorldUiKit.ButtonFace, out unusedLabel);
+                section, "VolumeDown", volumeDownX, subY, volumeButton, subHeight, "−", subSize + 6,
+                UdonWorldUiKit.ButtonFace, out unused);
 
+            float volumeTextX = volumeDownX + volumeButton + 8f;
             Text volumeLabel = UdonWorldUiKit.Label(
-                section, "Volume", volumeButton + rowGap, subY, volumeText, subHeight, subSize,
+                section, "Volume", volumeTextX, subY, volumeText, subHeight, subSize,
                 TextAnchor.MiddleCenter, UdonWorldUiKit.TextSecondary);
 
-            float volumeUpX = volumeButton + rowGap + volumeText + rowGap;
+            float volumeUpX = volumeTextX + volumeText + 8f;
             Button volumeUp = UdonWorldUiKit.PushButton(
-                section, "VolumeUp", volumeUpX, subY, volumeButton, subHeight, "＋", subSize + 4,
-                UdonWorldUiKit.ButtonFace, out unusedLabel);
+                section, "VolumeUp", volumeUpX, subY, volumeButton, subHeight, "＋", subSize + 6,
+                UdonWorldUiKit.ButtonFace, out unused);
 
             Button clear = null;
             if (showClear)
             {
-                float clearX = volumeUpX + volumeButton + rowGap;
+                float clearX = volumeUpX + volumeButton + RowGap;
                 clear = UdonWorldUiKit.PushButton(
                     section, "ClearUpcoming", clearX, subY, width - clearX, subHeight,
-                    "Queue を空に", subSize, UdonWorldUiKit.ButtonFace, out unusedLabel);
+                    "Queue を空に", subSize, UdonWorldUiKit.ButtonFace, out unused);
             }
 
             view.PlayPauseLabel = playPauseLabel;
@@ -327,13 +342,15 @@ namespace SmartMediaPlatform.World.EditorTools
             UdonWorldUiKit.Wire(previous, view, "Previous", "前へ");
             UdonWorldUiKit.Wire(playPause, view, "TogglePlayPause", "再生 / 一時停止");
             UdonWorldUiKit.Wire(next, view, "Next", "次へ");
-            UdonWorldUiKit.Wire(stop, view, "Stop", "停止");
+            UdonWorldUiKit.Wire(stopButton, view, "Stop", "停止");
             UdonWorldUiKit.Wire(volumeDown, view, "VolumeDown", "音量を下げる");
             UdonWorldUiKit.Wire(volumeUp, view, "VolumeUp", "音量を上げる");
             if (clear != null) UdonWorldUiKit.Wire(clear, view, "ClearUpcoming", "Queue を空にする");
 
             return view;
         }
+
+        // ───────── 一覧 ─────────
 
         /// <summary>一覧 1 つぶんの見た目の指定。</summary>
         private sealed class ListSpec
@@ -345,20 +362,75 @@ namespace SmartMediaPlatform.World.EditorTools
             public string PrimaryCaption = "再生";
             public string SecondaryHint = "Queue に追加";
             public int RowCount = 6;
-            public float Width = 852f;
-            public float RowHeight = 56f;
-            public float RowGap = 6f;
-            public float HeaderHeight = 38f;
-            public int HeaderSize = 24;
-            public int TitleSize = 23;
-            public int SubSize = 16;
+            public float Width = 658f;
+            public float RowHeight = 72f;
+            public float RowGap = 8f;
+            public float HeaderHeight = 56f;
+            public int HeaderSize = 26;
+            public int TitleSize = 25;
+            public int SubSize = 17;
+
+            /// <summary>▲▼ 1 回で動く行数。0 なら 1 画面ぶん。</summary>
+            public int ScrollStep;
+
+            /// <summary>曲が変わったら鳴っている行まで戻すか。</summary>
+            public bool FollowNowPlaying;
+        }
+
+        private static ListSpec LibrarySpec(float width, int rows)
+        {
+            var spec = new ListSpec();
+            spec.Name = "Library";
+            spec.Source = UdonMediaListView.SourceLibrary;
+            spec.Header = "Library";
+            spec.RowCount = rows;
+            spec.Width = width;
+
+            // 半画面ずつ送ると、見ていた行が半分残るので位置を見失いにくい。
+            spec.ScrollStep = rows / 2;
+            return spec;
+        }
+
+        private static ListSpec RelatedSpec(float width, int rows)
+        {
+            var spec = new ListSpec();
+            spec.Name = "Related";
+            spec.Source = UdonMediaListView.SourceRelated;
+            spec.Header = "関連";
+            spec.RowCount = rows;
+            spec.Width = width;
+            return spec;
+        }
+
+        private static ListSpec QueueSpec(float width, int rows)
+        {
+            var spec = new ListSpec();
+            spec.Name = "Queue";
+            spec.Source = UdonMediaListView.SourceQueue;
+            spec.Header = "Queue";
+            spec.SecondaryCaption = "×";
+            spec.PrimaryCaption = "この曲へ移動";
+            spec.SecondaryHint = "Queue から外す";
+            spec.RowCount = rows;
+            spec.Width = width;
+
+            // 曲が変わったら先頭へ戻す。Queue の先頭 = いま鳴っているものなので、
+            // 下を眺めたまま次の曲になっても、勝手に迷子にならない。
+            spec.FollowNowPlaying = true;
+            return spec;
         }
 
         private static UdonMediaListView BuildList(
             RectTransform body, float x, float y, ListSpec spec, out float consumedHeight)
         {
+            const float TrackWidth = 8f;
+            const float TrackGap = 6f;
+
             float rowsY = spec.HeaderHeight + 8f;
-            consumedHeight = rowsY + spec.RowCount * (spec.RowHeight + spec.RowGap) - spec.RowGap;
+            float rowsHeight = spec.RowCount * (spec.RowHeight + spec.RowGap) - spec.RowGap;
+            consumedHeight = rowsY + rowsHeight;
+
+            float rowWidth = spec.Width - TrackWidth - TrackGap;
 
             RectTransform section = UdonWorldUiKit.Place(
                 body, spec.Name, x, y, spec.Width, consumedHeight);
@@ -368,51 +440,68 @@ namespace SmartMediaPlatform.World.EditorTools
 
             view.Source = spec.Source;
             view.HeaderLabel = spec.Header;
+            view.ScrollStep = spec.ScrollStep;
+            view.FollowNowPlaying = spec.FollowNowPlaying;
 
+            // ── 見出しの行:名前 / 何番目を見ているか / ▲ ▼
             view.HeaderText = UdonWorldUiKit.Label(
-                section, "Header", 0f, 0f, spec.Width * 0.5f, spec.HeaderHeight, spec.HeaderSize,
+                section, "Header", 0f, 0f, spec.Width * 0.36f, spec.HeaderHeight, spec.HeaderSize,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
             view.HeaderText.text = spec.Header;
 
-            // ページ送りは見出しの右端に寄せる
-            float pageButton = Mathf.Round(spec.HeaderHeight * 1.7f);
-            float pageText = Mathf.Round(spec.HeaderHeight * 2.7f);
-            float nextX = spec.Width - pageButton;
-            float textX = nextX - pageText - 12f;
-            float prevX = textX - pageButton - 12f;
+            float scrollButton = Mathf.Round(spec.HeaderHeight * 1.7f);
+            float downX = spec.Width - scrollButton;
+            float upX = downX - scrollButton - 8f;
+            float rangeX = spec.Width * 0.36f + 8f;
 
-            Text unusedLabel;
+            view.RangeText = UdonWorldUiKit.Label(
+                section, "Range", rangeX, 0f, upX - rangeX - 8f, spec.HeaderHeight, spec.SubSize + 2,
+                TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
 
-            Button previousPage = UdonWorldUiKit.PushButton(
-                section, "PreviousPage", prevX, 0f, pageButton, spec.HeaderHeight, "‹",
-                spec.HeaderSize, UdonWorldUiKit.ButtonFace, out unusedLabel);
+            Text unused;
+            Button up = UdonWorldUiKit.PushButton(
+                section, "ScrollUp", upX, 0f, scrollButton, spec.HeaderHeight, "▲",
+                spec.HeaderSize, UdonWorldUiKit.ButtonFace, out unused);
 
-            view.PageText = UdonWorldUiKit.Label(
-                section, "Page", textX, 0f, pageText, spec.HeaderHeight, spec.SubSize + 2,
-                TextAnchor.MiddleCenter, UdonWorldUiKit.TextSecondary);
+            Button down = UdonWorldUiKit.PushButton(
+                section, "ScrollDown", downX, 0f, scrollButton, spec.HeaderHeight, "▼",
+                spec.HeaderSize, UdonWorldUiKit.ButtonFace, out unused);
 
-            Button nextPage = UdonWorldUiKit.PushButton(
-                section, "NextPage", nextX, 0f, pageButton, spec.HeaderHeight, "›",
-                spec.HeaderSize, UdonWorldUiKit.ButtonFace, out unusedLabel);
+            view.ScrollUpButton = up.gameObject;
+            view.ScrollDownButton = down.gameObject;
 
-            view.PreviousPageButton = previousPage.gameObject;
-            view.NextPageButton = nextPage.gameObject;
+            UdonWorldUiKit.Wire(up, view, "ScrollUp", "上へ");
+            UdonWorldUiKit.Wire(down, view, "ScrollDown", "下へ");
 
-            UdonWorldUiKit.Wire(previousPage, view, "PreviousPage", "前のページ");
-            UdonWorldUiKit.Wire(nextPage, view, "NextPage", "次のページ");
+            UdonWorldUiKit.Divider(
+                section, "Rule", 0f, spec.HeaderHeight - 2f, spec.Width, UdonWorldUiKit.Section);
 
+            // ── いまどのあたりを見ているか(細い棒)
+            var track = UdonWorldUiKit.Plate(
+                section, "ScrollTrack", spec.Width - TrackWidth, rowsY, TrackWidth, rowsHeight,
+                UdonWorldUiKit.TrackBack);
+            track.raycastTarget = false;
+
+            var handle = UdonWorldUiKit.Plate(
+                track.transform, "Handle", 0f, 0f, TrackWidth, rowsHeight,
+                UdonWorldUiKit.TrackFill);
+            handle.raycastTarget = false;
+            view.ScrollHandle = handle.rectTransform;
+
+            // ── 空のときだけ出す案内
             Text empty = UdonWorldUiKit.Label(
-                section, "Empty", 0f, rowsY, spec.Width, spec.RowHeight, spec.SubSize + 2,
+                section, "Empty", 0f, rowsY, rowWidth, spec.RowHeight, spec.SubSize + 3,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextSecondary);
             empty.text = "(まだありません)";
             view.EmptyMessage = empty.gameObject;
 
+            // ── 行
             var rows = new UdonMediaListRow[spec.RowCount];
             for (int i = 0; i < spec.RowCount; i++)
             {
                 float rowY = rowsY + i * (spec.RowHeight + spec.RowGap);
 
-                UdonMediaListRow row = BuildRow(section, "Row" + i, rowY, spec);
+                UdonMediaListRow row = BuildRow(section, "Row" + i, rowY, rowWidth, spec, i);
                 if (row == null) return view;
 
                 row.Row = i;
@@ -425,9 +514,8 @@ namespace SmartMediaPlatform.World.EditorTools
         }
 
         private static UdonMediaListRow BuildRow(
-            RectTransform parent, string name, float y, ListSpec spec)
+            RectTransform parent, string name, float y, float width, ListSpec spec, int index)
         {
-            float width = spec.Width;
             float height = spec.RowHeight;
 
             RectTransform rowRect = UdonWorldUiKit.Place(parent, name, 0f, y, width, height);
@@ -435,54 +523,76 @@ namespace SmartMediaPlatform.World.EditorTools
             var row = Add<UdonMediaListRow>(rowRect.gameObject);
             if (row == null) return null;
 
+            float bar = 8f;
             float secondary = Mathf.Round(height * 1.3f);
-            float hitWidth = width - secondary - 12f;
-            float indexWidth = Mathf.Round(height * 0.9f);
-            float durationWidth = Mathf.Round(width * 0.15f);
-            float titleX = indexWidth + 20f;
-            float titleWidth = hitWidth - titleX - durationWidth - 16f;
+            float hitX = bar + 6f;
+            float hitWidth = width - hitX - secondary - 12f;
+            float indexWidth = Mathf.Round(height * 0.7f);
+            float durationWidth = Mathf.Round(width * 0.16f);
+            float titleX = indexWidth + 18f;
+            float durationX = hitWidth - durationWidth - 10f;
+            float titleWidth = durationX - titleX - 12f;
 
             // 中身は「行そのもの」ではなく子に置く。
             // 空行で非アクティブにする対象が UdonBehaviour 本体だと、
             // 二度と書き戻せなくなるため(UdonMediaListRow の注意書きを参照)。
             RectTransform content = UdonWorldUiKit.Place(rowRect, "Content", 0f, 0f, width, height);
 
-            Button hit = UdonWorldUiKit.HitArea(
-                content, "Hit", 0f, 0f, hitWidth, height, UdonWorldUiKit.RowFace);
+            // 1 行おきに少しだけ濃さを変える。
+            // 目が横に滑らないようにするためで、色そのものは意味を持たない。
+            Color face = index % 2 == 0
+                ? UdonWorldUiKit.RowFace
+                : UdonWorldUiKit.RowFaceAlt;
+
+            Button hit = UdonWorldUiKit.HitArea(content, "Hit", hitX, 0f, hitWidth, height, face);
 
             row.IndexText = UdonWorldUiKit.Label(
-                hit.transform, "Index", 8f, 0f, indexWidth, height, spec.SubSize + 2,
+                hit.transform, "Index", 6f, 0f, indexWidth, height, spec.SubSize + 3,
                 TextAnchor.MiddleCenter, UdonWorldUiKit.TextSecondary);
 
             row.TitleText = UdonWorldUiKit.Label(
-                hit.transform, "Title", titleX, height * 0.08f, titleWidth, height * 0.48f,
+                hit.transform, "Title", titleX, height * 0.10f, titleWidth, height * 0.46f,
                 spec.TitleSize, TextAnchor.LowerLeft, UdonWorldUiKit.TextPrimary);
 
             row.SubText = UdonWorldUiKit.Label(
-                hit.transform, "Sub", titleX, height * 0.56f, titleWidth, height * 0.36f,
+                hit.transform, "Sub", titleX, height * 0.56f, titleWidth, height * 0.34f,
                 spec.SubSize, TextAnchor.UpperLeft, UdonWorldUiKit.TextSecondary);
 
             row.DurationText = UdonWorldUiKit.Label(
-                hit.transform, "Duration", hitWidth - durationWidth - 12f, 0f, durationWidth, height,
-                spec.SubSize + 2, TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
+                hit.transform, "Duration", durationX, 0f, durationWidth, height,
+                spec.SubSize + 3, TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
 
             Text secondaryLabel;
             Button secondaryButton = UdonWorldUiKit.PushButton(
-                content, "Secondary", hitWidth + 12f, 0f, secondary, height,
-                spec.SecondaryCaption, spec.TitleSize, UdonWorldUiKit.ButtonFace, out secondaryLabel);
+                content, "Secondary", hitX + hitWidth + 12f, 0f, secondary, height,
+                spec.SecondaryCaption, spec.TitleSize + 2,
+                UdonWorldUiKit.ButtonFace, out secondaryLabel);
 
-            // 印は中身より後に置く(半透明でかぶせる)。
-            // 先に置くと、行の不透明な面に隠れて見えない。
+            // ── 印は中身より後に置く(半透明でかぶせる)。
+            //    先に置くと、行の不透明な面に隠れて見えない。
             Image highlight = UdonWorldUiKit.Plate(
-                rowRect, "Highlight", 0f, 0f, width, height, UdonWorldUiKit.RowHighlight);
+                rowRect, "Highlight", hitX, 0f, width - hitX, height, UdonWorldUiKit.RowHighlight);
             highlight.raycastTarget = false;
-
-            // 最初の Refresh が来るまでの 1 フレーム、全行が光って見えないように
             highlight.gameObject.SetActive(false);
+
+            Image pressed = UdonWorldUiKit.Plate(
+                rowRect, "Pressed", hitX, 0f, width - hitX, height, UdonWorldUiKit.RowPressed);
+            pressed.raycastTarget = false;
+            pressed.gameObject.SetActive(false);
+
+            // 左端の縦棒。離れて見ると、色の帯よりこちらが先に目に入る。
+            Image nowPlayingBar = UdonWorldUiKit.Plate(
+                rowRect, "NowPlayingBar", 0f, 0f, bar, height, UdonWorldUiKit.TrackFill);
+            nowPlayingBar.raycastTarget = false;
+            nowPlayingBar.gameObject.SetActive(false);
 
             row.Content = content.gameObject;
             row.Highlight = highlight.gameObject;
+            row.PressedMarker = pressed.gameObject;
+            row.NowPlayingBar = nowPlayingBar.gameObject;
             row.SecondaryButton = secondaryButton.gameObject;
+            row.TitleColor = UdonWorldUiKit.TextPrimary;
+            row.NowPlayingTitleColor = UdonWorldUiKit.TextNowPlaying;
 
             UdonWorldUiKit.Wire(hit, row, "Click", spec.PrimaryCaption);
             UdonWorldUiKit.Wire(secondaryButton, row, "ClickSecondary", spec.SecondaryHint);

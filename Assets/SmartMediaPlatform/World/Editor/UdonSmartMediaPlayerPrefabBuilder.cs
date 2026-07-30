@@ -125,7 +125,10 @@ namespace SmartMediaPlatform.World.EditorTools
             if (wall != null)
             {
                 wall.Core = core;
-                wall.transform.localPosition = new Vector3(-2.6f, 1.0f, 0f);
+
+                // 2 列(1.82 m × 1.27 m)の中心を 1.35 m に置くと、
+                // 上端 1.99 m / 下端 0.72 m で全部が胸〜目の高さに入る。
+                wall.transform.localPosition = new Vector3(-2.8f, 1.35f, 0f);
             }
 
             var player = SavePrefab(root, PlayerPrefabPath);
@@ -316,6 +319,11 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine("  「使う」で押せる: " + UdonWorldUiKit.InteractCount + " 件 OK / "
                           + UdonWorldUiKit.InteractFailures + " 件 NG"
                           + (UdonWorldUiKit.InteractFailures > 0 ? "  ← 上の警告を参照" : ""));
+
+            sb.AppendLine("  VR で押しやすさ: " + (UdonWorldUiKit.SmallTouchTargets == 0
+                              ? "すべて " + Mathf.RoundToInt(UdonWorldUiKit.ComfortableTouchMeters * 1000f)
+                                + " mm 以上"
+                              : UdonWorldUiKit.SmallTouchTargets + " 個が小さすぎます(上の警告を参照)"));
 
             sb.AppendLine("  Udon へ書き戻し: " + UdonWorldUiKit.SyncedCount + " 件 OK / "
                           + _syncFailures + " 件 NG"

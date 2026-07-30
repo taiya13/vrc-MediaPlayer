@@ -43,8 +43,17 @@ namespace SmartMediaPlatform.World.Udon
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonSmartMediaPlayer : UdonSharpBehaviour
     {
-        [Header("データ")]
-        [Tooltip("焼き込み済みカタログ。Catalog Builder が作り直してもここは変わらない")]
+        [Header("よく触る設定")]
+        [Tooltip("ワールドに入ったら自動で 1 本目を鳴らす")]
+        public bool PlayOnStart = true;
+
+        [Tooltip("鳴らし始めるまでの待ち時間(秒)。動画プレイヤーの準備を待つ")]
+        [Range(0f, 10f)]
+        public float StartDelay = 1.0f;
+
+        [Header("データ(Prefab が配線済み)")]
+        [Tooltip("焼き込み済みカタログ。URL はここに入れる。"
+                 + "Catalog Builder が作り直してもこの欄は変わらない")]
         public UdonMediaCatalog Catalog;
 
         [Tooltip("表示用データの窓口")]
@@ -53,7 +62,7 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("次の候補を出すエンジン")]
         public UdonRecommendationEngine Recommendation;
 
-        [Header("部品(差し替え可能)")]
+        [Header("部品(差し替え可能・Prefab が配線済み)")]
         [Tooltip("再生の判断")]
         public UdonPlayerSession Session;
 
@@ -69,14 +78,8 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("同期の担当(Phase5-4)。空なら 1 人用として動く")]
         public UdonSyncCoordinator Sync;
 
-        [Header("動き出し")]
-        [Tooltip("ワールドに入ったら自動で 1 本目を鳴らす")]
-        public bool PlayOnStart = true;
-
-        [Tooltip("鳴らし始めるまでの待ち時間(秒)。動画プレイヤーの準備を待つ")]
-        public float StartDelay = 1.0f;
-
-        [Tooltip("配線の結果を Console に出す")]
+        [Header("困ったとき")]
+        [Tooltip("配線の結果を Console に出す。「パネル N 枚」が 0 なら Core の挿し忘れ")]
         public bool LogWiring = true;
 
         /// <summary>配線が済んでいるか。</summary>

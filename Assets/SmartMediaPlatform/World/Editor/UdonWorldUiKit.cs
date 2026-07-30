@@ -40,12 +40,23 @@ namespace SmartMediaPlatform.World.EditorTools
         public static readonly Color ButtonFace = new Color(0.20f, 0.22f, 0.27f, 1f);
         public static readonly Color ButtonAccent = new Color(0.15f, 0.42f, 0.66f, 1f);
         public static readonly Color RowFace = new Color(0.16f, 0.17f, 0.21f, 1f);
-        public static readonly Color RowHighlight = new Color(0.15f, 0.42f, 0.66f, 0.55f);
+
+        // 1 行おきに少しだけ濃さを変える。目が横に滑らないようにするためで、
+        // 色そのものには意味を持たせない。
+        public static readonly Color RowFaceAlt = new Color(0.19f, 0.20f, 0.25f, 1f);
+
+        public static readonly Color RowHighlight = new Color(0.15f, 0.42f, 0.66f, 0.45f);
+
+        // 押した直後だけ一瞬出る。「使う」で押したときの手応えになる。
+        public static readonly Color RowPressed = new Color(1f, 1f, 1f, 0.22f);
         public static readonly Color TrackBack = new Color(0.25f, 0.27f, 0.32f, 1f);
         public static readonly Color TrackFill = new Color(0.35f, 0.72f, 0.95f, 1f);
 
         public static readonly Color TextPrimary = new Color(0.95f, 0.96f, 0.98f, 1f);
         public static readonly Color TextSecondary = new Color(0.66f, 0.70f, 0.78f, 1f);
+
+        /// <summary>いま鳴っている行の見出し。ふだんより明るくする。</summary>
+        public static readonly Color TextNowPlaying = new Color(1f, 1f, 1f, 1f);
 
         /// <summary><see cref="Bind(Button, UdonSharpBehaviour, string)"/> が失敗した回数。</summary>
         public static int BindFailures { get; private set; }
@@ -65,6 +76,23 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <summary>U# のコンパイル待ちで「使う」を足せなかったか。</summary>
         public static bool InteractNeedsCompile { get; private set; }
 
+        // ───────── VR で押しやすい大きさ ─────────
+
+        /// <summary>
+        /// <b>VR で気持ちよく押せる最小の辺(m)。</b>
+        ///
+        /// レーザーで狙うぶんには 2 cm 角でも当たりますが、腕が伸びた姿勢や
+        /// 動きながらだと外します。<b>4.5 cm</b> を下回るボタンは
+        /// 組み立て時に警告を出すようにしています。
+        /// </summary>
+        public const float ComfortableTouchMeters = 0.045f;
+
+        /// <summary>いま組んでいる Canvas の 1 px が何 m か。</summary>
+        public static float CurrentMetersPerPixel { get; private set; }
+
+        /// <summary>小さすぎたボタンの数(組み立て後の報告用)。</summary>
+        public static int SmallTouchTargets { get; private set; }
+
         public static void ResetCounters()
         {
             BindFailures = 0;
@@ -73,6 +101,23 @@ namespace SmartMediaPlatform.World.EditorTools
             InteractCount = 0;
             InteractFailures = 0;
             InteractNeedsCompile = false;
+            SmallTouchTargets = 0;
+        }
+
+        /// <summary>押せる大きさか確かめる。小さければ警告して数える。</summary>
+        private static void CheckTouchSize(GameObject target, float width, float height)
+        {
+            if (CurrentMetersPerPixel <= 0f) return;
+
+            float shortest = (width < height ? width : height) * CurrentMetersPerPixel;
+            if (shortest >= ComfortableTouchMeters) return;
+
+            SmallTouchTargets++;
+            Debug.LogWarning(
+                "[UdonWorldUiKit] " + target.name + " は "
+                + Mathf.RoundToInt(shortest * 1000f) + " mm しかありません。VR では狙いにくいので "
+                + Mathf.RoundToInt(ComfortableTouchMeters * 1000f) + " mm 以上を目安にしてください。",
+                target);
         }
 
         // ───────── 置く ─────────
@@ -148,6 +193,8 @@ namespace SmartMediaPlatform.World.EditorTools
                 fontSize, TextAnchor.MiddleCenter, TextPrimary);
 
             if (caption != null) label.text = caption;
+
+            CheckTouchSize(button.gameObject, width, height);
             return button;
         }
 
@@ -169,7 +216,17 @@ namespace SmartMediaPlatform.World.EditorTools
             colors.fadeDuration = 0.05f;
             button.colors = colors;
 
+            CheckTouchSize(button.gameObject, width, height);
             return button;
+        }
+
+        /// <summary>区切り線。節どうしの境目をはっきりさせる。</summary>
+        public static Image Divider(
+            Transform parent, string name, float x, float y, float width, Color color)
+        {
+            var line = Plate(parent, name, x, y, width, 2f, color);
+            line.raycastTarget = false;
+            return line;
         }
 
         /// <summary>横に伸びる進捗バー。返すのは伸び縮みする側。</summary>
@@ -454,6 +511,9 @@ namespace SmartMediaPlatform.World.EditorTools
             var rect = go.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(width, height);
             rect.localScale = new Vector3(metersPerPixel, metersPerPixel, metersPerPixel);
+
+            // ここから作るボタンの「実寸」を測れるようにしておく
+            CurrentMetersPerPixel = metersPerPixel;
             return rect;
         }
     }

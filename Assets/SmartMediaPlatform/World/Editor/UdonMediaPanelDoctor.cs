@@ -332,8 +332,18 @@ namespace SmartMediaPlatform.World.EditorTools
             if (list != null)
             {
                 target = list;
-                if (name == "NextPage") { eventName = "NextPage"; caption = "次のページ"; }
-                else if (name == "PreviousPage") { eventName = "PreviousPage"; caption = "前のページ"; }
+                // Phase5-5 でページ送りからスクロールへ変えた。
+                // すでに置いてある Prefab のために、旧名(NextPage / PreviousPage)も受ける。
+                if (name == "ScrollDown" || name == "NextPage")
+                {
+                    eventName = "ScrollDown";
+                    caption = "下へ";
+                }
+                else if (name == "ScrollUp" || name == "PreviousPage")
+                {
+                    eventName = "ScrollUp";
+                    caption = "上へ";
+                }
                 return eventName != null;
             }
 

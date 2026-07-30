@@ -36,23 +36,35 @@ namespace SmartMediaPlatform.World.Udon.UI
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonMediaPanel : UdonSharpBehaviour
     {
-        [Header("つなぎ先")]
-        [Tooltip("これ 1 つだけ埋めれば動く。下の欄は空なら Core から引いてくる")]
+        [Header("★ ここだけ埋めれば動く")]
+        [Tooltip("シーンに置いた SmartMediaPlayer を挿す。ほかの欄はここから引いてくる")]
         public UdonSmartMediaPlayer Core;
 
-        [Tooltip("操作を伝える窓口(空なら Core から)")]
+        [Header("見た目")]
+        [Tooltip("見出しに出す文字")]
+        public string PanelName = "";
+
+        [Tooltip("ワールドに入った時点で開いておく")]
+        public bool OpenOnStart = true;
+
+        [Tooltip("何秒ごとに書き直すか。0 なら操作されたときだけ")]
+        [Range(0f, 2f)]
+        public float RefreshInterval = 0.5f;
+
+        [Header("差し替えたいとき(空なら Core から)")]
+        [Tooltip("操作を伝える窓口")]
         public UdonMediaController Controller;
 
-        [Tooltip("表示するもとの状態(空なら Core から)")]
+        [Tooltip("表示するもとの状態")]
         public UdonPlayerSession Session;
 
-        [Tooltip("表示用データの窓口(空なら Core から)")]
+        [Tooltip("表示用データの窓口")]
         public UdonCatalogStore Store;
 
-        [Tooltip("音量の行き先(空なら Core から)")]
+        [Tooltip("音量の行き先")]
         public UdonMediaScreen Screen;
 
-        [Header("中身(全部任意。挿さっているものだけ書き直す)")]
+        [Header("中身(Prefab が配線済み)")]
         [Tooltip("いま鳴っているもの")]
         public UdonNowPlayingView NowPlaying;
 
@@ -65,22 +77,11 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("直近の操作の結果")]
         public Text StatusText;
 
-        [Tooltip("パネルの名前(空なら触らない)")]
+        [Tooltip("パネルの名前を出す先(空なら触らない)")]
         public Text TitleLabel;
 
-        [Tooltip("見出しに出す文字")]
-        public string PanelName = "";
-
-        [Header("開閉")]
         [Tooltip("開け閉てする入れ物。必ず「子」を指すこと(このパネル自身は不可)。空なら開きっぱなし")]
         public GameObject Body;
-
-        [Tooltip("ワールドに入った時点で開いておく")]
-        public bool OpenOnStart = true;
-
-        [Header("書き直し")]
-        [Tooltip("何秒ごとに書き直すか。0 なら操作されたときだけ")]
-        public float RefreshInterval = 0.5f;
 
         private bool _bound;
         private float _nextRefresh;

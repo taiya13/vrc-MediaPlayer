@@ -53,11 +53,24 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("中身がある行だけ出す入れ物。必ず「子」を指すこと(この行自身は不可)")]
         public GameObject Content;
 
-        [Tooltip("いま鳴っている行の印")]
+        [Tooltip("いま鳴っている行の印(行全体にかかる薄い色)")]
         public GameObject Highlight;
+
+        [Tooltip("いま鳴っている行の印(左端の縦棒)。離れて見てもすぐ分かる")]
+        public GameObject NowPlayingBar;
+
+        [Tooltip("押した直後だけ出る印。「使う」で押したときの手応えになる")]
+        public GameObject PressedMarker;
 
         [Tooltip("2 つめのボタン(＋ Queue / × 削除)。使えない行では隠す")]
         public GameObject SecondaryButton;
+
+        [Header("文字の色")]
+        [Tooltip("いま鳴っている行の見出しはこの色にする")]
+        public Color NowPlayingTitleColor = new Color(1f, 1f, 1f, 1f);
+
+        [Tooltip("ふだんの見出しの色")]
+        public Color TitleColor = new Color(0.86f, 0.88f, 0.92f, 1f);
 
         /// <summary>いま空行か(診断用)。</summary>
         public bool IsEmpty { get { return _empty; } }
@@ -89,6 +102,8 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             SetActive(Content, false);
             SetActive(Highlight, false);
+            SetActive(NowPlayingBar, false);
+            SetActive(PressedMarker, false);
             SetActive(SecondaryButton, false);
 
             SetText(IndexText, "");
@@ -106,12 +121,33 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             SetActive(Content, true);
             SetActive(Highlight, highlight);
+            SetActive(NowPlayingBar, highlight);
             SetActive(SecondaryButton, secondary);
 
             SetText(IndexText, indexLabel);
             SetText(TitleText, title);
             SetText(SubText, sub);
             SetText(DurationText, duration);
+
+            // 鳴っている行だけ見出しを明るくする。
+            // 色の差は、離れて見たときに縦棒より先に目に入る。
+            if (TitleText != null)
+            {
+                Color wanted = highlight ? NowPlayingTitleColor : TitleColor;
+                if (TitleText.color != wanted) TitleText.color = wanted;
+            }
+        }
+
+        /// <summary>
+        /// 押した直後の印を出す / 消す。
+        ///
+        /// <b>uGUI の色変化(ColorTint)は「使う」で押したときには出ません。</b>
+        /// VRChat のレーザーで押したのか、押せていないのかが分からないと
+        /// 何度も押してしまうので、どちらの押し方でも手応えが返るようにしています。
+        /// </summary>
+        public void SetPressed(bool pressed)
+        {
+            SetActive(PressedMarker, pressed && !_empty);
         }
 
         // ───────── 内部 ─────────

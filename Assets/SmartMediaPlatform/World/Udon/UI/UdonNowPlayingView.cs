@@ -46,6 +46,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("Queue の残り件数")]
         public Text QueueCountText;
 
+        [Tooltip("あと何分で終わるか。「次はいつ?」に一番よく答える表示")]
+        public Text RemainingText;
+
         [Tooltip("いま誰が操作しているか(同期しているときだけ出る)")]
         public Text SyncText;
 
@@ -59,6 +62,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         public string PausedLabel = "‖ 一時停止";
         public string StoppedLabel = "■ 停止";
         public string ExhaustedLabel = "次がありません";
+        public string LoadingLabel = "読み込み中…";
 
         /// <summary>画面を書き直す。<see cref="UdonMediaPanel"/> から呼ばれる。</summary>
         public void Refresh()
@@ -67,12 +71,7 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             if (Session == null)
             {
-                SetText(TitleText, NothingLabel);
-                SetText(ArtistText, "");
-                SetText(TimeText, "--:-- / --:--");
-                SetText(StateText, "");
-                SetText(QueueCountText, "");
-                SetFill(0f);
+                ShowNothing("");
                 return;
             }
 
@@ -80,18 +79,12 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             if (current < 0)
             {
-                SetText(TitleText, NothingLabel);
-                SetText(ArtistText, "");
-                SetText(TimeText, "--:-- / --:--");
-                SetText(StateText, Session.IsExhausted ? ExhaustedLabel : StoppedLabel);
-                SetText(QueueCountText, "");
-                SetFill(0f);
+                ShowNothing(Session.IsExhausted ? ExhaustedLabel : StoppedLabel);
                 return;
             }
 
             SetText(TitleText, Store != null ? Store.GetTitle(current) : "");
             SetText(ArtistText, Store != null ? Store.GetArtist(current) : "");
-            SetText(StateText, Session.IsPlaying ? PlayingLabel : PausedLabel);
 
             // 「いま鳴っているもの」を含めた件数なので、待ちは 1 引いた数。
             int upcoming = Session.QueueCount - 1;
@@ -102,16 +95,58 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             if (backend == null)
             {
+                SetText(StateText, Session.IsPlaying ? PlayingLabel : PausedLabel);
                 SetText(TimeText, "--:-- / " + Duration(current));
+                SetText(RemainingText, "");
                 SetFill(0f);
                 return;
             }
 
-            SetText(TimeText, FormatSeconds(backend.GetTime()) + " / " + Duration(current));
+            // 再生中のはずなのにまだ動いていないなら「読み込み中」。
+            // 何も出ない時間に「壊れた?」と思わせないための 1 行。
+            bool loading = Session.IsPlaying && !backend.IsPlaying;
+            SetText(StateText, loading
+                ? LoadingLabel
+                : (Session.IsPlaying ? PlayingLabel : PausedLabel));
+
+            float elapsed = backend.GetTime();
+            float length = backend.GetDuration();
+
+            SetText(TimeText, FormatSeconds(elapsed) + " / " + FormatLength(length, current));
+            SetText(RemainingText, FormatRemaining(elapsed, length));
             SetFill(backend.GetProgress());
         }
 
         // ───────── 内部 ─────────
+
+        private void ShowNothing(string state)
+        {
+            SetText(TitleText, NothingLabel);
+            SetText(ArtistText, "");
+            SetText(TimeText, "--:-- / --:--");
+            SetText(RemainingText, "");
+            SetText(StateText, state);
+            SetText(QueueCountText, "");
+            SetFill(0f);
+        }
+
+        /// <summary>長さ。動画から取れなければカタログの値を使う。</summary>
+        private string FormatLength(float seconds, int catalogIndex)
+        {
+            if (seconds > 0f) return FormatSeconds(seconds);
+            return Duration(catalogIndex);
+        }
+
+        /// <summary>あと何分か。分からなければ空。</summary>
+        private string FormatRemaining(float elapsed, float length)
+        {
+            if (length <= 0f) return "";
+
+            float rest = length - elapsed;
+            if (rest < 0f) rest = 0f;
+
+            return "残り " + FormatSeconds(rest);
+        }
 
         /// <summary>
         /// いま誰が操作しているかを出す。
