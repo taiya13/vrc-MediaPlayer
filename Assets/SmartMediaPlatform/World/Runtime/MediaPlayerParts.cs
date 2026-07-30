@@ -118,9 +118,16 @@ namespace SmartMediaPlatform.World
     /// <summary>
     /// <b>画面。</b>差し替え可能。
     ///
-    /// 既定は <see cref="MediaPlayerUI"/>(IMGUI の β 版)です。
-    /// uGUI やワールド内 Canvas に差し替えるときは、
-    /// この インターフェース を実装したコンポーネントを UI の子に置いてください。
+    /// <b>Phase5-3 で既定の実装が無くなりました。</b>
+    /// Phase5-1 の <c>MediaPlayerUI</c> は <c>OnGUI</c>(IMGUI)で描いていましたが、
+    /// <c>OnGUI</c> はアップロードしたワールドでは動きません。
+    /// 実際の操作 UI は <c>UdonMediaPanel</c>(World Space Canvas + uGUI)が担当し、
+    /// <b>ClientSim は UdonSharp を動かせる</b>ので、
+    /// エディタでの確認もそちらで足ります。
+    ///
+    /// この口自体は<b>残してあります</b>。<see cref="SmartMediaPlayerRoot"/> の
+    /// UI 枠を塞がないためで、独自の MonoBehaviour 製 UI を挿したいときは
+    /// これを実装したコンポーネントを UI の子に置いてください。
     /// </summary>
     public interface IMediaPlayerUI : IMediaPlayerPart
     {

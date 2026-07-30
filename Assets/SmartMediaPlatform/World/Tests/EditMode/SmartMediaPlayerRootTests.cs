@@ -45,7 +45,7 @@ namespace SmartMediaPlatform.World.Tests
 
             if (withBackend) Child("Player").AddComponent<DummyMediaBackendProvider>();
             if (withController) Child("Controller").AddComponent<MediaController>();
-            if (withUI) Child("UI").AddComponent<MediaPlayerUI>();
+            if (withUI) Child("UI").AddComponent<TestPlayerUI>();
             if (withCatalog) Child("Catalog").AddComponent<DefaultCatalogProvider>();
 
             return root;
@@ -341,6 +341,29 @@ namespace SmartMediaPlatform.World.Tests
             public bool Next() => false;
             public bool Previous() => false;
             public bool Stop() => false;
+        }
+
+        /// <summary>
+        /// UI 枠の代役。
+        ///
+        /// Phase5-3 で IMGUI の <c>MediaPlayerUI</c> を廃止したので、
+        /// <b>この枠に既定の実装はもうありません</b>
+        /// (実際の操作 UI は Udon 側の <c>UdonMediaPanel</c>)。
+        /// ここで確かめたいのは「<see cref="IMediaPlayerUI"/> を実装したものを
+        /// 子に置けば根っこが見つけて Bind する」という<b>枠の契約</b>だけなので、
+        /// テスト用の最小実装で足ります。
+        /// </summary>
+        private sealed class TestPlayerUI : MonoBehaviour, IMediaPlayerUI
+        {
+            public bool Bound { get; private set; }
+            public MediaPlayerContext Context { get; private set; }
+            public bool Visible { get; set; } = true;
+
+            public void Bind(MediaPlayerContext context)
+            {
+                Bound = true;
+                Context = context;
+            }
         }
     }
 }

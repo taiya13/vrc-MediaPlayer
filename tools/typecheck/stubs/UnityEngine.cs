@@ -612,10 +612,49 @@ namespace UnityEngine.UI
     }
     public class GraphicRaycaster : UnityEngine.Behaviour { public bool ignoreReversedGraphics { get; set; } }
     public class LayoutElement : UnityEngine.Behaviour { public float preferredHeight { get; set; } }
-    public class Image : Graphic { public UnityEngine.Sprite sprite { get; set; } }
-    public class Selectable : UnityEngine.Behaviour { public bool interactable { get; set; } }
+    public class Image : Graphic
+    {
+        public enum Type { Simple, Sliced, Tiled, Filled }
+        public enum FillMethod { Horizontal, Vertical, Radial90, Radial180, Radial360 }
+        public UnityEngine.Sprite sprite { get; set; }
+        public Type type { get; set; }
+        public FillMethod fillMethod { get; set; }
+        public int fillOrigin { get; set; }
+        public float fillAmount { get; set; }
+        public bool preserveAspect { get; set; }
+    }
+    public struct ColorBlock
+    {
+        public UnityEngine.Color normalColor { get; set; }
+        public UnityEngine.Color highlightedColor { get; set; }
+        public UnityEngine.Color pressedColor { get; set; }
+        public UnityEngine.Color selectedColor { get; set; }
+        public UnityEngine.Color disabledColor { get; set; }
+        public float colorMultiplier { get; set; }
+        public float fadeDuration { get; set; }
+        public static ColorBlock defaultColorBlock { get { return default(ColorBlock); } }
+    }
+    public class Selectable : UnityEngine.Behaviour
+    {
+        public enum Transition { None, ColorTint, SpriteSwap, Animation }
+        public bool interactable { get; set; }
+        public Transition transition { get; set; }
+        public ColorBlock colors { get; set; }
+        public Graphic targetGraphic { get; set; }
+    }
     public class Button : Selectable { public UnityEngine.Events.UnityEvent onClick { get; set; } }
-    public class Slider : Selectable { public float value { get; set; } public float minValue { get; set; } public float maxValue { get; set; } }
+    public class Slider : Selectable
+    {
+        public enum Direction { LeftToRight, RightToLeft, BottomToTop, TopToBottom }
+        public float value { get; set; }
+        public float minValue { get; set; }
+        public float maxValue { get; set; }
+        public bool wholeNumbers { get; set; }
+        public Direction direction { get; set; }
+        public UnityEngine.RectTransform fillRect { get; set; }
+        public UnityEngine.RectTransform handleRect { get; set; }
+        public UnityEngine.Events.UnityEvent<float> onValueChanged { get; set; }
+    }
     public class Toggle : Selectable { public bool isOn { get; set; } }
     public class ScrollRect : UnityEngine.Behaviour { public UnityEngine.Vector2 normalizedPosition { get; set; } }
     public class RawImage : Graphic { public UnityEngine.Texture texture { get; set; } }

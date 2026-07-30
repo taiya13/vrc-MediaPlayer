@@ -4,22 +4,33 @@ using UnityEngine;
 namespace SmartMediaPlatform.World.Udon
 {
     /// <summary>
-    /// <b>「使う」で押せる操作ボタン。</b>
+    /// <b>「使う」で押せるボタン。</b>Collider + Interact で押す<b>物理ボタン</b>用です。
     ///
-    /// VRChat で<b>いちばん確実に押せるのは Collider + Interact</b> です
-    /// (ワールド内 uGUI はレイキャストの設定を間違えると押せません)。
-    /// Prefab の操作ボタンはこの方式にしてあります。
+    /// <b>uGUI が本線です。</b>Phase5-3 の操作 UI は World Space Canvas の
+    /// <c>Button</c> で組んであります。こちらは
+    /// <list type="bullet">
+    /// <item>壁のスイッチや机の上のボタンなど、<b>板を直接押させたい</b>とき</item>
+    /// <item>uGUI のレイキャストが通らない置き方をしてしまったときの保険</item>
+    /// </list>
+    /// のために残してあります。
     ///
-    /// 呼ぶ先は <see cref="UdonMediaController"/> の<b>イベント名</b>だけなので、
-    /// <b>窓口ごと差し替えても、同じ名前に応えるならボタンはそのまま動きます</b>。
+    /// <b>Phase5-3 で変わったところ</b><br/>
+    /// 送り先が <c>UdonMediaController</c> 固定ではなくなりました。
+    /// <see cref="Target"/> は <c>UdonSharpBehaviour</c> なら何でもよいので、
+    /// <list type="bullet">
+    /// <item>窓口 …… <c>Target=UdonMediaController</c> / <c>EventName="Next"</c></item>
+    /// <item>パネルの開閉 …… <c>Target=UdonMediaPanel</c> / <c>EventName="Toggle"</c></item>
+    /// <item>ページ送り …… <c>Target=UdonMediaListView</c> / <c>EventName="NextPage"</c></item>
+    /// </list>
+    /// が<b>同じ 1 クラスで</b>書けます。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonMediaControlButton : UdonSharpBehaviour
     {
-        [Tooltip("押されたら伝える窓口")]
-        public UdonMediaController Controller;
+        [Tooltip("押されたら伝える相手(窓口 / パネル / 一覧 など)")]
+        public UdonSharpBehaviour Target;
 
-        [Tooltip("呼ぶイベント名。TogglePlayPause / Next / Previous / Stop / PlaySelected など")]
+        [Tooltip("呼ぶイベント名。TogglePlayPause / Next / Previous / Stop / Toggle など")]
         public string EventName = "TogglePlayPause";
 
         [Tooltip("見出し(空なら触らない)")]
@@ -42,9 +53,9 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>押されたときの処理。<c>Button.onClick</c> からも呼べる。</summary>
         public void Click()
         {
-            if (Controller == null || EventName == null || EventName.Length == 0) return;
+            if (Target == null || EventName == null || EventName.Length == 0) return;
 
-            Controller.SendCustomEvent(EventName);
+            Target.SendCustomEvent(EventName);
         }
     }
 }

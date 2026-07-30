@@ -43,6 +43,8 @@ namespace SmartMediaPlatform.World.EditorTools
 
             DrawStep1();
             EditorGUILayout.Space();
+            DrawStepPanels();
+            EditorGUILayout.Space();
             DrawStep2();
             EditorGUILayout.Space();
             DrawStep3();
@@ -87,12 +89,12 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             EditorGUILayout.LabelField("1. ワールド用の Prefab を作る", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
-                "制御が Udon なので、アップロードしたワールドでも動きます。",
+                "制御が Udon なので、アップロードしたワールドでも動きます。\n"
+                + "1 回押すと Prefab が 3 つできます(本体 + パネル 2 種)。",
                 EditorStyles.wordWrappedLabel);
 
             GUI.enabled = HasSdk;
-            if (GUILayout.Button("SmartMediaPlayer.prefab を作る(AVPro・実機用)",
-                                 GUILayout.Height(26f)))
+            if (GUILayout.Button("Prefab を作る(AVPro・実機用)", GUILayout.Height(26f)))
             {
                 Invoke("SmartMediaPlatform.World.EditorTools.UdonSmartMediaPlayerPrefabBuilder",
                        "CreatePrefab");
@@ -105,10 +107,32 @@ namespace SmartMediaPlatform.World.EditorTools
             GUI.enabled = true;
 
             EditorGUILayout.HelpBox(
-                "できた Prefab を Hierarchy へドラッグし、Screen/Surface を見える位置へ動かしてください。\n"
+                "SmartMediaPlayer.prefab を Hierarchy へドラッグし、\n"
+                + "Screen/Surface と WallPanel を見える位置へ動かしてください。\n"
                 + "※ Prefabs フォルダにある SmartMediaPlayer_NoSDK.prefab は\n"
                 + "   エディタで仕組みを見るためのものです。音も映像も出ません。",
                 MessageType.None);
+        }
+
+        private void DrawStepPanels()
+        {
+            EditorGUILayout.LabelField("1-b. 操作 UI を増やす(任意)", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                "壁パネル・リモコンは何枚でも置けます。手順は 2 つだけです。",
+                EditorStyles.wordWrappedLabel);
+
+            EditorGUILayout.HelpBox(
+                "1. MediaWallPanel.prefab か MediaRemotePanel.prefab を Hierarchy へドラッグ\n"
+                + "2. Inspector の Core に、シーンの SmartMediaPlayer を挿す\n"
+                + "\n"
+                + "残りの欄(Controller / Session / Store / Screen)は空のままで構いません。\n"
+                + "実行時に Core から引いてきます。",
+                MessageType.None);
+
+            if (GUILayout.Button("Prefabs フォルダを開く"))
+            {
+                SelectPrefabFolder();
+            }
         }
 
         private void DrawStep2()
@@ -203,6 +227,24 @@ namespace SmartMediaPlatform.World.EditorTools
                 typeName + "." + methodName + " が見つかりませんでした。\n"
                 + "VRChat SDK(Worlds)が入っているか確認してください。",
                 "OK");
+        }
+
+        private static void SelectPrefabFolder()
+        {
+            const string path = "Assets/SmartMediaPlatform/World/Prefabs";
+
+            var folder = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+            if (folder == null)
+            {
+                EditorUtility.DisplayDialog(
+                    "Smart Media Platform",
+                    "Prefabs フォルダが見つかりません。\n先に手順 1 で Prefab を作ってください。",
+                    "OK");
+                return;
+            }
+
+            Selection.activeObject = folder;
+            EditorGUIUtility.PingObject(folder);
         }
 
         private static void SelectCatalog()

@@ -1,12 +1,22 @@
 # typecheck — Unity を起動せずにコードを検査する
 
-2 つあります。
+4 つあります。
 
 | ツール | 見るもの |
 | --- | --- |
 | `typecheck.py` | C# として正しいか(mcs で本当にコンパイルする) |
 | `runtests.py` | EditMode テストが通るか(mono で本当に実行する) |
 | `udon_lint.py` | UdonSharp で書けるか(mcs を通っても U# が弾く書き方) |
+| `genmeta.py` | `.meta` が全ファイルに揃っているか(無いと GUID が壊れる) |
+
+**コードを変えたら、納品前に 4 つとも通してください。**
+
+```bash
+python3 tools/typecheck/genmeta.py      # 先に .meta を揃える
+python3 tools/typecheck/typecheck.py
+python3 tools/typecheck/runtests.py
+python3 tools/typecheck/udon_lint.py
+```
 
 ---
 
@@ -140,3 +150,46 @@ python3 tools/typecheck/udon_lint.py
   他にも正当な例外があれば除外リストに足してください。
 
 最終確認は Unity 上で U# がコンパイルするところまで行ってください。
+
+---
+
+## genmeta.py
+
+### これは何のためにあるか
+
+Phase5-2 で、新しく足した `.cs` に **`.meta` を同梱し忘れて納品**しました。
+
+Unity は「どのファイルか」を `.meta` の GUID **だけ**で見ています。
+`.meta` の無いファイルを zip で渡すと、展開のたびに Unity が新しい GUID を振り直すので、
+
+- UdonSharp の Program Asset が元の `.cs` を見失う
+- Console に `Source C# script ... is null` が出る
+- **U# のコンパイルが全部止まる = ワールドが何も動かなくなる**
+
+という壊れ方をします。しかもこれは「コンパイルは通っているのに動かない」ので、
+`typecheck.py` でも `runtests.py` でも検出できません。
+
+### 使い方
+
+```bash
+python3 tools/typecheck/genmeta.py            # 足りないぶんを作る
+python3 tools/typecheck/genmeta.py --check    # 作らずに一覧するだけ(足りなければ終了コード 1)
+```
+
+### GUID の決め方
+
+```
+md5("SmartMediaPlatform:" + Assets からの相対パス)
+```
+
+パスから決まるので、**誰がいつ実行しても同じ GUID**になります
+(ランダムだと、作り直すたびに参照が切れてしまう)。
+
+**既にある `.meta` は触りません。** いま Unity が覚えている GUID を
+書き換えると、それこそ参照が全部切れるためです。
+
+### 限界
+
+- Phase4 以前に手で書いた `.meta` は別の GUID を持っています(35 件)。
+  そのままで正しいので、揃える必要はありません。
+- ファイルを**消した**ときに残る `.meta` は消しません。手で消してください。

@@ -27,8 +27,18 @@ namespace SmartMediaPlatform.World.Udon
     /// <item>操作は <see cref="UdonMediaController"/> を通る</item>
     /// </list>
     ///
-    /// <b>差し替え</b>:Screen / Controller / UI / 動画プレイヤー / Catalog は
+    /// <b>差し替え</b>:Screen / Controller / 動画プレイヤー / Catalog は
     /// すべてこの Inspector の欄を差し替えるだけで替わります。
+    ///
+    /// <b>操作 UI(パネル)の欄はここにありません。</b>Phase5-3 から
+    /// パネルは自分で <see cref="UdonMediaController"/> に名乗り出るので、
+    /// 根っこは<b>何枚あるか・どこにあるかを知りません</b>。
+    /// おかげでパネルは
+    /// <list type="bullet">
+    /// <item>この Prefab の外(ワールドの好きな場所)に置ける</item>
+    /// <item>何枚でも置ける</item>
+    /// <item>後から足しても、ここは 1 行も変わらない</item>
+    /// </list>
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonSmartMediaPlayer : UdonSharpBehaviour
@@ -53,11 +63,8 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("映像と音の出力先")]
         public UdonMediaScreen Screen;
 
-        [Tooltip("操作の窓口")]
+        [Tooltip("操作の窓口。操作 UI(パネル)はここを通して名乗り出る")]
         public UdonMediaController Controller;
-
-        [Tooltip("画面")]
-        public UdonMediaPlayerUI Ui;
 
         [Header("動き出し")]
         [Tooltip("ワールドに入ったら自動で 1 本目を鳴らす")]
@@ -112,13 +119,6 @@ namespace SmartMediaPlatform.World.Udon
             if (Controller != null)
             {
                 if (Controller.Session == null) Controller.Session = Session;
-                if (Controller.Ui == null) Controller.Ui = Ui;
-            }
-
-            if (Ui != null)
-            {
-                if (Ui.Session == null) Ui.Session = Session;
-                if (Ui.Store == null) Ui.Store = Store;
             }
 
             IsWired = Session != null && Backend != null && Store != null && Catalog != null;
@@ -146,7 +146,12 @@ namespace SmartMediaPlatform.World.Udon
             Session.EnsureQueueFilled();
             Session.Play();
 
-            if (Ui != null) Ui.Refresh();
+            // 置いてあるパネル全部に書き直してもらう(何枚あるかは窓口だけが知っている)。
+            if (Controller != null) Controller.NotifyChanged();
+
+            // パネルは自分の Start で名乗り出るので、枚数が確定するのはここ
+            // (Wire() の時点ではまだ 0 枚のことがある)。
+            if (LogWiring) Debug.Log("[UdonSmartMediaPlayer] " + Describe(), gameObject);
         }
 
         /// <summary>Console 表示用の 1 行。</summary>
@@ -157,10 +162,14 @@ namespace SmartMediaPlatform.World.Udon
 
             string backend = Backend != null ? Backend.Describe() : "バックエンド未設定";
             string screen = Screen != null && Screen.IsReady ? "画面あり" : "画面なし";
-            string ui = Ui != null ? "UI あり" : "UI なし";
+
+            // パネルは自分から名乗り出るので、枚数は窓口に聞く。
+            string panels = Controller != null
+                ? "パネル " + Controller.ListenerCount + " 枚"
+                : "窓口未設定";
 
             return "カタログ " + items + " 件 / 一覧 " + visible + " 件 / "
-                   + backend + " / " + screen + " / " + ui;
+                   + backend + " / " + screen + " / " + panels;
         }
     }
 }

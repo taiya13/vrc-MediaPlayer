@@ -172,9 +172,13 @@ namespace SmartMediaPlatform.World.EditorTools
         /// │   └── Surface           Quad(Renderer) + AudioSource
         /// ├── Player                (バックエンドの Provider をここへ)  ← 差し替え可能
         /// ├── Controller            MediaController      ← 差し替え可能
-        /// ├── UI                    MediaPlayerUI        ← 差し替え可能
         /// └── Catalog               DefaultCatalogProvider ← 差し替え可能
         /// </code>
+        ///
+        /// <b>UI はここには入りません。</b>Phase5-3 で IMGUI の <c>MediaPlayerUI</c> を
+        /// 廃止したためです。操作 UI は Udon 側の <c>UdonMediaPanel</c>
+        /// (World Space Canvas + uGUI)が担当し、ClientSim でも動きます。
+        /// この Prefab は<b>組み立ての形を確かめるため</b>のものです。
         /// </summary>
         private static GameObject BuildCommonStructure(
             string rootName, out GameObject screen, out GameObject player)
@@ -210,11 +214,6 @@ namespace SmartMediaPlatform.World.EditorTools
             var controller = new GameObject("Controller");
             controller.transform.SetParent(root.transform, false);
             controller.AddComponent<MediaController>();
-
-            // ── UI(画面)
-            var ui = new GameObject("UI");
-            ui.transform.SetParent(root.transform, false);
-            ui.AddComponent<MediaPlayerUI>();
 
             // ── Catalog(Catalog Builder の差し込み口)
             var catalog = new GameObject("Catalog");

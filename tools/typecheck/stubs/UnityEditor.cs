@@ -257,6 +257,20 @@ namespace UnityEditor
     }
 }
 
+namespace UnityEditor.Events
+{
+    public static class UnityEventTools
+    {
+        public static void AddPersistentListener(UnityEngine.Events.UnityEventBase e) { }
+        public static void AddVoidPersistentListener(UnityEngine.Events.UnityEventBase e, UnityEngine.Events.UnityAction call) { }
+        public static void AddStringPersistentListener(UnityEngine.Events.UnityEventBase e, UnityEngine.Events.UnityAction<string> call, string argument) { }
+        public static void AddIntPersistentListener(UnityEngine.Events.UnityEventBase e, UnityEngine.Events.UnityAction<int> call, int argument) { }
+        public static void AddFloatPersistentListener(UnityEngine.Events.UnityEventBase e, UnityEngine.Events.UnityAction<float> call, float argument) { }
+        public static void AddBoolPersistentListener(UnityEngine.Events.UnityEventBase e, UnityEngine.Events.UnityAction<bool> call, bool argument) { }
+        public static void RemovePersistentListener(UnityEngine.Events.UnityEventBase e, int index) { }
+    }
+}
+
 namespace UnityEditor.SceneManagement
 {
     public static class EditorSceneManager
