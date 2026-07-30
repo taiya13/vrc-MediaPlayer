@@ -176,6 +176,33 @@ namespace SmartMediaPlatform.World.EditorTools
             EditorGUILayout.LabelField("困ったとき", EditorStyles.boldLabel);
 
             EditorGUILayout.LabelField(
+                "パネルのボタンが 1 つも押せないとき:",
+                EditorStyles.wordWrappedLabel);
+
+            GUI.enabled = HasSdk;
+            if (GUILayout.Button("操作 UI の配線を確認する", GUILayout.Height(24f)))
+            {
+                Invoke("SmartMediaPlatform.World.EditorTools.UdonMediaPanelDoctor",
+                       "DiagnoseMenuItem");
+            }
+            if (GUILayout.Button("操作 UI の配線を繋ぎ直す", GUILayout.Height(24f)))
+            {
+                Invoke("SmartMediaPlatform.World.EditorTools.UdonMediaPanelDoctor",
+                       "RepairMenuItem");
+            }
+            GUI.enabled = true;
+
+            EditorGUILayout.HelpBox(
+                "uGUI の Button は、裏の UdonBehaviour の SendCustomEvent を\n"
+                + "呼ぶ形で繋がっています。この配線が Prefab の保存時に落ちると、\n"
+                + "見た目はできているのに何も押せません。\n"
+                + "上のボタンはシーンに置いたまま繋ぎ直します(位置はそのまま)。\n"
+                + "実行後はシーンを保存してから Build & Test してください。",
+                MessageType.None);
+
+            EditorGUILayout.Space();
+
+            EditorGUILayout.LabelField(
                 "「Source C# script … is null」「U# scripts have compile errors」が出るとき:",
                 EditorStyles.wordWrappedLabel);
 

@@ -288,10 +288,58 @@ GameObject)を非アクティブにすると、その `UdonBehaviour` はイベ�
 
 | 症状 | 見るところ |
 | --- | --- |
-| ボタンが押せない | Canvas に `GraphicRaycaster` があるか / パネルが他のコライダーに埋まっていないか |
+| **ボタンが 1 つも押せない** | `セットアップ > 操作 UI の配線を確認する` → 要修復なら「繋ぎ直す」（下記） |
+| ボタンが一部だけ押せない | Canvas に `GraphicRaycaster` があるか / パネルの裏側から見ていないか |
 | 何も映らない | `UdonMediaCatalog` の `Urls` が架空のアドレスのままではないか |
 | `Source C# script … is null` | `セットアップ > 壊れた U# プログラムを修復する` |
 | パネルが真っ白 | `Core` が挿さっているか(Console の「パネル N 枚」で分かる) |
+
+### ボタンが 1 つも押せないとき（Phase5-3 で実際に起きた）
+
+初版の Prefab ビルダーには**2 つのバグ**がありました。どちらも
+「Prefab は出来ているのに中身が空」という同じ形をしています。
+
+**1) `CopyProxyToUdon` を呼んでいなかった**
+
+`UdonSharpBehaviour` のコンポーネントは **Inspector 用の見せかけ(proxy)** で、
+実際に動くのは裏の `UdonBehaviour` が持つシリアライズ済みデータのほうです。
+Inspector で値を変えたときは UdonSharp のエディタが写してくれますが、
+**エディタスクリプトから代入したぶんは `UdonSharpEditorUtility.CopyProxyToUdon` を
+自分で呼ばないと届きません。**
+
+Phase5-2 までは参照が少なく自動更新で拾えていましたが、
+Phase5-3 で参照が一気に増え(行 × 3 一覧、配列、行↔一覧の相互参照)、
+Odin シリアライザが `ArgumentNullException: unityObject` で落ちて
+そこから先の書き戻しが全部止まりました。
+
+**2) 配線を読み戻して確かめていなかった**
+
+`UnityEventTools.AddStringPersistentListener` を呼んだだけで
+「すべて繋がりました」と報告していたので、
+Inspector の On Click が `No Function` のままでも気づけませんでした。
+
+**直したこと**
+
+- `SavePrefab` の直前に `UdonWorldUiKit.SyncProxies()` で全部書き戻す
+- 裏の `UdonBehaviour` が無い proxy は**先に弾く**(Odin を落とさない)
+- `Bind` は登録後に `GetPersistentTarget` / `GetPersistentMethodName` を
+  **読み戻してから**成功と数える
+- Console の報告を `40 件 OK / 0 件 NG` の実数に
+
+**すでに置いてしまった Prefab を直す**
+
+作り直すと位置調整がやり直しになるので、シーンに置いたまま繋ぎ直せます。
+
+| メニュー | すること |
+| --- | --- |
+| `セットアップ > 操作 UI の配線を確認する` | 何が繋がっていないかを Console に出す |
+| `セットアップ > 操作 UI の配線を繋ぎ直す` | シーンのパネルを名前を頼りに張り直し、Udon へ書き戻す |
+
+繋ぎ先は **GameObject の名前**で決まります(`PlayPause` → `TogglePlayPause`、
+`Hit` → `Click`、`Secondary` → `ClickSecondary` …)。
+名前を変えていると対象から外れ、診断にその旨が出ます。
+
+実行後は**シーンを保存**してから Build & Test してください。
 
 ---
 

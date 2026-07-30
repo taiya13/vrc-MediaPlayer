@@ -553,7 +553,12 @@ namespace UnityEngine
 
 namespace UnityEngine.Events
 {
-    public class UnityEventBase { }
+    public class UnityEventBase
+    {
+        public int GetPersistentEventCount() { return 0; }
+        public string GetPersistentMethodName(int index) { return null; }
+        public UnityEngine.Object GetPersistentTarget(int index) { return null; }
+    }
     public class UnityEvent : UnityEventBase
     {
         public void Invoke() { }

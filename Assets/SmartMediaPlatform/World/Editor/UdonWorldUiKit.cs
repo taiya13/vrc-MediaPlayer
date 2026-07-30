@@ -48,9 +48,17 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <summary><see cref="Bind(Button, UdonSharpBehaviour, string)"/> が失敗した回数。</summary>
         public static int BindFailures { get; private set; }
 
-        public static void ResetBindFailures()
+        /// <summary>読み戻しまで確かめて繋がったボタンの数。</summary>
+        public static int BindCount { get; private set; }
+
+        /// <summary><see cref="SyncProxies"/> で UdonBehaviour へ写した数。</summary>
+        public static int SyncedCount { get; private set; }
+
+        public static void ResetCounters()
         {
             BindFailures = 0;
+            BindCount = 0;
+            SyncedCount = 0;
         }
 
         // ───────── 置く ─────────
@@ -174,7 +182,7 @@ namespace SmartMediaPlatform.World.EditorTools
         /// </summary>
         public static bool Bind(Button button, UdonSharpBehaviour target, string eventName)
         {
-            if (button == null) return Fail("(Button が null)", eventName);
+            if (button == null) return Fail("(Button が null)", eventName, "Button が null");
             return Bind(button.onClick, target, eventName, button.name);
         }
 
@@ -185,34 +193,109 @@ namespace SmartMediaPlatform.World.EditorTools
         /// </summary>
         public static bool Bind(Slider slider, UdonSharpBehaviour target, string eventName)
         {
-            if (slider == null) return Fail("(Slider が null)", eventName);
+            if (slider == null) return Fail("(Slider が null)", eventName, "Slider が null");
             return Bind(slider.onValueChanged, target, eventName, slider.name);
         }
 
         private static bool Bind(
             UnityEventBase unityEvent, UdonSharpBehaviour target, string eventName, string where)
         {
-            if (unityEvent == null) return Fail(where, eventName);
-            if (target == null) return Fail(where, eventName);
-            if (string.IsNullOrEmpty(eventName)) return Fail(where, eventName);
+            if (unityEvent == null) return Fail(where, eventName, "イベントが null");
+            if (target == null) return Fail(where, eventName, "送り先が null");
+            if (string.IsNullOrEmpty(eventName)) return Fail(where, eventName, "イベント名が空");
 
             // uGUI が呼べるのは「裏の UdonBehaviour」の SendCustomEvent(string) だけ。
             var udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(target);
-            if (udon == null) return Fail(where, eventName);
+            if (udon == null)
+            {
+                return Fail(where, eventName, "裏の UdonBehaviour が見つからない");
+            }
+
+            int before = unityEvent.GetPersistentEventCount();
 
             UnityEventTools.AddStringPersistentListener(
                 unityEvent, new UnityAction<string>(udon.SendCustomEvent), eventName);
+
+            // ── 登録できたことにせず、必ず読み戻して確かめる。
+            // Phase5-3 の最初の版はここを省いて「すべて繋がりました」と報告したのに、
+            // Inspector の On Click は No Function のままでした。
+            // 書いたつもりで書けていないのが一番たちが悪いので、戻り読みを挟みます。
+            int after = unityEvent.GetPersistentEventCount();
+            if (after <= before)
+            {
+                return Fail(where, eventName, "永続リスナーが増えなかった");
+            }
+
+            int index = after - 1;
+            if (unityEvent.GetPersistentTarget(index) == null)
+            {
+                return Fail(where, eventName, "送り先が保存されなかった");
+            }
+            if (unityEvent.GetPersistentMethodName(index) != "SendCustomEvent")
+            {
+                return Fail(where, eventName, "呼ぶ関数が保存されなかった(No Function)");
+            }
+
+            BindCount++;
             return true;
         }
 
-        private static bool Fail(string where, string eventName)
+        private static bool Fail(string where, string eventName, string reason)
         {
             BindFailures++;
             Debug.LogWarning(
-                "[UdonWorldUiKit] " + where + " に " + eventName + " を繋げませんでした。\n"
+                "[UdonWorldUiKit] " + where + " に " + eventName + " を繋げませんでした("
+                + reason + ")。\n"
                 + "  → Inspector で Button の On Click に UdonBehaviour と\n"
                 + "    SendCustomEvent(\"" + eventName + "\") を手で設定してください。");
             return false;
+        }
+
+        // ───────── proxy を UdonBehaviour へ書き戻す ─────────
+
+        /// <summary>
+        /// <b>これを呼ばないと、コードで入れた値が実機に届きません。</b>
+        ///
+        /// <c>UdonSharpBehaviour</c> のコンポーネントは<b>Inspector 用の見せかけ(proxy)</b>で、
+        /// 実際に動くのは裏の <c>UdonBehaviour</c> が持つシリアライズ済みデータのほうです。
+        /// Inspector で値を変えたときは UdonSharp のエディタが写してくれますが、
+        /// <b>エディタスクリプトから代入したぶんは自分で写す必要があります</b>。
+        ///
+        /// Phase5-3 の最初の版はこれを呼んでおらず、
+        /// <c>Rows</c> / <c>Lists</c> / <c>Core</c> などの参照が実機に届かないまま
+        /// Prefab が保存されていました(Console の
+        /// <c>OdinSerializer … ArgumentNullException: unityObject</c> がその副作用)。
+        /// </summary>
+        /// <returns>写せなかった数(0 なら全部通った)。</returns>
+        public static int SyncProxies(GameObject root)
+        {
+            if (root == null) return 0;
+
+            int failed = 0;
+            var behaviours = root.GetComponentsInChildren<UdonSharpBehaviour>(true);
+
+            for (int i = 0; i < behaviours.Length; i++)
+            {
+                UdonSharpBehaviour behaviour = behaviours[i];
+                if (behaviour == null) continue;
+
+                // 裏がいない proxy を写そうとすると Odin が
+                // ArgumentNullException を投げてそこで止まる。先に弾く。
+                if (UdonSharpEditorUtility.GetBackingUdonBehaviour(behaviour) == null)
+                {
+                    failed++;
+                    Debug.LogWarning(
+                        "[UdonWorldUiKit] " + behaviour.name + " の "
+                        + behaviour.GetType().Name + " に裏の UdonBehaviour がありません。"
+                        + "この部品の設定は実機に届きません。", behaviour);
+                    continue;
+                }
+
+                UdonSharpEditorUtility.CopyProxyToUdon(behaviour);
+                SyncedCount++;
+            }
+
+            return failed;
         }
 
         // ───────── 共通 ─────────

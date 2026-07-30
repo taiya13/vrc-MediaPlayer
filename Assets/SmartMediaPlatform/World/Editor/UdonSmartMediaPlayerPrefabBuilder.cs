@@ -91,6 +91,7 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             _needsCompile = false;
             _bakedCount = 0;
+            _syncFailures = 0;
 
             // 0. U# のプログラム(.asset)を全部先に用意する。
             //    コンパイル前にコンポーネントを置くと
@@ -106,7 +107,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 return;
             }
 
-            UdonWorldUiKit.ResetBindFailures();
+            UdonWorldUiKit.ResetCounters();
             UdonMediaPanelBuilder.ResetNeedsCompile();
 
             var log = new StringBuilder();
@@ -290,15 +291,14 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine("  U# プログラム : " + report);
             sb.AppendLine("  焼き込み      : " + _bakedCount + " 件(URL は VRCUrl として保存済み)");
 
-            if (UdonWorldUiKit.BindFailures > 0)
-            {
-                sb.AppendLine("  ボタンの配線  : " + UdonWorldUiKit.BindFailures
-                              + " 件を繋げませんでした(上の警告を参照)");
-            }
-            else
-            {
-                sb.AppendLine("  ボタンの配線  : すべて繋がりました");
-            }
+            // 「繋げたつもり」を報告しないよう、どちらも読み戻した実数を出す。
+            sb.AppendLine("  ボタンの配線  : " + UdonWorldUiKit.BindCount + " 件 OK / "
+                          + UdonWorldUiKit.BindFailures + " 件 NG"
+                          + (UdonWorldUiKit.BindFailures > 0 ? "  ← 上の警告を参照" : ""));
+
+            sb.AppendLine("  Udon へ書き戻し: " + UdonWorldUiKit.SyncedCount + " 件 OK / "
+                          + _syncFailures + " 件 NG"
+                          + (_syncFailures > 0 ? "  ← 上の警告を参照" : ""));
 
             sb.AppendLine();
             sb.AppendLine("  ワールドへの置き方:");
@@ -324,6 +324,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
         private static bool _needsCompile;
         private static int _bakedCount;
+        private static int _syncFailures;
 
         private static GameObject Child(GameObject parent, string name)
         {
@@ -362,6 +363,11 @@ namespace SmartMediaPlatform.World.EditorTools
         private static GameObject SavePrefab(GameObject root, string path)
         {
             Directory.CreateDirectory(PrefabFolder);
+
+            // ここが要。コードで代入した値は proxy にしか乗っていないので、
+            // 保存する前に裏の UdonBehaviour へ写す。
+            // これを飛ばすと Prefab は出来上がるのに中身が空、という壊れ方をする。
+            _syncFailures += UdonWorldUiKit.SyncProxies(root);
 
             var saved = PrefabUtility.SaveAsPrefabAsset(root, path);
             UnityEngine.Object.DestroyImmediate(root);
