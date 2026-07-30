@@ -326,6 +326,30 @@ Inspector の On Click が `No Function` のままでも気づけませんでし
   **読み戻してから**成功と数える
 - Console の報告を `40 件 OK / 0 件 NG` の実数に
 
+**3) uGUI だけでは実機で押せなかった**
+
+上の 2 つを直して配線が 39 個すべて正しく入った状態でも、
+**VRChat では 1 つも押せませんでした。** ワールド内 uGUI のレイキャストを
+VRChat が拾わない置き方になっていたためです。
+
+Phase5-2 の `UdonMediaControlButton` のコメントに
+「VRChat でいちばん確実に押せるのは Collider + Interact」と書いてあったのに、
+Phase5-3 で uGUI 一本にしたのが誤りでした。
+
+**いまはボタンごとに 2 つの経路を持たせています。**
+
+| 経路 | 仕組み | いつ効くか |
+| --- | --- | --- |
+| uGUI | `Button.onClick` → `SendCustomEvent` | レイキャストが通る置き方のとき |
+| **「使う」** | `BoxCollider` + `UdonMediaControlButton.Interact()` | **実機ではこちらが本命** |
+
+「使う」のときはボタンの意味がそのまま出ます(`再生 / 一時停止`、`この曲へ移動`、
+`Queue から外す` …)。届く距離は 5 m にしてあります(`UdonBehaviour` の既定は 2 m)。
+
+**二重発火**は、両方の経路が着地する `UdonTransportView` /
+`UdonMediaListView` の 1 か所で抑えます(同じ操作が 0.25 秒以内に 2 回来たら
+2 回目を捨てる。`DoubleFireGuard` で変更可)。
+
 **すでに置いてしまった Prefab を直す**
 
 作り直すと位置調整がやり直しになるので、シーンに置いたまま繋ぎ直せます。

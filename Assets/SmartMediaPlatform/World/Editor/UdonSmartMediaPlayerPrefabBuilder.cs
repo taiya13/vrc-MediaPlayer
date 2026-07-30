@@ -296,6 +296,10 @@ namespace SmartMediaPlatform.World.EditorTools
                           + UdonWorldUiKit.BindFailures + " 件 NG"
                           + (UdonWorldUiKit.BindFailures > 0 ? "  ← 上の警告を参照" : ""));
 
+            sb.AppendLine("  「使う」で押せる: " + UdonWorldUiKit.InteractCount + " 件 OK / "
+                          + UdonWorldUiKit.InteractFailures + " 件 NG"
+                          + (UdonWorldUiKit.InteractFailures > 0 ? "  ← 上の警告を参照" : ""));
+
             sb.AppendLine("  Udon へ書き戻し: " + UdonWorldUiKit.SyncedCount + " 件 OK / "
                           + _syncFailures + " 件 NG"
                           + (_syncFailures > 0 ? "  ← 上の警告を参照" : ""));
@@ -315,7 +319,10 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine("     Catalog の UdonMediaCatalog を選び、Inspector の Urls を");
             sb.AppendLine("     実在する URL に差し替えてください(VRCUrl は実行時に作れません)。");
             sb.AppendLine();
-            sb.AppendLine("  ※ EventSystem は置いていません。VRChat が実行時に用意します。");
+            sb.AppendLine("  ※ ボタンは 2 通りで押せます:");
+            sb.AppendLine("     uGUI の Button と、Collider +「使う」(Interact)。");
+            sb.AppendLine("     ワールド内 uGUI はレイキャストが通らないことがあるので、");
+            sb.AppendLine("     実機では「使う」が本命です(二重に効かないよう抑えてあります)。");
 
             Debug.Log(sb.ToString(), player);
         }

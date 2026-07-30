@@ -182,7 +182,11 @@ namespace UnityEngine
     public class Texture2D : Texture { public Texture2D(int w, int h) { } }
     public class RenderTexture : Texture { public RenderTexture(int w, int h, int depth) { } }
     public class Collider : Component { public bool enabled { get; set; } public bool isTrigger { get; set; } }
-    public class BoxCollider : Collider { }
+    public class BoxCollider : Collider
+    {
+        public Vector3 size { get; set; }
+        public Vector3 center { get; set; }
+    }
     public class MeshCollider : Collider { }
 
     public class AudioSource : Behaviour

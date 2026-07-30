@@ -89,11 +89,19 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("いま何ページ目か(0 から)")]
         public int Page;
 
+        [Tooltip("同じ行をこの秒数以内に 2 回押されたら 2 回目を捨てる。0 で無効")]
+        public float DoubleFireGuard = 0.25f;
+
         // 行 → catalog index。Refresh のたびに焼き直す。
         // 「画面に出ているもの」と「押したときに再生するもの」を必ず一致させるため、
         // 押された時点で引き直すのではなく、描いた時点の対応を持っておく。
         private int[] _shown;
         private bool _initialized;
+
+        // 直近に受けた押下(二重発火よけ)
+        private int _lastRow = -1;
+        private int _lastKind = -1;
+        private float _lastAt = -999f;
 
         void Start()
         {
@@ -203,6 +211,7 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             int rows = RowCount();
             if (row < 0 || row >= rows) return;
+            if (!Accept(0, row)) return;
 
             // 見出しは「押す前」に控える。
             // 窓口を呼ぶと Refresh が返ってきて _shown が書き換わるので、
@@ -230,6 +239,7 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             int rows = RowCount();
             if (row < 0 || row >= rows) return;
+            if (!Accept(1, row)) return;
 
             string title = TitleAt(row);
 
@@ -273,6 +283,27 @@ namespace SmartMediaPlatform.World.Udon.UI
         }
 
         // ───────── 内部 ─────────
+
+        /// <summary>
+        /// 同じ行の同じ押し方が続けて 2 回来たら、2 回目を捨てる。
+        ///
+        /// 行は uGUI(<c>Button.onClick</c>)と VRChat の「使う」(<c>Interact</c>)の
+        /// <b>両方から押せる</b>ようにしてあります(実機ではワールド内 uGUI の
+        /// レイキャストが通らないことがあるため)。両方が同時に反応すると
+        /// 「Queue から外す」が 2 行消してしまうので、ここで抑えます。
+        /// </summary>
+        private bool Accept(int kind, int row)
+        {
+            if (DoubleFireGuard <= 0f) return true;
+
+            if (kind == _lastKind && row == _lastRow
+                && Time.time - _lastAt < DoubleFireGuard) return false;
+
+            _lastKind = kind;
+            _lastRow = row;
+            _lastAt = Time.time;
+            return true;
+        }
 
         private int[] ResolveRelated()
         {

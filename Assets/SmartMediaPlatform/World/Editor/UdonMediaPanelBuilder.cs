@@ -112,6 +112,8 @@ namespace SmartMediaPlatform.World.EditorTools
             queueSpec.Source = UdonMediaListView.SourceQueue;
             queueSpec.Header = "Queue";
             queueSpec.SecondaryCaption = "×";
+            queueSpec.PrimaryCaption = "この曲へ移動";
+            queueSpec.SecondaryHint = "Queue から外す";
             queueSpec.RowCount = 4;
             queueSpec.Width = CW;
 
@@ -170,6 +172,8 @@ namespace SmartMediaPlatform.World.EditorTools
             queueSpec.Source = UdonMediaListView.SourceQueue;
             queueSpec.Header = "Queue";
             queueSpec.SecondaryCaption = "×";
+            queueSpec.PrimaryCaption = "この曲へ移動";
+            queueSpec.SecondaryHint = "Queue から外す";
             queueSpec.RowCount = 3;
             queueSpec.Width = CW;
             queueSpec.RowHeight = 52f;
@@ -309,13 +313,13 @@ namespace SmartMediaPlatform.World.EditorTools
             view.PlayPauseLabel = playPauseLabel;
             view.VolumeText = volumeLabel;
 
-            UdonWorldUiKit.Bind(previous, view, "Previous");
-            UdonWorldUiKit.Bind(playPause, view, "TogglePlayPause");
-            UdonWorldUiKit.Bind(next, view, "Next");
-            UdonWorldUiKit.Bind(stop, view, "Stop");
-            UdonWorldUiKit.Bind(volumeDown, view, "VolumeDown");
-            UdonWorldUiKit.Bind(volumeUp, view, "VolumeUp");
-            if (clear != null) UdonWorldUiKit.Bind(clear, view, "ClearUpcoming");
+            UdonWorldUiKit.Wire(previous, view, "Previous", "前へ");
+            UdonWorldUiKit.Wire(playPause, view, "TogglePlayPause", "再生 / 一時停止");
+            UdonWorldUiKit.Wire(next, view, "Next", "次へ");
+            UdonWorldUiKit.Wire(stop, view, "Stop", "停止");
+            UdonWorldUiKit.Wire(volumeDown, view, "VolumeDown", "音量を下げる");
+            UdonWorldUiKit.Wire(volumeUp, view, "VolumeUp", "音量を上げる");
+            if (clear != null) UdonWorldUiKit.Wire(clear, view, "ClearUpcoming", "Queue を空にする");
 
             return view;
         }
@@ -327,6 +331,8 @@ namespace SmartMediaPlatform.World.EditorTools
             public int Source;
             public string Header;
             public string SecondaryCaption = "＋";
+            public string PrimaryCaption = "再生";
+            public string SecondaryHint = "Queue に追加";
             public int RowCount = 6;
             public float Width = 852f;
             public float RowHeight = 56f;
@@ -381,8 +387,8 @@ namespace SmartMediaPlatform.World.EditorTools
             view.PreviousPageButton = previousPage.gameObject;
             view.NextPageButton = nextPage.gameObject;
 
-            UdonWorldUiKit.Bind(previousPage, view, "PreviousPage");
-            UdonWorldUiKit.Bind(nextPage, view, "NextPage");
+            UdonWorldUiKit.Wire(previousPage, view, "PreviousPage", "前のページ");
+            UdonWorldUiKit.Wire(nextPage, view, "NextPage", "次のページ");
 
             Text empty = UdonWorldUiKit.Label(
                 section, "Empty", 0f, rowsY, spec.Width, spec.RowHeight, spec.SubSize + 2,
@@ -467,8 +473,8 @@ namespace SmartMediaPlatform.World.EditorTools
             row.Highlight = highlight.gameObject;
             row.SecondaryButton = secondaryButton.gameObject;
 
-            UdonWorldUiKit.Bind(hit, row, "Click");
-            UdonWorldUiKit.Bind(secondaryButton, row, "ClickSecondary");
+            UdonWorldUiKit.Wire(hit, row, "Click", spec.PrimaryCaption);
+            UdonWorldUiKit.Wire(secondaryButton, row, "ClickSecondary", spec.SecondaryHint);
 
             return row;
         }

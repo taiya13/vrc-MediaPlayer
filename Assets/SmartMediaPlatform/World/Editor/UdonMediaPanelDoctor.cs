@@ -127,6 +127,20 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine("     Button          : " + buttons + " 個 / 繋がっている " + wired
                           + " 個 / No Function " + noFunction + " 個"
                           + (noFunction > 0 ? "  ← 要修復" : ""));
+
+            // 4. 「使う」で押せるか(実機ではこちらが本命)
+            int interact = 0;
+            for (int i = 0; i < allButtons.Length; i++)
+            {
+                Button button = allButtons[i];
+                if (button == null) continue;
+
+                if (button.GetComponent<BoxCollider>() == null) continue;
+                if (button.GetComponent<UdonMediaControlButton>() == null) continue;
+                interact++;
+            }
+            sb.AppendLine("     「使う」で押せる: " + interact + " / " + buttons + " 個"
+                          + (interact < buttons ? "  ← 要修復" : ""));
         }
 
         /// <summary>その Button が Udon を呼べる状態か。</summary>
@@ -160,6 +174,8 @@ namespace SmartMediaPlatform.World.EditorTools
                 return;
             }
 
+            UdonWorldUiKit.ResetCounters();
+
             int rewired = 0;
             int synced = 0;
 
@@ -173,6 +189,8 @@ namespace SmartMediaPlatform.World.EditorTools
 
             string message =
                 "ボタンを " + rewired + " 個 繋ぎ直しました。\n"
+                + "  uGUI(onClick)   : " + UdonWorldUiKit.BindCount + " 個\n"
+                + "  「使う」(Interact): " + UdonWorldUiKit.InteractCount + " 個\n"
                 + "Udon へ " + synced + " 個 書き戻しました。\n\n"
                 + "シーンを保存してから Build & Test してください。";
 
@@ -202,20 +220,47 @@ namespace SmartMediaPlatform.World.EditorTools
 
                 UdonSharpBehaviour target;
                 string eventName;
-                if (!Resolve(button, out target, out eventName)) continue;
+                string caption;
+                if (!Resolve(button, out target, out eventName, out caption)) continue;
 
                 ClearUdonListeners(button);
+                UdonWorldUiKit.Bind(button, target, eventName);
 
-                if (UdonWorldUiKit.Bind(button, target, eventName)) count++;
+                // 実機の本命はこちら。すでに付いているなら足さない。
+                if (button.GetComponent<BoxCollider>() == null
+                    || button.GetComponent<UdonMediaControlButton>() == null)
+                {
+                    RemoveInteract(button);
+                    UdonWorldUiKit.AddInteract(button, target, eventName, caption);
+                }
+
+                count++;
             }
 
             return count;
         }
 
-        private static bool Resolve(Button button, out UdonSharpBehaviour target, out string eventName)
+        /// <summary>「使う」の部品を一度外す。半端に付いている状態から作り直すため。</summary>
+        private static void RemoveInteract(Button button)
+        {
+            var relay = button.GetComponent<UdonMediaControlButton>();
+            if (relay != null)
+            {
+                var udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(relay);
+                UnityEngine.Object.DestroyImmediate(relay);
+                if (udon != null) UnityEngine.Object.DestroyImmediate(udon);
+            }
+
+            var box = button.GetComponent<BoxCollider>();
+            if (box != null) UnityEngine.Object.DestroyImmediate(box);
+        }
+
+        private static bool Resolve(
+            Button button, out UdonSharpBehaviour target, out string eventName, out string caption)
         {
             target = null;
             eventName = null;
+            caption = null;
 
             string name = button.gameObject.name;
 
@@ -223,8 +268,21 @@ namespace SmartMediaPlatform.World.EditorTools
             if (row != null)
             {
                 target = row;
-                if (name == "Hit") eventName = "Click";
-                else if (name == "Secondary") eventName = "ClickSecondary";
+
+                bool queue = false;
+                var owner = button.GetComponentInParent<UdonMediaListView>();
+                if (owner != null) queue = owner.Source == UdonMediaListView.SourceQueue;
+
+                if (name == "Hit")
+                {
+                    eventName = "Click";
+                    caption = queue ? "この曲へ移動" : "再生";
+                }
+                else if (name == "Secondary")
+                {
+                    eventName = "ClickSecondary";
+                    caption = queue ? "Queue から外す" : "Queue に追加";
+                }
                 return eventName != null;
             }
 
@@ -232,8 +290,8 @@ namespace SmartMediaPlatform.World.EditorTools
             if (list != null)
             {
                 target = list;
-                if (name == "NextPage") eventName = "NextPage";
-                else if (name == "PreviousPage") eventName = "PreviousPage";
+                if (name == "NextPage") { eventName = "NextPage"; caption = "次のページ"; }
+                else if (name == "PreviousPage") { eventName = "PreviousPage"; caption = "前のページ"; }
                 return eventName != null;
             }
 
@@ -242,13 +300,13 @@ namespace SmartMediaPlatform.World.EditorTools
             {
                 target = transport;
 
-                if (name == "PlayPause") eventName = "TogglePlayPause";
-                else if (name == "Next") eventName = "Next";
-                else if (name == "Previous") eventName = "Previous";
-                else if (name == "Stop") eventName = "Stop";
-                else if (name == "VolumeUp") eventName = "VolumeUp";
-                else if (name == "VolumeDown") eventName = "VolumeDown";
-                else if (name == "ClearUpcoming") eventName = "ClearUpcoming";
+                if (name == "PlayPause") { eventName = "TogglePlayPause"; caption = "再生 / 一時停止"; }
+                else if (name == "Next") { eventName = "Next"; caption = "次へ"; }
+                else if (name == "Previous") { eventName = "Previous"; caption = "前へ"; }
+                else if (name == "Stop") { eventName = "Stop"; caption = "停止"; }
+                else if (name == "VolumeUp") { eventName = "VolumeUp"; caption = "音量を上げる"; }
+                else if (name == "VolumeDown") { eventName = "VolumeDown"; caption = "音量を下げる"; }
+                else if (name == "ClearUpcoming") { eventName = "ClearUpcoming"; caption = "Queue を空にする"; }
 
                 return eventName != null;
             }

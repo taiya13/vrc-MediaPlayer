@@ -1,4 +1,6 @@
 #if UNITY_EDITOR && VRC_SDK_VRCSDK3
+using SmartMediaPlatform.Video.EditorTools;
+using SmartMediaPlatform.World.Udon;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor.Events;
@@ -54,11 +56,23 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <summary><see cref="SyncProxies"/> で UdonBehaviour へ写した数。</summary>
         public static int SyncedCount { get; private set; }
 
+        /// <summary>Collider +「使う」で押せるようにできたボタンの数。</summary>
+        public static int InteractCount { get; private set; }
+
+        /// <summary>「使う」を足せなかったボタンの数。</summary>
+        public static int InteractFailures { get; private set; }
+
+        /// <summary>U# のコンパイル待ちで「使う」を足せなかったか。</summary>
+        public static bool InteractNeedsCompile { get; private set; }
+
         public static void ResetCounters()
         {
             BindFailures = 0;
             BindCount = 0;
             SyncedCount = 0;
+            InteractCount = 0;
+            InteractFailures = 0;
+            InteractNeedsCompile = false;
         }
 
         // ───────── 置く ─────────
@@ -250,6 +264,115 @@ namespace SmartMediaPlatform.World.EditorTools
                 + "    SendCustomEvent(\"" + eventName + "\") を手で設定してください。");
             return false;
         }
+
+        // ───────── Collider + Interact(実機で確実に押せる経路)─────────
+
+        /// <summary>
+        /// <b>ボタンを 2 通りの方法で押せるようにする。</b>
+        ///
+        /// <list type="number">
+        /// <item>uGUI の <c>Button.onClick</c>(<see cref="Bind(Button, UdonSharpBehaviour, string)"/>)</item>
+        /// <item>Collider + VRChat の「使う」(<see cref="AddInteract"/>)</item>
+        /// </list>
+        ///
+        /// <b>なぜ 2 通りなのか</b><br/>
+        /// Phase5-3 の最初の版は uGUI だけにしましたが、
+        /// <b>実機でボタンが 1 つも押せませんでした</b>
+        /// (配線は 39 個すべて正しく入っていたので、VRChat 側が
+        ///  ワールド内 uGUI のレイキャストを拾っていない)。
+        /// Phase5-2 の <c>UdonMediaControlButton</c> のコメントに
+        /// 「VRChat でいちばん確実に押せるのは Collider + Interact」と
+        /// 書いてあったとおりでした。
+        ///
+        /// <b>二重発火</b>は受け取る側(<c>UdonTransportView</c> /
+        /// <c>UdonMediaListView</c>)が短い時間で同じ操作を捨てることで防ぎます。
+        /// どちらの経路も同じイベント名に着地するので、そこ 1 か所で足ります。
+        /// </summary>
+        public static bool Wire(
+            Button button, UdonSharpBehaviour target, string eventName, string caption)
+        {
+            bool bound = Bind(button, target, eventName);
+            bool interact = AddInteract(button, target, eventName, caption);
+
+            return bound || interact;
+        }
+
+        /// <summary>
+        /// Collider と <c>UdonMediaControlButton</c> を足して、
+        /// VRChat の「使う」でも押せるようにする。
+        /// </summary>
+        public static bool AddInteract(
+            Button button, UdonSharpBehaviour target, string eventName, string caption)
+        {
+            if (button == null || target == null) return false;
+
+            GameObject host = button.gameObject;
+            var rect = host.GetComponent<RectTransform>();
+            if (rect == null) return false;
+
+            // 当たり判定。RectTransform の pivot は左上、BoxCollider は中心基準なので
+            // 半分ぶんずらす。奥行きはレーザーが拾える程度に薄く。
+            Vector2 size = rect.sizeDelta;
+            var box = host.AddComponent<BoxCollider>();
+            box.size = new Vector3(size.x, size.y, 4f);
+            box.center = new Vector3(size.x * 0.5f, -size.y * 0.5f, 0f);
+            box.isTrigger = true;
+
+            bool needsCompile;
+            var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
+                host, typeof(UdonMediaControlButton), out needsCompile) as UdonMediaControlButton;
+
+            if (needsCompile) InteractNeedsCompile = true;
+
+            if (relay == null)
+            {
+                InteractFailures++;
+                Debug.LogWarning(
+                    "[UdonWorldUiKit] " + host.name
+                    + " に UdonMediaControlButton を付けられませんでした。"
+                    + "このボタンは「使う」では押せません。", host);
+                return false;
+            }
+
+            relay.Target = target;
+            relay.EventName = eventName;
+
+            // Label は触らせない。触ると Start でボタンの見出しを上書きしてしまう。
+            relay.Label = null;
+            relay.LabelText = "";
+
+            ApplyInteractSettings(relay, caption);
+
+            InteractCount++;
+            return true;
+        }
+
+        /// <summary>
+        /// 「使う」のときに出る文字と、届く距離を設定する。
+        ///
+        /// <c>UdonBehaviour</c> の既定は <c>Use</c> / 2 m です。
+        /// 壁パネルは少し離れて操作するので広げておきます。
+        /// フィールド名は SDK のバージョンで変わりうるので、
+        /// 見つからなければ黙って既定のままにします。
+        /// </summary>
+        private static void ApplyInteractSettings(UdonSharpBehaviour relay, string caption)
+        {
+            var udon = UdonSharpEditorUtility.GetBackingUdonBehaviour(relay);
+            if (udon == null) return;
+
+            var serialized = new UnityEditor.SerializedObject(udon);
+
+            var text = serialized.FindProperty("interactText");
+            if (text != null && !string.IsNullOrEmpty(caption)) text.stringValue = caption;
+
+            var proximity = serialized.FindProperty("proximity");
+            if (proximity != null) proximity.floatValue = InteractDistance;
+
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+        }
+
+        /// <summary>「使う」が届く距離(m)。</summary>
+        public const float InteractDistance = 5f;
 
         // ───────── proxy を UdonBehaviour へ書き戻す ─────────
 
