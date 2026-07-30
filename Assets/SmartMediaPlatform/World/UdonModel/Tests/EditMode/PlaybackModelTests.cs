@@ -550,6 +550,133 @@ namespace SmartMediaPlatform.World.UdonModel.Tests
             }
         }
 
+
+        // ───────── 同期(Phase5-4)─────────
+
+        [Test]
+        public void ApplyingASyncedStateReplacesTheWholeQueue()
+        {
+            var model = New();
+            model.Enqueue(1);
+            model.Enqueue(2);
+            model.Play();
+
+            model.ApplySyncedState(new[] { 7, 8, 9 }, true, 7);
+
+            Assert.AreEqual(3, model.QueueCount);
+            Assert.AreEqual(7, model.CurrentIndex, "先頭 = いま鳴っているもの、は同期でも同じ");
+            Assert.AreEqual(8, model.GetQueueAt(1));
+            Assert.AreEqual(9, model.GetQueueAt(2));
+            Assert.IsTrue(model.IsPlaying);
+        }
+
+        [Test]
+        public void ApplyingASyncedStateDoesNotAskTheBackendToLoadAnything()
+        {
+            var model = New();
+            int before = model.LoadCount;
+
+            model.ApplySyncedState(new[] { 4, 5 }, true, 4);
+
+            Assert.AreEqual(before, model.LoadCount,
+                            "受け取る側は映すだけ。動画を読ませるのは呼び出し側の仕事");
+            Assert.AreEqual(4, model.RequestedIndex, "持ち主が読み込ませているものを覚える");
+        }
+
+        [Test]
+        public void ApplyingASyncedStateDoesNotRefillTheQueue()
+        {
+            var model = New();
+
+            // 補充が働けば 1 件では終わらないはず
+            model.ApplySyncedState(new[] { 6 }, true, 6);
+
+            Assert.AreEqual(1, model.QueueCount,
+                            "受け取る側が勝手に補充すると、人によって Queue が変わってしまう");
+        }
+
+        [Test]
+        public void AnEmptySyncedStateEmptiesTheQueue()
+        {
+            var model = New();
+            model.Enqueue(1);
+            model.Enqueue(2);
+
+            model.ApplySyncedState(new int[0], false, -1);
+
+            Assert.AreEqual(0, model.QueueCount);
+            Assert.AreEqual(-1, model.CurrentIndex);
+            Assert.IsFalse(model.IsPlaying);
+        }
+
+        [Test]
+        public void ANullSyncedQueueIsTreatedAsEmpty()
+        {
+            var model = New();
+            model.Enqueue(1);
+
+            model.ApplySyncedState(null, false, -1);
+
+            Assert.AreEqual(0, model.QueueCount);
+        }
+
+        [Test]
+        public void ASyncedStateLongerThanTheQueueIsTruncated()
+        {
+            var model = new PlaybackModel(PlaybackModel.QueueCapacity + 10);
+
+            var tooMany = new int[PlaybackModel.QueueCapacity + 5];
+            for (int i = 0; i < tooMany.Length; i++) tooMany[i] = i;
+
+            model.ApplySyncedState(tooMany, true, 0);
+
+            Assert.AreEqual(PlaybackModel.QueueCapacity, model.QueueCount,
+                            "固定長を超えるぶんは捨てる(落ちるより切り詰める)");
+        }
+
+        [Test]
+        public void ApplyingAPausedStateStopsWithoutClearingTheQueue()
+        {
+            var model = New();
+
+            model.ApplySyncedState(new[] { 2, 3 }, false, 2);
+
+            Assert.IsFalse(model.IsPlaying);
+            Assert.AreEqual(2, model.QueueCount, "止まっていても Queue は見える");
+            Assert.AreEqual(2, model.CurrentIndex);
+        }
+
+        [Test]
+        public void TheSnapshotIsExactlyWhatIsInTheQueue()
+        {
+            var model = New();
+            model.Enqueue(5);
+            model.Enqueue(1);
+            model.Enqueue(9);
+
+            var snapshot = model.SnapshotQueue();
+
+            Assert.AreEqual(3, snapshot.Length, "使っていない後ろの余りは配らない");
+            CollectionAssert.AreEqual(new[] { 5, 1, 9 }, snapshot);
+        }
+
+        [Test]
+        public void ASnapshotSurvivesARoundTrip()
+        {
+            var owner = New();
+            owner.Enqueue(2);
+            owner.Enqueue(6);
+            owner.Play();
+            owner.Next(Candidates());
+
+            var joiner = New();
+            joiner.ApplySyncedState(owner.SnapshotQueue(), owner.IsPlaying, owner.RequestedIndex);
+
+            Assert.AreEqual(owner.QueueCount, joiner.QueueCount);
+            Assert.AreEqual(owner.CurrentIndex, joiner.CurrentIndex);
+            Assert.AreEqual(owner.IsPlaying, joiner.IsPlaying);
+        }
+
         private static void AssertUdonFriendly(System.Type type, string what)
         {
             if (type == typeof(void)) return;

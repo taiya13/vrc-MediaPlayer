@@ -324,6 +324,44 @@ namespace SmartMediaPlatform.World.UdonModel
             _isPlaying = false;
         }
 
+        /// <summary>
+        /// <b>受け取った状態をそのまま当てる。</b>Phase5-4(同期)の入口。
+        ///
+        /// <b>ここは何も判断しません。</b>次に何を再生するかを決めるのは
+        /// 今までどおり<b>持ち主(Owner)側のこのクラス</b>で、
+        /// 受け取る側はその結果を映すだけです。
+        /// だから補充もしませんし、再生も始めません
+        /// (実際に動画を読ませるのは呼び出し側 = <c>UdonSyncCoordinator</c> の仕事)。
+        ///
+        /// <b>中身を検査しません。</b>持ち主がすでに検査したものなので、
+        /// ここで弾くと<b>人によって Queue が違う</b>という一番困る形になります。
+        /// 入り切らないぶんだけ捨てます。
+        /// </summary>
+        /// <param name="queue">catalog index の並び(先頭 = いま鳴っているもの)。</param>
+        /// <param name="isPlaying">持ち主が再生中かどうか。</param>
+        /// <param name="loadedIndex">持ち主が読み込ませている catalog index。</param>
+        public void ApplySyncedState(int[] queue, bool isPlaying, int loadedIndex)
+        {
+            int count = queue == null ? 0 : queue.Length;
+            if (count > QueueCapacity) count = QueueCapacity;
+
+            for (int i = 0; i < count; i++) _queue[i] = queue[i];
+            _queueCount = count;
+
+            _isPlaying = isPlaying;
+            if (isPlaying) _exhausted = false;
+
+            _requestedIndex = loadedIndex;
+        }
+
+        /// <summary>いまの Queue を写し取る。持ち主が配るために使う。</summary>
+        public int[] SnapshotQueue()
+        {
+            var snapshot = new int[_queueCount];
+            for (int i = 0; i < _queueCount; i++) snapshot[i] = _queue[i];
+            return snapshot;
+        }
+
         /// <summary>Queue に入っている位置。無ければ -1。</summary>
         public int IndexInQueue(int catalogIndex)
         {

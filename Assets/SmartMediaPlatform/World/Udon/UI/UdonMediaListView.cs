@@ -379,6 +379,15 @@ namespace SmartMediaPlatform.World.Udon.UI
         {
             if (Panel == null) return;
 
+            // 権限が無くて弾かれたのか、やってみて駄目だったのかは書き分ける。
+            if (!ok && Controller != null && Controller.LastDenied)
+            {
+                Panel.SetStatus(Controller.Sync != null
+                    ? Controller.Sync.DenyReason() + "。"
+                    : "いまは操作できません。");
+                return;
+            }
+
             string subject = title == null || title.Length == 0 ? what : title + " を " + what;
             Panel.SetStatus(ok ? subject + "しました。" : subject + "できませんでした。");
         }

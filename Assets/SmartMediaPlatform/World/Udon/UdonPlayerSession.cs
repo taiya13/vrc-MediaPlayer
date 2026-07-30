@@ -49,6 +49,11 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("おすすめによる自動補充を使う")]
         public bool AutoQueueEnabled = true;
 
+        [Header("同期(Phase5-4)")]
+        [Tooltip("動画が終わった / 失敗したときに自分で次へ進む。"
+                 + "同期中は持ち主(Owner)だけ true にする")]
+        public bool AutoAdvance = true;
+
         /// <summary>Queue に積める上限(Udon は固定長配列なので上限が要る)。</summary>
         public const int QueueCapacity = 64;
 
@@ -407,16 +412,65 @@ namespace SmartMediaPlatform.World.Udon
 
         // ───────── 動画プレイヤーからの知らせ ─────────
 
-        /// <summary>最後まで再生された。<see cref="UdonVideoBackend"/> から呼ばれる。</summary>
+        /// <summary>
+        /// 最後まで再生された。<see cref="UdonVideoBackend"/> から呼ばれる。
+        ///
+        /// <b><see cref="AutoAdvance"/> が false のときは何もしません。</b>
+        /// 動画の終了イベントは<b>全員の手元で別々に起きる</b>ので、
+        /// 同期中に全員が次へ進むと、人によって違うものが鳴り始めます。
+        /// 進むのは持ち主(Owner)だけにして、残りは同期で追いつきます。
+        /// </summary>
         public void NotifyEnded()
         {
+            if (!AutoAdvance) return;
             if (!Next()) _isPlaying = false;
         }
 
         /// <summary>再生に失敗した。壊れているものを飛ばして次へ送る。</summary>
         public void NotifyError()
         {
+            if (!AutoAdvance) return;
             if (!Next()) _isPlaying = false;
+        }
+
+        // ───────── 同期(Phase5-4)─────────
+
+        /// <summary>
+        /// <b>受け取った状態をそのまま当てる。</b>
+        /// <see cref="SmartMediaPlatform.World.UdonModel.PlaybackModel.ApplySyncedState"/> の写しです。
+        ///
+        /// <b>ここは何も判断しません。</b>次に何を再生するかを決めるのは
+        /// 今までどおり<b>持ち主(Owner)側のこのクラス</b>で、
+        /// 受け取る側はその結果を映すだけです。補充も再生もしません
+        /// (実際に動画を読ませるのは <see cref="UdonSyncCoordinator"/> の仕事)。
+        ///
+        /// <b>中身を検査しません。</b>持ち主がすでに検査したものなので、
+        /// ここで弾くと<b>人によって Queue が違う</b>という一番困る形になります。
+        /// </summary>
+        public void ApplySyncedState(int[] queue, bool isPlaying, int loadedIndex)
+        {
+            EnsureInitialized();
+
+            int count = queue == null ? 0 : queue.Length;
+            if (count > QueueCapacity) count = QueueCapacity;
+
+            for (int i = 0; i < count; i++) _queue[i] = queue[i];
+            _queueCount = count;
+
+            _isPlaying = isPlaying;
+            if (isPlaying) _exhausted = false;
+
+            _requestedIndex = loadedIndex;
+        }
+
+        /// <summary>いまの Queue を写し取る。持ち主が配るために使う。</summary>
+        public int[] SnapshotQueue()
+        {
+            EnsureInitialized();
+
+            int[] snapshot = new int[_queueCount];
+            for (int i = 0; i < _queueCount; i++) snapshot[i] = _queue[i];
+            return snapshot;
         }
 
         // ───────── 内部 ─────────

@@ -68,14 +68,20 @@ namespace SmartMediaPlatform.World.EditorTools
                 .raycastTarget = false;
 
             Text panelTitle = UdonWorldUiKit.Label(
-                body, "PanelTitle", Pad, 24f, CW, 44f, 30,
+                body, "PanelTitle", Pad, 24f, CW * 0.5f, 44f, 30,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
+
+            // いま誰が操作しているか(同期していないときは空のまま)
+            Text syncOwner = UdonWorldUiKit.Label(
+                body, "SyncOwner", Pad + CW * 0.5f, 24f, CW * 0.5f, 44f, 20,
+                TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
 
             var panel = Add<UdonMediaPanel>(root);
             if (panel == null) return null;
 
             // ── いま鳴っているもの
             var nowPlaying = BuildNowPlaying(body, Pad, 76f, CW, 36, 22, 20);
+            if (nowPlaying != null) nowPlaying.SyncText = syncOwner;
             if (NeedsCompile) return panel;
 
             // ── 操作
@@ -155,13 +161,18 @@ namespace SmartMediaPlatform.World.EditorTools
                 .raycastTarget = false;
 
             Text panelTitle = UdonWorldUiKit.Label(
-                body, "PanelTitle", Pad, 16f, CW, 36f, 24,
+                body, "PanelTitle", Pad, 16f, CW * 0.45f, 36f, 24,
                 TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
+
+            Text syncOwner = UdonWorldUiKit.Label(
+                body, "SyncOwner", Pad + CW * 0.45f, 16f, CW * 0.55f, 36f, 16,
+                TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
 
             var panel = Add<UdonMediaPanel>(root);
             if (panel == null) return null;
 
             var nowPlaying = BuildNowPlaying(body, Pad, 60f, CW, 26, 17, 17);
+            if (nowPlaying != null) nowPlaying.SyncText = syncOwner;
             if (NeedsCompile) return panel;
 
             var transport = BuildTransport(body, Pad, 180f, CW, 60f, 44f, 20, 17, true);

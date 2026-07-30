@@ -64,6 +64,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 typeof(UdonPlayerSession),
                 typeof(UdonMediaController),
                 typeof(UdonMediaControlButton),
+                typeof(UdonSyncCoordinator),
                 typeof(UdonSmartMediaPlayer),
             };
 
@@ -259,6 +260,21 @@ namespace SmartMediaPlatform.World.EditorTools
             if (controller != null) controller.Session = session;
             if (_needsCompile) return root;
 
+            // ── Sync(同期の担当。Phase5-4)
+            //    所有権は GameObject ごとに移るので、必ず自前の GameObject に置く。
+            //    動画プレイヤーや画面と同居させると、操作するたびに
+            //    そちらの所有権まで動いてしまう。
+            var syncObject = Child(root, "Sync");
+            var sync = Add<UdonSyncCoordinator>(syncObject);
+            if (sync != null)
+            {
+                sync.Session = session;
+                sync.Backend = backend;
+                sync.Controller = controller;
+            }
+            if (controller != null) controller.Sync = sync;
+            if (_needsCompile) return root;
+
             // ── 根っこ(配線だけ)
             var smartPlayer = Add<UdonSmartMediaPlayer>(root);
             if (smartPlayer != null)
@@ -270,6 +286,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 smartPlayer.Backend = backend;
                 smartPlayer.Screen = screen;
                 smartPlayer.Controller = controller;
+                smartPlayer.Sync = sync;
             }
 
             return root;
@@ -323,6 +340,10 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine("     uGUI の Button と、Collider +「使う」(Interact)。");
             sb.AppendLine("     ワールド内 uGUI はレイキャストが通らないことがあるので、");
             sb.AppendLine("     実機では「使う」が本命です(二重に効かないよう抑えてあります)。");
+            sb.AppendLine();
+            sb.AppendLine("  ※ 同期(Phase5-4)は既定で有効です。誰が操作してもよい設定なので、");
+            sb.AppendLine("     押した人がその場で操作者(Owner)になります。");
+            sb.AppendLine("     マスターだけに絞りたいときは Sync の Access Policy を 1 にしてください。");
 
             Debug.Log(sb.ToString(), player);
         }

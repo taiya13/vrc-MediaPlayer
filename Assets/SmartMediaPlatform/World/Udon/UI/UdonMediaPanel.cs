@@ -129,6 +129,7 @@ namespace SmartMediaPlatform.World.Udon.UI
                 if (NowPlaying.Session == null) NowPlaying.Session = Session;
                 if (NowPlaying.Store == null) NowPlaying.Store = Store;
                 if (NowPlaying.Backend == null && Session != null) NowPlaying.Backend = Session.Backend;
+                if (NowPlaying.Sync == null && Controller != null) NowPlaying.Sync = Controller.Sync;
             }
 
             if (Transport != null)

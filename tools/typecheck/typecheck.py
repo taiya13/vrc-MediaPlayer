@@ -185,7 +185,42 @@ def report(name, result, failures):
         failures.append(s)
 
 
+
+# ── mcs が Roslyn と食い違う書き方 ──────────────────────────────
+# mcs 6.8 は桁区切り(1_000)を誤って読みます。`11_000` が `110000` になり、
+# **コンパイルは通るのに値が違う**という最悪の形で壊れます
+# (Unity の Roslyn は正しく 11000 と読むので、ここでだけ結果が変わる)。
+# 型検査の前に弾きます。
+DIGIT_SEPARATOR = re.compile(r"(?<![\w.])\d+_\d")
+
+
+def check_digit_separators():
+    """桁区切りの数値リテラルを探す。mcs が誤読するため使わせない。"""
+    bad = []
+    for root, dirs, files in os.walk(ASSETS):
+        for f in sorted(files):
+            if not f.endswith(".cs"):
+                continue
+            path = os.path.join(root, f)
+            for i, line in enumerate(open(path, encoding="utf-8").read().splitlines(), 1):
+                code = line.split("//", 1)[0]
+                m = DIGIT_SEPARATOR.search(code)
+                if m:
+                    bad.append((os.path.relpath(path, PROJECT), i, line.strip()))
+    return bad
+
+
 def main():
+    separators = check_digit_separators()
+    if separators:
+        print("桁区切りの数値リテラルは使えません(mcs が誤って読みます)。")
+        for rel, line_no, text in separators:
+            print("  %s(%d): 1_000 ではなく 1000 と書いてください" % (rel, line_no))
+            print("    > " + text)
+        print()
+        print("%d 件。" % len(separators))
+        return 1
+
     print("== building stub assemblies")
     build_stubs()
 

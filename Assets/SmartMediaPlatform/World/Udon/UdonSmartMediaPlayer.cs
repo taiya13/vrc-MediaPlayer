@@ -66,6 +66,9 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("操作の窓口。操作 UI(パネル)はここを通して名乗り出る")]
         public UdonMediaController Controller;
 
+        [Tooltip("同期の担当(Phase5-4)。空なら 1 人用として動く")]
+        public UdonSyncCoordinator Sync;
+
         [Header("動き出し")]
         [Tooltip("ワールドに入ったら自動で 1 本目を鳴らす")]
         public bool PlayOnStart = true;
@@ -119,6 +122,14 @@ namespace SmartMediaPlatform.World.Udon
             if (Controller != null)
             {
                 if (Controller.Session == null) Controller.Session = Session;
+                if (Controller.Sync == null) Controller.Sync = Sync;
+            }
+
+            if (Sync != null)
+            {
+                if (Sync.Session == null) Sync.Session = Session;
+                if (Sync.Backend == null) Sync.Backend = Backend;
+                if (Sync.Controller == null) Sync.Controller = Controller;
             }
 
             IsWired = Session != null && Backend != null && Store != null && Catalog != null;
@@ -134,6 +145,14 @@ namespace SmartMediaPlatform.World.Udon
         public void PlayFirst()
         {
             if (Session == null) return;
+
+            // 同期しているときに全員が 1 本目を鳴らすと、人によって違うものが始まる。
+            // 決めるのは持ち主だけで、残りは同期で追いつく。
+            if (Sync != null && Sync.Enabled && !Sync.IsOwner())
+            {
+                if (Controller != null) Controller.NotifyChanged();
+                return;
+            }
 
             Session.EnsureInitialized();
 
@@ -168,8 +187,11 @@ namespace SmartMediaPlatform.World.Udon
                 ? "パネル " + Controller.ListenerCount + " 枚"
                 : "窓口未設定";
 
+            string sync = Sync == null ? "同期なし"
+                : (Sync.Enabled ? "同期あり" : "同期オフ");
+
             return "カタログ " + items + " 件 / 一覧 " + visible + " 件 / "
-                   + backend + " / " + screen + " / " + panels;
+                   + backend + " / " + screen + " / " + panels + " / " + sync;
         }
     }
 }

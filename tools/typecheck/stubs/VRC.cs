@@ -21,6 +21,8 @@ namespace VRC.SDKBase
         public static void SetOwner(VRCPlayerApi player, GameObject obj) { }
         public static bool IsMaster { get { return false; } }
         public static double GetServerTimeInSeconds() { return 0d; }
+        public static int GetServerTimeInMilliseconds() { return 0; }
+        public static VRCPlayerApi GetOwner(GameObject obj) { return null; }
     }
 
     public class VRCPlayerApi
@@ -187,6 +189,15 @@ namespace VRC.Udon
     }
 }
 
+namespace VRC.Udon.Common
+{
+    public struct SerializationResult
+    {
+        public bool success;
+        public int byteCount;
+    }
+}
+
 namespace VRC.Udon.Common.Interfaces
 {
     public enum NetworkEventTarget { All, Owner }
@@ -205,6 +216,15 @@ namespace UdonSharp
     [AttributeUsage(AttributeTargets.Method)]
     public sealed class RecursiveMethodAttribute : Attribute { }
 
+    public enum UdonSyncMode { NotSynced, None, Linear, Smooth }
+
+    [AttributeUsage(AttributeTargets.Field)]
+    public sealed class UdonSyncedAttribute : Attribute
+    {
+        public UdonSyncedAttribute() { }
+        public UdonSyncedAttribute(UdonSyncMode mode) { }
+    }
+
     [AttributeUsage(AttributeTargets.Field)]
     public sealed class FieldChangeCallbackAttribute : Attribute { public FieldChangeCallbackAttribute(string targetPropertyName) { } }
 
@@ -215,6 +235,9 @@ namespace UdonSharp
         public virtual void OnPlayerLeft(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnDeserialization() { }
         public virtual void OnPreSerialization() { }
+        public virtual void OnPostSerialization(VRC.Udon.Common.SerializationResult result) { }
+        public virtual bool OnOwnershipRequest(VRC.SDKBase.VRCPlayerApi requester, VRC.SDKBase.VRCPlayerApi newOwner) { return true; }
+        public virtual void OnOwnershipTransferred(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnVideoReady() { }
         public virtual void OnVideoStart() { }
         public virtual void OnVideoEnd() { }

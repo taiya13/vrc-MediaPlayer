@@ -141,6 +141,48 @@ namespace SmartMediaPlatform.World.EditorTools
             }
             sb.AppendLine("     「使う」で押せる: " + interact + " / " + buttons + " 個"
                           + (interact < buttons ? "  ← 要修復" : ""));
+
+            // 5. 同期(Phase5-4)
+            InspectSync(panel, sb);
+        }
+
+        /// <summary>同期がつながっているかを見る。</summary>
+        private static void InspectSync(UdonMediaPanel panel, StringBuilder sb)
+        {
+            if (panel.Core == null) return;
+
+            UdonMediaController controller = panel.Controller != null
+                ? panel.Controller
+                : panel.Core.Controller;
+
+            UdonSyncCoordinator sync = panel.Core.Sync;
+
+            if (sync == null && (controller == null || controller.Sync == null))
+            {
+                sb.AppendLine("     同期            : なし(1 人用。全員が別々のものを見ます)");
+                return;
+            }
+
+            if (sync == null) sync = controller.Sync;
+
+            sb.AppendLine("     同期            : "
+                          + (sync.Enabled ? "有効" : "無効(Enabled が false)")
+                          + " / " + AccessLabel(sync.AccessPolicy));
+
+            if (controller != null && controller.Sync == null)
+            {
+                sb.AppendLine("       ← 窓口に Sync が挿さっていません(操作が同期しません)");
+            }
+            if (sync.Session == null) sb.AppendLine("       ← Sync の Session が未設定");
+            if (sync.Backend == null) sb.AppendLine("       ← Sync の Backend が未設定(位置合わせができません)");
+            if (sync.Controller == null) sb.AppendLine("       ← Sync の Controller が未設定(受信しても画面が更新されません)");
+        }
+
+        private static string AccessLabel(int policy)
+        {
+            if (policy == UdonSyncCoordinator.AccessMasterOnly) return "マスターだけ操作できる";
+            if (policy == UdonSyncCoordinator.AccessOwnerOnly) return "いまの持ち主だけ操作できる";
+            return "誰でも操作できる";
         }
 
         /// <summary>その Button が Udon を呼べる状態か。</summary>
@@ -338,7 +380,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
             UdonWorldUiKit.SyncProxies(panel.gameObject);
 
-            // Core 側(Session / Controller など)も一緒に写しておく。
+            // Core 側(Session / Controller / Sync など)も一緒に写しておく。
             // パネルだけ直しても、窓口の参照が空なら何も起きない。
             if (panel.Core != null) UdonWorldUiKit.SyncProxies(panel.Core.gameObject);
 

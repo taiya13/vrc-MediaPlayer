@@ -40,8 +40,14 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("操作を伝える相手")]
         public UdonPlayerSession Session;
 
+        [Tooltip("同期の担当(空なら 1 人用。Phase5-3 と同じ動きになる)")]
+        public UdonSyncCoordinator Sync;
+
         /// <summary>直近の操作が通ったか(診断用)。</summary>
         public bool LastResult;
+
+        /// <summary>直近の操作が「権限が無くて」断られたか。画面の出し分けに使う。</summary>
+        public bool LastDenied;
 
         // 「状態が変わったら知らせてほしい」人たち。
         // UdonMediaPanel を名指しで持たないのは、UI 以外も登録できるようにするため
@@ -113,26 +119,31 @@ namespace SmartMediaPlatform.World.Udon
 
         public void Play()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.Play());
         }
 
         public void TogglePlayPause()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.TogglePlayPause());
         }
 
         public void Next()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.Next());
         }
 
         public void Previous()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.Previous());
         }
 
         public void Stop()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.Stop());
         }
 
@@ -140,21 +151,25 @@ namespace SmartMediaPlatform.World.Udon
 
         public void PlaySelected()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.PlaySelected());
         }
 
         public void EnqueueSelected()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.EnqueueSelected());
         }
 
         public void PlayNextSelected()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.PlayNextSelected());
         }
 
         public void ClearUpcoming()
         {
+            if (!Begin()) return;
             Done(Session != null && Session.ClearUpcoming() > 0);
         }
 
@@ -169,6 +184,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>catalog index を今すぐ再生する。</summary>
         public bool PlayCatalogIndex(int catalogIndex)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.PlayAt(catalogIndex);
             Done(ok);
             return ok;
@@ -177,6 +194,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>catalog index を Queue の末尾へ積む。</summary>
         public bool EnqueueCatalogIndex(int catalogIndex)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.Enqueue(catalogIndex);
             Done(ok);
             return ok;
@@ -185,6 +204,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>catalog index を「次に再生」にする(再生はしない)。</summary>
         public bool PlayNextCatalogIndex(int catalogIndex)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.PlayNext(catalogIndex);
             Done(ok);
             return ok;
@@ -193,6 +214,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>catalog index を選ぶ。</summary>
         public bool SelectCatalogIndex(int catalogIndex)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.Select(catalogIndex);
             Done(ok);
             return ok;
@@ -201,6 +224,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>一覧の <paramref name="position"/> 番目を選ぶ。</summary>
         public bool SelectVisible(int position)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.SelectAt(position);
             Done(ok);
             return ok;
@@ -209,6 +234,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>一覧の <paramref name="position"/> 番目を再生する。</summary>
         public bool PlayVisible(int position)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.PlayVisibleAt(position);
             Done(ok);
             return ok;
@@ -217,6 +244,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>Queue の <paramref name="position"/> 番目へ飛ぶ。</summary>
         public bool JumpInQueue(int position)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.JumpTo(position);
             Done(ok);
             return ok;
@@ -225,6 +254,8 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>Queue の <paramref name="position"/> 番目を外す。</summary>
         public bool RemoveFromQueue(int position)
         {
+            if (!Begin()) return false;
+
             bool ok = Session != null && Session.RemoveFromQueue(position);
             Done(ok);
             return ok;
@@ -238,9 +269,36 @@ namespace SmartMediaPlatform.World.Udon
             _listeners = new UdonSharpBehaviour[ListenerCapacity];
         }
 
+        /// <summary>
+        /// 操作してよいか確かめて、必要なら持ち主を取る。
+        ///
+        /// <b>同期の担当が刺さっていなければ素通し</b>です
+        /// (1 人用のときは Phase5-3 とまったく同じ動きになる)。
+        /// </summary>
+        private bool Begin()
+        {
+            if (Sync == null) return true;
+
+            if (!Sync.TakeControl())
+            {
+                LastResult = false;
+                LastDenied = true;
+                NotifyChanged();
+                return false;
+            }
+
+            LastDenied = false;
+            return true;
+        }
+
         private void Done(bool result)
         {
             LastResult = result;
+            LastDenied = false;
+
+            // 状態が変わったので配り直す。持ち主でなければ Capture は何もしない。
+            if (Sync != null) Sync.Capture();
+
             NotifyChanged();
         }
     }

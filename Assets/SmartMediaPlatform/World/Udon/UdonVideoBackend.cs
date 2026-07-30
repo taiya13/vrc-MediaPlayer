@@ -154,6 +154,28 @@ namespace SmartMediaPlatform.World.Udon
             return Player != null ? Player.GetDuration() : 0f;
         }
 
+        /// <summary>
+        /// 再生位置を動かす。Phase5-4(同期)で追加。
+        ///
+        /// <b>「どこへ動かすか」は決めません。</b>言われた位置へ動かすだけです
+        /// (同期の基準を持っているのは <see cref="UdonSyncCoordinator"/>)。
+        /// まだ読み込みが終わっていないときは動かせないので false を返します。
+        /// </summary>
+        public bool SetTime(float seconds)
+        {
+            if (Player == null) return false;
+            if (IsLoading) return false;
+
+            float target = seconds < 0f ? 0f : seconds;
+
+            // 終端を越えて指すと、プレイヤーによっては止まってしまう。
+            float duration = GetDuration();
+            if (duration > 0f && target > duration) return false;
+
+            Player.SetTime(target);
+            return true;
+        }
+
         /// <summary>0〜1 の進み具合。長さが分からなければ 0。</summary>
         public float GetProgress()
         {

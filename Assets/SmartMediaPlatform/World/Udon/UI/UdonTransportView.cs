@@ -219,7 +219,22 @@ namespace SmartMediaPlatform.World.Udon.UI
         private void Report(bool ok, string what)
         {
             if (Panel == null) return;
+
+            // 権限が無くて弾かれたのか、やってみて駄目だったのかは
+            // 使う人にとって意味が違うので、書き分ける。
+            if (!ok && Controller != null && Controller.LastDenied)
+            {
+                Panel.SetStatus(DenyMessage());
+                return;
+            }
+
             Panel.SetStatus(ok ? what + " しました。" : what + " できませんでした。");
+        }
+
+        private string DenyMessage()
+        {
+            if (Controller == null || Controller.Sync == null) return "いまは操作できません。";
+            return Controller.Sync.DenyReason() + "。";
         }
     }
 }

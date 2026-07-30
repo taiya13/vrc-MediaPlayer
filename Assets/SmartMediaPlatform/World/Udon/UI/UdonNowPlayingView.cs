@@ -28,6 +28,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("再生位置を聞く相手。空なら Session のものを使う")]
         public UdonVideoBackend Backend;
 
+        [Tooltip("同期の担当(Phase5-4)。空なら操作者の欄を出さない")]
+        public UdonSyncCoordinator Sync;
+
         [Header("文字(空でも動く)")]
         public Text TitleText;
 
@@ -43,6 +46,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("Queue の残り件数")]
         public Text QueueCountText;
 
+        [Tooltip("いま誰が操作しているか(同期しているときだけ出る)")]
+        public Text SyncText;
+
         [Header("進捗(空でも動く)")]
         [Tooltip("Image Type を Filled にしておくこと")]
         public Image ProgressFill;
@@ -57,6 +63,8 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>画面を書き直す。<see cref="UdonMediaPanel"/> から呼ばれる。</summary>
         public void Refresh()
         {
+            RefreshSyncOwner();
+
             if (Session == null)
             {
                 SetText(TitleText, NothingLabel);
@@ -104,6 +112,30 @@ namespace SmartMediaPlatform.World.Udon.UI
         }
 
         // ───────── 内部 ─────────
+
+        /// <summary>
+        /// いま誰が操作しているかを出す。
+        ///
+        /// <b>「誰が操作できるか」を目に見えるようにする</b>ためだけの 1 行です。
+        /// 同期していないときは何も出しません。
+        /// </summary>
+        private void RefreshSyncOwner()
+        {
+            if (SyncText == null) return;
+
+            if (Sync == null || !Sync.Enabled)
+            {
+                SetText(SyncText, "");
+                return;
+            }
+
+            string owner = Sync.OwnerName();
+            string label = owner.Length == 0
+                ? ""
+                : (Sync.IsOwner() ? "操作中: あなた" : "操作中: " + owner);
+
+            SetText(SyncText, label);
+        }
 
         private UdonVideoBackend ResolveBackend()
         {
