@@ -37,6 +37,7 @@ namespace UnityEditor
         public static void DisplayProgressBar(string title, string info, float progress) { }
         public static void ClearProgressBar() { }
         public static string SaveFilePanelInProject(string title, string defaultName, string extension, string message) { return ""; }
+        public static string SaveFilePanelInProject(string title, string defaultName, string extension, string message, string path) { return ""; }
         public static string OpenFilePanel(string title, string directory, string extension) { return ""; }
     }
 
@@ -211,6 +212,7 @@ namespace UnityEditor
         public static Enum EnumPopup(Enum selected, params GUILayoutOption[] options) { return selected; }
         public static Enum EnumPopup(string label, Enum selected, params GUILayoutOption[] options) { return selected; }
         public static int Popup(int index, string[] displayed, params GUILayoutOption[] options) { return index; }
+        public static int Popup(string label, int index, string[] displayed, params GUILayoutOption[] options) { return index; }
         public static UnityEngine.Object ObjectField(UnityEngine.Object obj, Type type, bool allowSceneObjects, params GUILayoutOption[] options) { return null; }
         public static UnityEngine.Object ObjectField(string label, UnityEngine.Object obj, Type type, bool allowSceneObjects, params GUILayoutOption[] options) { return null; }
         public static Vector2 BeginScrollView(Vector2 scrollPosition, params GUILayoutOption[] options) { return scrollPosition; }
@@ -235,11 +237,28 @@ namespace UnityEditor
         public static GUIStyle foldout { get { return null; } }
         public static GUIStyle miniButton { get { return null; } }
         public static GUIStyle toolbarButton { get { return null; } }
+        public static GUIStyle toolbar { get { return null; } }
+        public static GUIStyle miniBoldLabel { get { return null; } }
+        public static GUIStyle wordWrappedMiniLabel { get { return null; } }
+        public static GUIStyle boldFont { get { return null; } }
+        public static GUIStyle largeLabel { get { return null; } }
     }
     public enum MessageType { None, Info, Warning, Error }
 
+    public sealed class EditorGUIDisabledScope : System.IDisposable
+    {
+        public EditorGUIDisabledScope(bool disabled) { }
+        public void Dispose() { }
+    }
+
     public static class EditorGUI
     {
+        public sealed class DisabledScope : System.IDisposable
+        {
+            public DisabledScope(bool disabled) { }
+            public void Dispose() { }
+        }
+
         public static int indentLevel { get; set; }
         public static void BeginChangeCheck() { }
         public static bool EndChangeCheck() { return false; }

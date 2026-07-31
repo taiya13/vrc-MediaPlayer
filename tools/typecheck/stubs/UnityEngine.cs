@@ -542,6 +542,9 @@ namespace UnityEngine
 
     public static class GUI
     {
+        public static void FocusControl(string name) { }
+        public static string GetNameOfFocusedControl() { return ""; }
+
         public static GUISkin skin { get; set; }
         public static bool enabled { get; set; }
         public static bool changed { get; set; }

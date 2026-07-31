@@ -109,6 +109,10 @@ namespace SmartMediaPlatform.World.Udon
         private int _appliedRevision = -1;
         private int _appliedMedia = -1;
         private int _capturedMedia = -1;
+
+        // 実際に鳴り始めた時点で基準を置き直したか。
+        // 置き直すまでは位置合わせをしない(下の AnchorWhenPlaybackStarts 参照)。
+        private bool _anchored;
         private float _nextCheck;
         private bool _initialized;
 
@@ -230,6 +234,7 @@ namespace SmartMediaPlatform.World.Udon
             {
                 _basePositionMs = 0;
                 _capturedMedia = current;
+                _anchored = false;      // 鳴り始めたら置き直す
             }
             else
             {
@@ -275,6 +280,8 @@ namespace SmartMediaPlatform.World.Udon
                 _appliedMedia = current;
                 _capturedMedia = current;
 
+                _anchored = false;      // 受け取る側も、鳴り始めるまで合わせない
+
                 if (Backend != null)
                 {
                     if (current >= 0) Backend.LoadAndPlay(current);
@@ -309,6 +316,7 @@ namespace SmartMediaPlatform.World.Udon
 
             _nextCheck = Time.time + CheckInterval;
 
+            AnchorWhenPlaybackStarts();
             WatchOwnerChanges();
             CorrectDrift();
         }
@@ -349,8 +357,45 @@ namespace SmartMediaPlatform.World.Udon
         /// ずれていたら合わせ直す。
         /// <see cref="SmartMediaPlatform.World.UdonModel.PlaybackClockModel.NeedsCorrection"/> の写しです。
         /// </summary>
+        /// <summary>
+        /// <b>実際に鳴り始めた瞬間に、時刻の基準を置き直す。</b>
+        ///
+        /// 押した瞬間を基準にすると、動画の読み込みに掛かった数秒ぶんだけ
+        /// <b>頭が飛びます</b>(「3 秒目から始まる」の正体)。
+        /// 読み込みは 1〜5 秒ぶれるので、基準は<b>鳴り始めてから</b>置くのが正しい。
+        ///
+        /// 置き直すまでは <see cref="CorrectDrift"/> を止めます。
+        /// 止めないと、まだ 0 秒のところへ「3 秒目のはず」と seek してしまいます。
+        /// </summary>
+        private void AnchorWhenPlaybackStarts()
+        {
+            if (_anchored) return;
+            if (Backend == null || Session == null) return;
+            if (Session.CurrentIndex < 0) return;
+
+            // まだ鳴っていないなら待つ(次の見回りでまた見に来る)
+            if (!Backend.IsPlaying) return;
+
+            _anchored = true;
+
+            if (!IsOwner()) return;
+
+            // 頭から数え直す。いま鳴っている位置をそのまま基準にする。
+            float seconds = Backend.GetTime();
+            _basePositionMs = seconds > 0f ? (int)(seconds * 1000f) : 0;
+            _baseServerTime = Networking.GetServerTimeInMilliseconds();
+            _playing = Session.IsPlaying;
+            _revision++;
+
+            RequestSerialization();
+
+            if (LogSync) Debug.Log("[UdonSyncCoordinator] 鳴り始めたので基準を置き直しました。", gameObject);
+        }
+
         private void CorrectDrift()
         {
+            // 鳴り始める前に合わせようとすると、読み込み待ちのぶんだけ頭が飛ぶ。
+            if (!_anchored) return;
             if (!_playing) return;
             if (Backend == null || Session == null) return;
             if (Session.CurrentIndex < 0) return;
@@ -415,6 +460,7 @@ namespace SmartMediaPlatform.World.Udon
             }
 
             _appliedMedia = -1;   // 読み直させる
+            _anchored = false;
             Apply();
         }
 
