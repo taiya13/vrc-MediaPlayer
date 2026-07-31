@@ -297,14 +297,82 @@ NowPlaying                  UdonNowPlayingView
 
 ---
 
+## 5-b. 修正: 複数 URL で固まる / 落ちる(実機で発生)
+
+**症状**: URL を複数入れて Queue から曲を変えると、**フリーズしたりクライアントが落ちる**。
+URL が 1 本のときは起きなかった。
+
+### 原因 — エラー時の自動送りが無限ループになっていた
+
+```
+OnVideoError → Session.NotifyError() → Next() → Load() → LoadURL()
+     ↑                                                        │
+     └──────────────── 失敗するとまたここへ ──────────────────┘
+```
+
+**VRChat は `LoadURL` を約 5 秒に 1 回しか許しません。**
+超えて呼ぶと **即座にエラーで返ります**。ところが今までのコードには
+
+- **読み込み間隔の制限が無い**
+- **連続失敗を打ち切る仕組みが無い**
+
+の 2 つが欠けていたので、この輪が**フレーム単位**で回っていました。
+
+**URL が 1 本だと起きなかった理由**は、`Next()` が Queue 1 件で false を返して
+そこで止まるからです。複数あると `EnsureQueueFilled()` がおすすめで補充し続けるので、
+`Next()` が**常に成功して永遠に回ります**。
+「Queue から変更」が引き金になったのは、直前の読み込みからの間隔が短く、
+最初の 1 回が制限に掛かるためです。
+
+### 直したこと
+
+**1) 読み込みの間隔をあける(`UdonVideoBackend`)**
+
+`MinimumLoadInterval`(既定 **5 秒**)を下回る読み込みは、
+**捨てずに `SendCustomEventDelayedSeconds` で遅らせます**。
+押した操作は必ず効き、待っている間は Now Playing に「読み込み中…」が出ます。
+
+**2) 連続失敗を打ち切る(`UdonPlayerSession`)**
+
+`MaxConsecutiveErrors`(既定 **4 回**)続けて失敗したら自動送りをやめ、
+Console に「URL が正しいか確認してください」と出します。
+実際に 1 本鳴れば(`OnVideoStart`)数え直し、
+**人がボタンを押せばもう一度試せます**。
+
+**3) 「鳴らずに終わった」を失敗として扱う(`UdonVideoBackend`)**
+
+一度も `OnVideoStart` が来ないまま `OnVideoEnd` が来たら、
+正常終了ではなく失敗として送ります。正常扱いのままだと、
+上位が何事もなく次へ送り続けて同じように止まらなくなります。
+
+### 検証
+
+正典の `PlaybackModel` に同じ判断を写し、**EditMode 7 ケース**を足しました。
+`RepeatedFailuresEventuallyGiveUp` は
+**「50 回以内に止まらなければ失敗」**という形で書いてあり、
+今回の事故そのものを再現・検出します。
+
+### 増えた Inspector 項目
+
+| コンポーネント | 項目 | 既定 | 意味 |
+| --- | --- | --- | --- |
+| `UdonVideoBackend` | `MinimumLoadInterval` | 5.0 秒 | 読み込みの最短間隔。VRChat の制限に合わせる |
+| `UdonPlayerSession` | `MaxConsecutiveErrors` | 4 | 続けて失敗したら諦める回数。0 で無制限 |
+
+> **URL が全部正しくても 5 秒制限は効きます。**
+> 「次へ」を連打すると 5 秒ごとにしか切り替わりませんが、
+> これは VRChat 側の制限であって、こちらで縮めることはできません。
+
+---
+
 ## 6. 検査
 
 ```bash
 python3 tools/typecheck/genmeta.py      # .meta が揃っているか
 python3 tools/typecheck/typecheck.py    # No compile errors.
-python3 tools/typecheck/runtests.py     # 887 passed, 0 failed
+python3 tools/typecheck/runtests.py     # 894 passed, 0 failed
 python3 tools/typecheck/udon_lint.py    # 18 ファイル / 問題なし
 ```
 
 Phase5-4 の 881 ケースから、`ListPageModelTests`(16)を落として
-`ListScrollModelTests`(22)を足し、**887** です。
+`ListScrollModelTests`(22)を足し、さらに再生ループの修正で 7 ケース足して **894** です。

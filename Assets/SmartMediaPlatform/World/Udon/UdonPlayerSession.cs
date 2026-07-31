@@ -49,6 +49,10 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("おすすめによる自動補充を使う")]
         public bool AutoQueueEnabled = true;
 
+        [Tooltip("続けてこの回数だけ再生に失敗したら自動送りをやめる。0 で無制限。"
+                 + "これが無いと「失敗 → 次へ → 失敗」が永遠に回る")]
+        public int MaxConsecutiveErrors = 4;
+
         [Header("同期(Phase5-4)")]
         [Tooltip("動画が終わった / 失敗したときに自分で次へ進む。"
                  + "同期中は持ち主(Owner)だけ true にする")]
@@ -70,6 +74,9 @@ namespace SmartMediaPlatform.World.Udon
         private bool _exhausted;
         private int _requestedIndex = -1;
         private int _loadCount;
+
+        // 続けて失敗した回数。実際に鳴り始めたら 0 に戻す。
+        private int _consecutiveErrors;
 
         private bool _initialized;
 
@@ -166,6 +173,10 @@ namespace SmartMediaPlatform.World.Udon
         {
             EnsureInitialized();
             if (_queueCount == 0) return false;
+
+            // 人が押したら、失敗の数え直し。
+            // 「もう駄目」と諦めたあとでも、もう一度試せるようにするため。
+            _consecutiveErrors = 0;
 
             if (_requestedIndex != _queue[0]) Load(_queue[0]);
             else if (Backend != null) Backend.Play();
@@ -412,6 +423,15 @@ namespace SmartMediaPlatform.World.Udon
 
         // ───────── 動画プレイヤーからの知らせ ─────────
 
+        /// <summary>続けて失敗した回数(診断用)。</summary>
+        public int ConsecutiveErrors { get { return _consecutiveErrors; } }
+
+        /// <summary>実際に鳴り始めた。ここで失敗の数を戻す。</summary>
+        public void NotifyStarted()
+        {
+            _consecutiveErrors = 0;
+        }
+
         /// <summary>
         /// 最後まで再生された。<see cref="UdonVideoBackend"/> から呼ばれる。
         ///
@@ -426,10 +446,34 @@ namespace SmartMediaPlatform.World.Udon
             if (!Next()) _isPlaying = false;
         }
 
-        /// <summary>再生に失敗した。壊れているものを飛ばして次へ送る。</summary>
+        /// <summary>
+        /// 再生に失敗した。壊れているものを飛ばして次へ送る。
+        ///
+        /// <b><see cref="MaxConsecutiveErrors"/> 回続けて失敗したら、そこで諦めます。</b>
+        /// 諦めないと、失敗するたびに次を読み込み、その読み込みがまた失敗し …… と
+        /// 無限に回ります。VRChat は読み込み回数を制限していて、制限に掛かった
+        /// 読み込みは<b>即座に失敗して返る</b>ので、この輪はフレーム単位で回り、
+        /// <b>クライアントごと固まります</b>(Phase5-5 で実際に起きました)。
+        ///
+        /// <see cref="SmartMediaPlatform.World.UdonModel.PlaybackModel.NotifyError"/> の写しです。
+        /// </summary>
         public void NotifyError()
         {
             if (!AutoAdvance) return;
+
+            _consecutiveErrors++;
+
+            if (MaxConsecutiveErrors > 0 && _consecutiveErrors > MaxConsecutiveErrors)
+            {
+                _isPlaying = false;
+                _exhausted = true;
+
+                Debug.LogWarning("[UdonPlayerSession] 続けて " + _consecutiveErrors
+                                 + " 回失敗したので自動送りをやめます。"
+                                 + "URL が正しいか確認してください。", gameObject);
+                return;
+            }
+
             if (!Next()) _isPlaying = false;
         }
 

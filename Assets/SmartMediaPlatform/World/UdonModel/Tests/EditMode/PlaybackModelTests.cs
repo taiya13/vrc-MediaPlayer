@@ -677,6 +677,121 @@ namespace SmartMediaPlatform.World.UdonModel.Tests
             Assert.AreEqual(owner.IsPlaying, joiner.IsPlaying);
         }
 
+
+        // ───────── 失敗が続いても止まる(Phase5-5 の事故)─────────
+
+        [Test]
+        public void RepeatedFailuresEventuallyGiveUp()
+        {
+            // 実機で起きたのはこれ。失敗するたびに次を読み込み、その読み込みも失敗し …… と
+            // 補充が効いているかぎり永遠に回って、クライアントごと固まった。
+            var model = New();
+            model.MaxConsecutiveErrors = 4;
+            model.Enqueue(0);
+            model.Play();
+
+            int guard = 0;
+            while (model.NotifyError(Candidates(1, 2, 3, 4, 5, 6, 7, 8, 9)))
+            {
+                guard++;
+                Assert.Less(guard, 50, "止まらない = 実機が固まる");
+            }
+
+            Assert.AreEqual(5, model.ConsecutiveErrors, "上限 + 1 回目で諦める");
+            Assert.IsFalse(model.IsPlaying);
+            Assert.IsTrue(model.IsExhausted, "「次がありません」と出る状態になる");
+        }
+
+        [Test]
+        public void GivingUpDoesNotLoadAnythingMore()
+        {
+            var model = New();
+            model.MaxConsecutiveErrors = 2;
+            model.Enqueue(0);
+            model.Play();
+
+            model.NotifyError(Candidates(1, 2, 3, 4, 5));
+            model.NotifyError(Candidates(1, 2, 3, 4, 5));
+
+            int loadsBefore = model.LoadCount;
+            model.NotifyError(Candidates(1, 2, 3, 4, 5));
+
+            Assert.AreEqual(loadsBefore, model.LoadCount,
+                            "諦めたあとは読み込みを頼まない(ここが無限だった)");
+        }
+
+        [Test]
+        public void PlayingSuccessfullyResetsTheFailureCount()
+        {
+            var model = New();
+            model.MaxConsecutiveErrors = 4;
+            model.Enqueue(0);
+            model.Play();
+
+            model.NotifyError(Candidates(1, 2, 3));
+            model.NotifyError(Candidates(1, 2, 3));
+            Assert.AreEqual(2, model.ConsecutiveErrors);
+
+            model.NotifyStarted();
+
+            Assert.AreEqual(0, model.ConsecutiveErrors, "1 本鳴れば数え直し");
+        }
+
+        [Test]
+        public void PressingPlayGivesAnotherChanceAfterGivingUp()
+        {
+            var model = New();
+            model.MaxConsecutiveErrors = 1;
+            model.Enqueue(0);
+            model.Play();
+
+            model.NotifyError(Candidates(1, 2, 3));
+            model.NotifyError(Candidates(1, 2, 3));
+            Assert.IsFalse(model.IsPlaying, "いったん諦めている");
+
+            Assert.IsTrue(model.Play(), "人が押したらもう一度試せる");
+            Assert.AreEqual(0, model.ConsecutiveErrors);
+        }
+
+        [Test]
+        public void TheCapCanBeTurnedOff()
+        {
+            var model = New();
+            model.MaxConsecutiveErrors = 0;
+            model.Enqueue(0);
+            model.Play();
+
+            for (int i = 0; i < 20; i++) model.NotifyError(Candidates(1, 2, 3, 4, 5));
+
+            Assert.AreEqual(20, model.ConsecutiveErrors, "0 なら数えるだけで諦めない");
+        }
+
+        [Test]
+        public void RunningOutOfMediaStopsPlaybackWithoutAnError()
+        {
+            var model = New();
+            model.Enqueue(0);
+            model.Play();
+
+            // 候補が無ければ補充できないので、そこで終わる
+            Assert.IsFalse(model.NotifyError(Candidates()));
+            Assert.IsFalse(model.IsPlaying);
+        }
+
+        [Test]
+        public void EndingNormallyMovesToTheNextOne()
+        {
+            var model = New();
+            model.Enqueue(3);
+            model.Enqueue(7);
+            model.Play();
+
+            model.NotifyEnded(Candidates());
+
+            Assert.AreEqual(7, model.CurrentIndex);
+            Assert.IsTrue(model.IsPlaying);
+        }
+
         private static void AssertUdonFriendly(System.Type type, string what)
         {
             if (type == typeof(void)) return;

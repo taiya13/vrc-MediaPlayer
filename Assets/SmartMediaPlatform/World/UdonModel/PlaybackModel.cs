@@ -48,6 +48,19 @@ namespace SmartMediaPlatform.World.UdonModel
         /// <summary>Queue に積める上限(Udon では固定長配列なので上限が要る)。</summary>
         public const int QueueCapacity = 64;
 
+        /// <summary>
+        /// <b>続けてこの回数だけ失敗したら、自動送りをやめる。</b>0 で無制限。
+        ///
+        /// <b>これが無いと止まりません。</b>失敗するたびに次へ送るので、
+        /// 「失敗 → 次へ → 失敗 → …」が<b>Queue が尽きるまで、
+        /// 補充が効いていれば永遠に</b>続きます。
+        /// VRChat の動画プレイヤーは読み込み回数を制限していて、
+        /// 制限に掛かった読み込みは<b>即座に失敗して返る</b>ため、
+        /// この輪はフレーム単位で回り、クライアントごと固まります
+        /// (Phase5-5 で実際に起きました)。
+        /// </summary>
+        public int MaxConsecutiveErrors = 4;
+
         // ───────── 状態 ─────────
 
         private readonly int _catalogCount;
@@ -64,6 +77,9 @@ namespace SmartMediaPlatform.World.UdonModel
 
         private int _requestedIndex = -1;
         private int _loadCount;
+
+        // 続けて失敗した回数。実際に鳴り始めたら 0 に戻す。
+        private int _consecutiveErrors;
 
         public PlaybackModel(int catalogCount)
         {
@@ -140,6 +156,10 @@ namespace SmartMediaPlatform.World.UdonModel
         public bool Play()
         {
             if (_queueCount == 0) return false;
+
+            // 人が押したら、失敗の数え直し。
+            // 「もう駄目」と諦めたあとでも、もう一度試せるようにするため。
+            _consecutiveErrors = 0;
 
             if (_requestedIndex != _queue[0]) Load(_queue[0]);
             _isPlaying = true;
@@ -322,6 +342,49 @@ namespace SmartMediaPlatform.World.UdonModel
             _queueCount = 0;
             _requestedIndex = -1;
             _isPlaying = false;
+        }
+
+        // ───────── 動画プレイヤーからの知らせ ─────────
+
+        /// <summary>続けて失敗した回数(診断用)。</summary>
+        public int ConsecutiveErrors { get { return _consecutiveErrors; } }
+
+        /// <summary>実際に鳴り始めた。ここで失敗の数を戻す。</summary>
+        public void NotifyStarted()
+        {
+            _consecutiveErrors = 0;
+        }
+
+        /// <summary>最後まで再生された。次へ送る。</summary>
+        public void NotifyEnded(int[] candidates)
+        {
+            if (!Next(candidates)) _isPlaying = false;
+        }
+
+        /// <summary>
+        /// 再生に失敗した。壊れているものを飛ばして次へ送る。
+        ///
+        /// <b><see cref="MaxConsecutiveErrors"/> 回続けて失敗したら、そこで諦めます。</b>
+        /// 諦めないと、失敗するたびに次を読み込み、その読み込みがまた失敗し …… と
+        /// 無限に回ります。
+        /// </summary>
+        public bool NotifyError(int[] candidates)
+        {
+            _consecutiveErrors++;
+
+            if (MaxConsecutiveErrors > 0 && _consecutiveErrors > MaxConsecutiveErrors)
+            {
+                _isPlaying = false;
+                _exhausted = true;
+                return false;
+            }
+
+            if (!Next(candidates))
+            {
+                _isPlaying = false;
+                return false;
+            }
+            return true;
         }
 
         /// <summary>

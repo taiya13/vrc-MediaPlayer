@@ -50,6 +50,12 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("同じ失敗を何度も送らない(直前と同じ種類のエラーは 1 回だけ通す)")]
         public bool CollapseRepeatedErrors = true;
 
+        [Tooltip("動画の読み込みを最短でも何秒あけるか。"
+                 + "VRChat 側の制限より短く呼ぶと即座に失敗が返り、"
+                 + "「失敗 → 次へ → 失敗」がフレーム単位で回ってしまう")]
+        [Range(0f, 15f)]
+        public float MinimumLoadInterval = 5f;
+
         // ───────── 状態(診断用に外から読める)─────────
 
         /// <summary>いま読み込んでいる catalog index。無ければ -1。</summary>
@@ -66,6 +72,14 @@ namespace SmartMediaPlatform.World.Udon
 
         private bool _wantsPlay;
         private int _lastReportedErrorCode = -1;
+
+        // 読み込みの間隔をあけるための状態
+        private int _pendingIndex = -1;
+        private float _lastLoadAt = -999f;
+        private bool _loadScheduled;
+
+        // 読み込んでから一度でも鳴ったか(鳴らずに終わったら失敗とみなす)
+        private bool _started;
 
         // ───────── 上位からの指示 ─────────
 
@@ -86,10 +100,54 @@ namespace SmartMediaPlatform.World.Udon
                 return false;
             }
 
-            LoadedIndex = catalogIndex;
+            _pendingIndex = catalogIndex;
+
+            // ── 前の読み込みから間があいていなければ、あとで読む。
+            //    VRChat は読み込み回数を制限していて、制限に掛かった読み込みは
+            //    「即座に失敗して返る」。それを上位が「失敗 → 次へ」と受けると、
+            //    次の読み込みもまた制限に掛かり、フレーム単位で回り続けて固まる。
+            //    捨てずに「遅らせる」ので、押した操作は必ず効く。
+            float wait = MinimumLoadInterval - (Time.time - _lastLoadAt);
+            if (wait > 0f)
+            {
+                IsLoading = true;
+
+                if (!_loadScheduled)
+                {
+                    _loadScheduled = true;
+                    SendCustomEventDelayedSeconds("LoadPending", wait);
+                }
+                return true;
+            }
+
+            return LoadNow();
+        }
+
+        /// <summary>
+        /// 待たせていた読み込みを実行する。
+        /// <c>SendCustomEventDelayedSeconds</c> から呼ばれるので引数は取れない。
+        /// </summary>
+        public void LoadPending()
+        {
+            _loadScheduled = false;
+            LoadNow();
+        }
+
+        /// <summary>いま読み込む。待ち時間の判断はしない。</summary>
+        private bool LoadNow()
+        {
+            if (Player == null || Catalog == null) return false;
+            if (_pendingIndex < 0 || _pendingIndex >= Catalog.Count) return false;
+
+            VRCUrl url = Catalog.GetUrl(_pendingIndex);
+            if (url == null) return false;
+
+            LoadedIndex = _pendingIndex;
             LoadCount++;
             IsLoading = true;
+            _started = false;
             _lastReportedErrorCode = -1;
+            _lastLoadAt = Time.time;
 
             Player.LoadURL(url);
             return true;
@@ -135,6 +193,7 @@ namespace SmartMediaPlatform.World.Udon
 
             _wantsPlay = false;
             IsLoading = false;
+            _started = false;
             Player.Stop();
             return true;
         }
@@ -203,6 +262,10 @@ namespace SmartMediaPlatform.World.Udon
         public override void OnVideoStart()
         {
             IsLoading = false;
+            _started = true;
+
+            // 実際に鳴ったので、上位の「続けて失敗した回数」を戻してもらう。
+            if (Session != null) Session.NotifyStarted();
         }
 
         public override void OnVideoEnd()
@@ -210,6 +273,18 @@ namespace SmartMediaPlatform.World.Udon
             IsLoading = false;
             _wantsPlay = false;
 
+            // 一度も鳴らずに終わったなら、それは「正常に終わった」ではなく失敗。
+            // 正常扱いにすると、上位が何事もなく次へ送り続けて止まらなくなる。
+            if (!_started)
+            {
+                Debug.LogWarning("[UdonVideoBackend] 一度も再生されずに終わりました: index "
+                                 + LoadedIndex, gameObject);
+
+                if (Session != null) Session.NotifyError();
+                return;
+            }
+
+            _started = false;
             if (Session != null) Session.NotifyEnded();
         }
 
