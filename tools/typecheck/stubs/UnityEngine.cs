@@ -689,6 +689,15 @@ namespace UnityEngine
         public static Object GetBuiltinResource(Type type, string path) { return null; }
     }
     public class TextAsset : Object { public string text { get { return null; } } }
+
+    public static class JsonUtility
+    {
+        public static T FromJson<T>(string json) { return default(T); }
+        public static object FromJson(string json, Type type) { return null; }
+        public static void FromJsonOverwrite(string json, object target) { }
+        public static string ToJson(object obj) { return ""; }
+        public static string ToJson(object obj, bool prettyPrint) { return ""; }
+    }
     public class RectTransform : Transform
     {
         public Vector2 anchoredPosition { get; set; }
@@ -722,4 +731,46 @@ namespace UnityEngine.Serialization
 {
     [System.AttributeUsage(System.AttributeTargets.Field)]
     public sealed class FormerlySerializedAsAttribute : System.Attribute { public FormerlySerializedAsAttribute(string oldName) { } }
+}
+
+namespace UnityEngine.Networking
+{
+    public class DownloadHandler : System.IDisposable
+    {
+        public string text { get { return ""; } }
+        public byte[] data { get { return new byte[0]; } }
+        public void Dispose() { }
+    }
+
+    public class UnityWebRequestAsyncOperation
+    {
+        public bool isDone { get { return true; } }
+        public float progress { get { return 1f; } }
+    }
+
+    public class UnityWebRequest : System.IDisposable
+    {
+        public enum Result { InProgress, Success, ConnectionError, ProtocolError, DataProcessingError }
+
+        public string url { get; set; }
+        public string error { get { return ""; } }
+        public long responseCode { get { return 200; } }
+        public int timeout { get; set; }
+        public Result result { get { return Result.Success; } }
+        public DownloadHandler downloadHandler { get; set; }
+
+        public UnityWebRequestAsyncOperation SendWebRequest() { return new UnityWebRequestAsyncOperation(); }
+        public void Abort() { }
+        public void Dispose() { }
+
+        public static UnityWebRequest Get(string uri) { return new UnityWebRequest(); }
+        public static UnityWebRequest Post(string uri, string body) { return new UnityWebRequest(); }
+        public static string EscapeURL(string s) { return s; }
+        public static string UnEscapeURL(string s) { return s; }
+    }
+
+    public class UnityWebRequestTexture
+    {
+        public static UnityWebRequest GetTexture(string uri) { return new UnityWebRequest(); }
+    }
 }

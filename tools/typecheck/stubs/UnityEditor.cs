@@ -212,6 +212,13 @@ namespace UnityEditor
         public static Enum EnumPopup(Enum selected, params GUILayoutOption[] options) { return selected; }
         public static Enum EnumPopup(string label, Enum selected, params GUILayoutOption[] options) { return selected; }
         public static int Popup(int index, string[] displayed, params GUILayoutOption[] options) { return index; }
+        public static string PasswordField(string value, params GUILayoutOption[] options) { return value; }
+        public static string PasswordField(string label, string value, params GUILayoutOption[] options) { return value; }
+        public static int IntSlider(int value, int left, int right, params GUILayoutOption[] options) { return value; }
+        public static int IntSlider(string label, int value, int left, int right, params GUILayoutOption[] options) { return value; }
+        public static float Slider(string label, float value, float left, float right, params GUILayoutOption[] options) { return value; }
+        public static void SelectableLabel(string text, params GUILayoutOption[] options) { }
+        public static void SelectableLabel(string text, GUIStyle style, params GUILayoutOption[] options) { }
         public static int Popup(string label, int index, string[] displayed, params GUILayoutOption[] options) { return index; }
         public static UnityEngine.Object ObjectField(UnityEngine.Object obj, Type type, bool allowSceneObjects, params GUILayoutOption[] options) { return null; }
         public static UnityEngine.Object ObjectField(string label, UnityEngine.Object obj, Type type, bool allowSceneObjects, params GUILayoutOption[] options) { return null; }

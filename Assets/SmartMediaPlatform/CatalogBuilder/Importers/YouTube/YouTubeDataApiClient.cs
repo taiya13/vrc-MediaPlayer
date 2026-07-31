@@ -1,0 +1,468 @@
+#if UNITY_EDITOR
+using System;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Networking;
+
+namespace SmartMediaPlatform.CatalogBuilder.YouTube
+{
+    /// <summary>
+    /// <b>YouTube Data API v3 から取ってくる。</b>Phase6-2。
+    ///
+    /// <b>取得の仕方はここだけに閉じ込めてあります。</b>
+    /// API が変わっても、キー無しの方法に替えても、
+    /// 直すのはこのクラスだけで <see cref="YouTubeCatalogImporter"/> は無変更です。
+    ///
+    /// <b>同期(待つ)処理です。</b><c>ICatalogImporter.Import</c> が同期なので、
+    /// エディタを止めて待ちます。エディタツールでは普通のやり方ですが、
+    /// 件数が多いと数秒止まるので <see cref="YouTubeApiSettings.MaxItems"/> で歯止めをかけています。
+    ///
+    /// <b>例外を投げません。</b>失敗は <see cref="YouTubeFetchResult"/> に入れて返します。
+    /// </summary>
+    public sealed class YouTubeDataApiClient : IYouTubeClient
+    {
+        private const string Api = "https://www.googleapis.com/youtube/v3/";
+
+        private readonly YouTubeApiSettings _settings;
+
+        public YouTubeDataApiClient() : this(YouTubeApiSettings.LoadIfPresent())
+        {
+        }
+
+        public YouTubeDataApiClient(YouTubeApiSettings settings)
+        {
+            _settings = settings;
+        }
+
+        public bool IsAvailable
+        {
+            get { return _settings != null && _settings.HasKey; }
+        }
+
+        public string UnavailableReason
+        {
+            get
+            {
+                if (_settings == null) return "設定アセットがまだありません。窓の「設定を作る」を押してください。";
+                if (!_settings.HasKey) return "API キーが空です。YouTubeApiSettings に入れてください。";
+                return "";
+            }
+        }
+
+        private int MaxItems { get { return _settings != null ? _settings.MaxItems : 50; } }
+
+        private int Timeout { get { return _settings != null ? _settings.TimeoutSeconds : 20; } }
+
+        private string Key { get { return _settings != null ? _settings.ApiKey : ""; } }
+
+        // ───────── 入口 ─────────
+
+        public YouTubeFetchResult FetchPlaylist(string playlistId, int maxCount)
+        {
+            if (!IsAvailable) return YouTubeFetchResult.Failure(UnavailableReason);
+            if (string.IsNullOrWhiteSpace(playlistId))
+                return YouTubeFetchResult.Failure("再生リスト ID が空です。");
+
+            return FetchPlaylistItems(playlistId, Clamp(maxCount));
+        }
+
+        public YouTubeFetchResult FetchChannel(string channel, bool byName, int maxCount)
+        {
+            if (!IsAvailable) return YouTubeFetchResult.Failure(UnavailableReason);
+            if (string.IsNullOrWhiteSpace(channel))
+                return YouTubeFetchResult.Failure("チャンネルの指定が空です。");
+
+            // チャンネルの投稿は「アップロード用の再生リスト」として取れる。
+            // 専用の口が無いので、まず ID を引いてから再生リストとして読む。
+            string query = byName
+                ? "channels?part=contentDetails&forHandle=@" + Escape(channel)
+                : "channels?part=contentDetails&id=" + Escape(channel);
+
+            string json;
+            string error;
+            if (!Get(query, out json, out error)) return YouTubeFetchResult.Failure(error);
+
+            var channels = Parse<ChannelListResponse>(json);
+            if (channels == null || channels.items == null || channels.items.Length == 0)
+            {
+                return YouTubeFetchResult.Failure(
+                    "チャンネルが見つかりません: " + channel + "\n"
+                    + "@名前 が変わっている場合は channel/UC… の URL を試してください。");
+            }
+
+            var details = channels.items[0].contentDetails;
+            if (details == null || details.relatedPlaylists == null
+                || string.IsNullOrEmpty(details.relatedPlaylists.uploads))
+            {
+                return YouTubeFetchResult.Failure("このチャンネルの投稿一覧が取れませんでした。");
+            }
+
+            return FetchPlaylistItems(details.relatedPlaylists.uploads, Clamp(maxCount));
+        }
+
+        public YouTubeFetchResult FetchVideo(string videoId)
+        {
+            if (!IsAvailable) return YouTubeFetchResult.Failure(UnavailableReason);
+            if (string.IsNullOrWhiteSpace(videoId))
+                return YouTubeFetchResult.Failure("動画 ID が空です。");
+
+            var ids = new List<string>();
+            ids.Add(videoId);
+
+            var map = new Dictionary<string, YouTubeVideoInfo>();
+            string error;
+            if (!FillVideoDetails(ids, map, out error)) return YouTubeFetchResult.Failure(error);
+
+            if (!map.ContainsKey(videoId))
+            {
+                return YouTubeFetchResult.Failure("動画が見つかりません(非公開か削除済み): " + videoId);
+            }
+
+            var list = new List<YouTubeVideoInfo>();
+            list.Add(map[videoId]);
+            return YouTubeFetchResult.Success(list, "1 件を取得しました。");
+        }
+
+        // ───────── 再生リストを読む ─────────
+
+        private YouTubeFetchResult FetchPlaylistItems(string playlistId, int maxCount)
+        {
+            var order = new List<string>();
+            var pending = new List<string>();
+            string pageToken = "";
+
+            while (order.Count < maxCount)
+            {
+                int want = Math.Min(50, maxCount - order.Count);
+
+                string query = "playlistItems?part=contentDetails&maxResults=" + want
+                               + "&playlistId=" + Escape(playlistId);
+                if (pageToken.Length > 0) query += "&pageToken=" + Escape(pageToken);
+
+                string json;
+                string error;
+                if (!Get(query, out json, out error)) return YouTubeFetchResult.Failure(error);
+
+                var page = Parse<PlaylistItemListResponse>(json);
+                if (page == null || page.items == null || page.items.Length == 0) break;
+
+                for (int i = 0; i < page.items.Length; i++)
+                {
+                    var details = page.items[i].contentDetails;
+                    if (details == null || string.IsNullOrEmpty(details.videoId)) continue;
+
+                    if (order.Contains(details.videoId)) continue;
+                    order.Add(details.videoId);
+                    pending.Add(details.videoId);
+                }
+
+                pageToken = page.nextPageToken != null ? page.nextPageToken : "";
+                if (pageToken.Length == 0) break;
+            }
+
+            if (order.Count == 0)
+            {
+                return YouTubeFetchResult.Failure(
+                    "動画が 1 件も取れませんでした。再生リストが空か、非公開の可能性があります。");
+            }
+
+            // 長さ・見出し・サムネイルは videos で別に引く。
+            // playlistItems の snippet にも見出しはあるが、長さが入っていない。
+            var map = new Dictionary<string, YouTubeVideoInfo>();
+            string detailError;
+            if (!FillVideoDetails(pending, map, out detailError))
+            {
+                return YouTubeFetchResult.Failure(detailError);
+            }
+
+            var videos = new List<YouTubeVideoInfo>();
+            int unavailable = 0;
+
+            for (int i = 0; i < order.Count; i++)
+            {
+                string id = order[i];
+
+                if (map.ContainsKey(id))
+                {
+                    videos.Add(map[id]);
+                    continue;
+                }
+
+                // 取れなかったものは黙って消さず、印を付けて残す。
+                // 「入れたはずの曲が無い」より「これは使えません」のほうが分かる。
+                var missing = new YouTubeVideoInfo();
+                missing.VideoId = id;
+                missing.Title = "(取得できません)";
+                missing.IsUnavailable = true;
+                missing.UnavailableReason = "非公開・削除済み・地域制限のいずれか";
+                videos.Add(missing);
+                unavailable++;
+            }
+
+            string message = videos.Count + " 件を取得しました。";
+            if (unavailable > 0) message += "(うち " + unavailable + " 件は再生できません)";
+
+            return YouTubeFetchResult.Success(videos, message);
+        }
+
+        /// <summary>動画の詳細を 50 件ずつ引いて <paramref name="map"/> へ入れる。</summary>
+        private bool FillVideoDetails(
+            List<string> ids, Dictionary<string, YouTubeVideoInfo> map, out string error)
+        {
+            error = "";
+
+            for (int start = 0; start < ids.Count; start += 50)
+            {
+                int count = Math.Min(50, ids.Count - start);
+                string joined = string.Join(",", ids.GetRange(start, count).ToArray());
+
+                string query = "videos?part=snippet,contentDetails&id=" + Escape(joined);
+
+                string json;
+                if (!Get(query, out json, out error)) return false;
+
+                var page = Parse<VideoListResponse>(json);
+                if (page == null || page.items == null) continue;
+
+                for (int i = 0; i < page.items.Length; i++)
+                {
+                    YouTubeVideoInfo info = ToInfo(page.items[i]);
+                    if (info == null || info.VideoId.Length == 0) continue;
+
+                    map[info.VideoId] = info;
+                }
+            }
+
+            return true;
+        }
+
+        private static YouTubeVideoInfo ToInfo(VideoItem item)
+        {
+            if (item == null) return null;
+
+            var info = new YouTubeVideoInfo();
+            info.VideoId = item.id != null ? item.id : "";
+
+            if (item.snippet != null)
+            {
+                info.Title = item.snippet.title != null ? item.snippet.title : "";
+                info.ChannelTitle = item.snippet.channelTitle != null ? item.snippet.channelTitle : "";
+                info.ChannelId = item.snippet.channelId != null ? item.snippet.channelId : "";
+                info.PublishedAt = item.snippet.publishedAt != null ? item.snippet.publishedAt : "";
+                info.Description = item.snippet.description != null ? item.snippet.description : "";
+                info.ThumbnailUrl = PickThumbnail(item.snippet.thumbnails);
+            }
+
+            if (item.contentDetails != null)
+            {
+                info.DurationSeconds = YouTubeDurationParser.ToSeconds(item.contentDetails.duration);
+            }
+
+            return info;
+        }
+
+        /// <summary>いちばん大きいサムネイルを選ぶ。</summary>
+        private static string PickThumbnail(Thumbnails thumbnails)
+        {
+            if (thumbnails == null) return "";
+
+            if (thumbnails.maxres != null && !string.IsNullOrEmpty(thumbnails.maxres.url))
+                return thumbnails.maxres.url;
+            if (thumbnails.standard != null && !string.IsNullOrEmpty(thumbnails.standard.url))
+                return thumbnails.standard.url;
+            if (thumbnails.high != null && !string.IsNullOrEmpty(thumbnails.high.url))
+                return thumbnails.high.url;
+            if (thumbnails.medium != null && !string.IsNullOrEmpty(thumbnails.medium.url))
+                return thumbnails.medium.url;
+            if (thumbnails.@default != null && !string.IsNullOrEmpty(thumbnails.@default.url))
+                return thumbnails.@default.url;
+
+            return "";
+        }
+
+        // ───────── 通信 ─────────
+
+        /// <summary>GET して本文を返す。失敗したら理由を <paramref name="error"/> へ。</summary>
+        private bool Get(string query, out string json, out string error)
+        {
+            json = "";
+            error = "";
+
+            string url = Api + query + "&key=" + Escape(Key);
+
+            using (UnityWebRequest request = UnityWebRequest.Get(url))
+            {
+                request.timeout = Timeout;
+
+                UnityWebRequestAsyncOperation operation = request.SendWebRequest();
+
+                // エディタを止めて待つ。Import が同期の口なので、ここで待つしかない。
+                while (!operation.isDone)
+                {
+                    System.Threading.Thread.Sleep(10);
+                }
+
+                if (request.result != UnityWebRequest.Result.Success)
+                {
+                    error = Explain(request);
+                    return false;
+                }
+
+                json = request.downloadHandler.text;
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// 失敗を、直せる形の言葉にする。
+        /// 「403」とだけ出しても何をすればよいか分からないため。
+        /// </summary>
+        private static string Explain(UnityWebRequest request)
+        {
+            long code = request.responseCode;
+
+            if (code == 403)
+            {
+                return "403: API キーが無効か、割り当てを使い切っています。\n"
+                       + "Google Cloud で YouTube Data API v3 が有効か、"
+                       + "キーの制限(HTTP リファラなど)が厳しすぎないか確認してください。";
+            }
+            if (code == 400)
+            {
+                return "400: 指定が正しくありません。URL / ID を確認してください。";
+            }
+            if (code == 404)
+            {
+                return "404: 見つかりません。非公開か、削除済みの可能性があります。";
+            }
+            if (code == 0)
+            {
+                return "通信できませんでした: " + request.error + "\n"
+                       + "ネットワークとプロキシの設定を確認してください。";
+            }
+
+            return code + ": " + request.error;
+        }
+
+        private static string Escape(string value)
+        {
+            return UnityWebRequest.EscapeURL(value != null ? value : "");
+        }
+
+        private int Clamp(int wanted)
+        {
+            int limit = MaxItems;
+            if (wanted <= 0) return limit;
+            return wanted < limit ? wanted : limit;
+        }
+
+        private static T Parse<T>(string json) where T : class
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+
+            try
+            {
+                return JsonUtility.FromJson<T>(json);
+            }
+            catch (Exception e)
+            {
+                Debug.LogWarning("[YouTubeDataApiClient] 応答を読めませんでした: " + e.Message);
+                return null;
+            }
+        }
+
+        // ───────── 応答の形(JsonUtility 用)─────────
+
+        [Serializable]
+        private sealed class ChannelListResponse
+        {
+            public ChannelItem[] items;
+        }
+
+        [Serializable]
+        private sealed class ChannelItem
+        {
+            public string id;
+            public ChannelContentDetails contentDetails;
+        }
+
+        [Serializable]
+        private sealed class ChannelContentDetails
+        {
+            public RelatedPlaylists relatedPlaylists;
+        }
+
+        [Serializable]
+        private sealed class RelatedPlaylists
+        {
+            public string uploads;
+        }
+
+        [Serializable]
+        private sealed class PlaylistItemListResponse
+        {
+            public string nextPageToken;
+            public PlaylistItem[] items;
+        }
+
+        [Serializable]
+        private sealed class PlaylistItem
+        {
+            public PlaylistItemContentDetails contentDetails;
+        }
+
+        [Serializable]
+        private sealed class PlaylistItemContentDetails
+        {
+            public string videoId;
+        }
+
+        [Serializable]
+        private sealed class VideoListResponse
+        {
+            public VideoItem[] items;
+        }
+
+        [Serializable]
+        private sealed class VideoItem
+        {
+            public string id;
+            public VideoSnippet snippet;
+            public VideoContentDetails contentDetails;
+        }
+
+        [Serializable]
+        private sealed class VideoSnippet
+        {
+            public string title;
+            public string description;
+            public string channelId;
+            public string channelTitle;
+            public string publishedAt;
+            public Thumbnails thumbnails;
+        }
+
+        [Serializable]
+        private sealed class VideoContentDetails
+        {
+            public string duration;
+        }
+
+        [Serializable]
+        private sealed class Thumbnails
+        {
+            public Thumbnail @default;
+            public Thumbnail medium;
+            public Thumbnail high;
+            public Thumbnail standard;
+            public Thumbnail maxres;
+        }
+
+        [Serializable]
+        private sealed class Thumbnail
+        {
+            public string url;
+        }
+    }
+}
+#endif

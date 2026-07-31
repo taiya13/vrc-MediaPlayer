@@ -1,0 +1,26 @@
+{
+    "name": "SmartMediaPlatform.CatalogBuilder.YouTube.Tests",
+    "rootNamespace": "SmartMediaPlatform.CatalogBuilder.YouTube.Tests",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.CatalogBuilder",
+        "SmartMediaPlatform.CatalogBuilder.YouTube",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
