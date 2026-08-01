@@ -280,5 +280,164 @@ namespace SmartMediaPlatform.CatalogBuilder.Tests
                 Assert.AreNotEqual("SmartMediaPlatform.World.VRChat", name.Name);
             }
         }
+
+        // ───────── 取り込んだものを選ぶ(Phase6-3)─────────
+
+        [Test]
+        public void EverythingIsSelectedWhenItArrives()
+        {
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[] { Item("a", "1", "u"), Item("b", "2", "u") });
+
+            Assert.AreEqual(2, selection.Count);
+            Assert.AreEqual(2, selection.SelectedCount, "貼って押すだけを短くするため全選択で始める");
+        }
+
+        [Test]
+        public void RowsCanBeTickedIndividually()
+        {
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[] { Item("a", "1", "u"), Item("b", "2", "u") });
+
+            selection.SetSelected(0, false);
+
+            Assert.IsFalse(selection.IsSelected(0));
+            Assert.AreEqual(1, selection.SelectedCount);
+
+            selection.Toggle(0);
+            Assert.IsTrue(selection.IsSelected(0));
+        }
+
+        [Test]
+        public void BulkSelectionWorks()
+        {
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[] { Item("a", "1", "u"), Item("b", "2", "u"), Item("c", "3", "u") });
+
+            selection.SelectNone();
+            Assert.AreEqual(0, selection.SelectedCount);
+
+            selection.SelectAll();
+            Assert.AreEqual(3, selection.SelectedCount);
+
+            selection.SetSelected(1, false);
+            selection.InvertSelection();
+            Assert.AreEqual(1, selection.SelectedCount);
+            Assert.IsTrue(selection.IsSelected(1));
+        }
+
+        [Test]
+        public void OnlySelectedRowsAreHandedOver()
+        {
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[] { Item("a", "1", "u"), Item("b", "2", "u"), Item("c", "3", "u") });
+
+            selection.SetSelected(1, false);
+            CatalogDraftItem[] chosen = selection.SelectedItems();
+
+            Assert.AreEqual(2, chosen.Length);
+            Assert.AreEqual("a", chosen[0].Id, "順番は取り込んだときのまま");
+            Assert.AreEqual("c", chosen[1].Id);
+        }
+
+        [Test]
+        public void ItemsAlreadyInTheDraftAreMarked()
+        {
+            // 同じチャンネルを 2 回取り込むのはよくあること。
+            // そのまま足すと同じ曲が並ぶので、どれが新しいかを見せる。
+            var draft = Draft(Item("a", "元からある", "u"));
+
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[] { Item("a", "1", "u"), Item("z", "2", "u") });
+
+            int existing = selection.MarkExisting(draft);
+
+            Assert.AreEqual(1, existing);
+            Assert.IsTrue(selection.IsExisting(0));
+            Assert.IsFalse(selection.IsExisting(1));
+        }
+
+        [Test]
+        public void SelectOnlyNewSkipsWhatIsAlreadyThere()
+        {
+            var draft = Draft(Item("a", "元からある", "u"));
+
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[] { Item("a", "1", "u"), Item("z", "2", "u") });
+            selection.MarkExisting(draft);
+
+            selection.SelectOnlyNew();
+
+            Assert.AreEqual(1, selection.SelectedCount);
+            Assert.IsFalse(selection.IsSelected(0));
+            Assert.IsTrue(selection.IsSelected(1));
+        }
+
+        [Test]
+        public void SelectedItemsGoThroughTheExistingMerge()
+        {
+            // Phase6-3 の流れ全体。Merge は Phase6-1 のものをそのまま使う。
+            var draft = new CatalogDraft();
+
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[]
+            {
+                Item("a", "入れる", "http://x/a"),
+                Item("b", "入れない", "http://x/b"),
+            });
+            selection.SetSelected(1, false);
+
+            int changed = draft.Merge(selection.SelectedItems(), CatalogDraft.MergeAppend);
+
+            Assert.AreEqual(1, changed);
+            Assert.AreEqual(1, draft.Count);
+            Assert.AreEqual("a", draft.GetAt(0).Id);
+        }
+
+        [Test]
+        public void ImportingTwiceWithSelectOnlyNewAddsNothingTheSecondTime()
+        {
+            var draft = new CatalogDraft();
+            var incoming = new[] { Item("a", "1", "u"), Item("b", "2", "u") };
+
+            var first = new CatalogImportSelection();
+            first.SetItems(incoming);
+            draft.Merge(first.SelectedItems(), CatalogDraft.MergeAppend);
+            Assert.AreEqual(2, draft.Count);
+
+            var second = new CatalogImportSelection();
+            second.SetItems(incoming);
+            second.MarkExisting(draft);
+            second.SelectOnlyNew();
+
+            int changed = draft.Merge(second.SelectedItems(), CatalogDraft.MergeAppend);
+
+            Assert.AreEqual(0, changed, "同じものを 2 回入れない");
+            Assert.AreEqual(2, draft.Count);
+        }
+
+        [Test]
+        public void ClearingTheSelectionEmptiesIt()
+        {
+            var selection = new CatalogImportSelection();
+            selection.SetItems(new[] { Item("a", "1", "u") });
+
+            selection.Clear();
+
+            Assert.IsTrue(selection.IsEmpty);
+            Assert.AreEqual(0, selection.SelectedCount);
+            Assert.IsNull(selection.GetAt(0));
+        }
+
+        [Test]
+        public void ANullImportIsSafe()
+        {
+            var selection = new CatalogImportSelection();
+            selection.SetItems(null);
+
+            Assert.IsTrue(selection.IsEmpty);
+            Assert.AreEqual(0, selection.MarkExisting(null));
+        }
+
     }
 }

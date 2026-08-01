@@ -23,6 +23,8 @@ namespace UnityEngine
         public static Object FindObjectOfType(Type t) { return null; }
         public static T[] FindObjectsOfType<T>() where T : Object { return new T[0]; }
         public static T[] FindObjectsOfType<T>(bool includeInactive) where T : Object { return new T[0]; }
+        public static Object[] FindObjectsOfType(Type t) { return new Object[0]; }
+        public static Object[] FindObjectsOfType(Type t, bool includeInactive) { return new Object[0]; }
         public override string ToString() { return base.ToString(); }
         public static implicit operator bool(Object exists) { return false; }
         public static bool operator ==(Object a, Object b) { return ReferenceEquals(a, b); }

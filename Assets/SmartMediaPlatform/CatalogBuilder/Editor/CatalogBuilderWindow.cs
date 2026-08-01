@@ -39,6 +39,11 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private int _mergeMode = CatalogDraft.MergeAppend;
         private string _importMessage = "";
 
+        // Phase6-3: 取り込んだものを選んでから入れる
+        private readonly CatalogImportSelection _selection = new CatalogImportSelection();
+        private Vector2 _selectionScroll;
+        private bool _lastImportOk;
+
         [MenuItem(MenuPath, false, -90)]
         public static void Open()
         {
@@ -63,6 +68,8 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             EditorGUILayout.EndHorizontal();
 
             DrawImportBar();
+            DrawSelection();
+            DrawBakeBar();
             DrawFooter();
         }
 
@@ -302,6 +309,9 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         {
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("取り込み", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(
+                "① 取得 → ② 選んで追加 → 保存 → ③ VRCUrl へ焼く",
+                EditorStyles.miniLabel);
 
             ICatalogImporter[] importers = CatalogImporterRegistry.All();
 
@@ -326,14 +336,10 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             EditorGUILayout.LabelField(importer.InputHint, EditorStyles.wordWrappedMiniLabel);
             _importerInput = EditorGUILayout.TextField(_importerInput);
 
-            _mergeMode = EditorGUILayout.Popup(
-                "混ぜ方", _mergeMode,
-                new[] { "そのまま足す", "同じ ID は上書き", "いまの中身を捨てて入れ替え" });
-
             using (new EditorGUI.DisabledScope(
                        !importer.IsAvailable || !importer.CanImport(_importerInput)))
             {
-                if (GUILayout.Button("取り込む"))
+                if (GUILayout.Button("① 取得する", GUILayout.Height(24f)))
                 {
                     RunImport(importer);
                 }
@@ -350,25 +356,191 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             }
         }
 
+        /// <summary>
+        /// 取得する。<b>この時点では Catalog にも編集中の一覧にも入れません。</b>
+        /// 下の一覧で選んでから「② 追加する」で入ります。
+        /// </summary>
         private void RunImport(ICatalogImporter importer)
         {
-            CatalogImportResult result = importer.Import(_importerInput);
+            _selection.Clear();
+
+            CatalogImportResult result;
+            EditorUtility.DisplayProgressBar("Catalog Builder", "取得しています…", 0.5f);
+            try
+            {
+                result = importer.Import(_importerInput);
+            }
+            finally
+            {
+                EditorUtility.ClearProgressBar();
+            }
 
             if (result == null)
             {
+                _lastImportOk = false;
                 _importMessage = "取り込み元が結果を返しませんでした。";
                 return;
             }
 
             if (!result.Ok)
             {
+                _lastImportOk = false;
                 _importMessage = "失敗: " + result.Message;
                 return;
             }
 
-            int changed = _draft.Merge(result.Items, _mergeMode);
-            _importMessage = result.Message + "(" + changed + " 件を反映)";
+            _selection.SetItems(result.Items);
+
+            // すでに入っているものへ印を付ける。
+            // 同じチャンネルを 2 回取り込むのはよくあることで、
+            // そのまま足すと同じ曲が並んでしまう。
+            int existing = _selection.MarkExisting(_draft);
+
+            _lastImportOk = true;
+            _importMessage = result.Message;
+            if (existing > 0) _importMessage += "(うち " + existing + " 件はすでにあります)";
+
+            Repaint();
+        }
+
+        // ───────── 取り込んだものを選ぶ(Phase6-3)─────────
+
+        private void DrawSelection()
+        {
+            if (_selection.IsEmpty) return;
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField(
+                "取得結果 " + _selection.Count + " 件 / 選択 " + _selection.SelectedCount + " 件",
+                EditorStyles.boldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+            if (GUILayout.Button("全選択")) _selection.SelectAll();
+            if (GUILayout.Button("全解除")) _selection.SelectNone();
+            if (GUILayout.Button("反転")) _selection.InvertSelection();
+
+            using (new EditorGUI.DisabledScope(_selection.ExistingCount == 0))
+            {
+                if (GUILayout.Button("まだ無いものだけ")) _selection.SelectOnlyNew();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            _selectionScroll = EditorGUILayout.BeginScrollView(
+                _selectionScroll, GUILayout.Height(180f));
+
+            for (int i = 0; i < _selection.Count; i++)
+            {
+                DrawSelectionRow(i);
+            }
+
+            EditorGUILayout.EndScrollView();
+
+            _mergeMode = EditorGUILayout.Popup(
+                "混ぜ方", _mergeMode,
+                new[] { "そのまま足す", "同じ ID は上書き", "いまの中身を捨てて入れ替え" });
+
+            using (new EditorGUI.DisabledScope(_selection.SelectedCount == 0))
+            {
+                if (GUILayout.Button(
+                        "② 選んだ " + _selection.SelectedCount + " 件を追加する",
+                        GUILayout.Height(26f)))
+                {
+                    ApplySelection();
+                }
+            }
+        }
+
+        private void DrawSelectionRow(int index)
+        {
+            CatalogDraftItem item = _selection.GetAt(index);
+            if (item == null) return;
+
+            EditorGUILayout.BeginHorizontal();
+
+            bool wanted = EditorGUILayout.Toggle(_selection.IsSelected(index), GUILayout.Width(18f));
+            _selection.SetSelected(index, wanted);
+
+            string label = item.Title;
+            if (_selection.IsExisting(index)) label = "【あり】" + label;
+            if (!item.IsComplete) label = "⚠ " + label;
+
+            EditorGUILayout.LabelField(label);
+
+            EditorGUILayout.LabelField(item.Artist, GUILayout.Width(140f));
+            EditorGUILayout.LabelField(FormatDuration(item.DurationSeconds), GUILayout.Width(56f));
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private static string FormatDuration(int seconds)
+        {
+            if (seconds <= 0) return "--:--";
+
+            int minutes = seconds / 60;
+            int rest = seconds % 60;
+            return minutes + ":" + (rest < 10 ? "0" + rest : "" + rest);
+        }
+
+        private void ApplySelection()
+        {
+            CatalogDraftItem[] chosen = _selection.SelectedItems();
+            int changed = _draft.Merge(chosen, _mergeMode);
+
+            _importMessage = changed + " 件を追加しました。保存するとカタログに入ります。";
+            _selection.MarkExisting(_draft);
+
+            if (_selected < 0 && _draft.Count > 0) _selected = 0;
             MarkDirty();
+        }
+
+        // ───────── VRCUrl へ焼く(Phase6-3)─────────
+
+        private void DrawBakeBar()
+        {
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("ワールドへ反映", EditorStyles.boldLabel);
+
+            if (!CatalogUrlTableBridge.IsAvailable)
+            {
+                EditorGUILayout.HelpBox(CatalogUrlTableBridge.UnavailableReason, MessageType.None);
+                return;
+            }
+
+            int targets = CatalogUrlTableBridge.CountInScene();
+
+            using (new EditorGUI.DisabledScope(_dirty || targets == 0))
+            {
+                if (GUILayout.Button(
+                        "③ VRCUrl へ焼く(シーンの Catalog " + targets + " 個)",
+                        GUILayout.Height(26f)))
+                {
+                    Bake();
+                }
+            }
+
+            if (_dirty)
+            {
+                EditorGUILayout.HelpBox("先に保存してください(未保存のぶんは焼かれません)。",
+                                        MessageType.Warning);
+            }
+            else if (targets == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "シーンに SmartMediaPlayer がありません。Hierarchy へ置いてください。",
+                    MessageType.Info);
+            }
+        }
+
+        private void Bake()
+        {
+            CatalogUrlTableBridge.BakeReport report = CatalogUrlTableBridge.BakeIntoScene(_asset);
+
+            _importMessage = report.Message;
+
+            if (report.Ok) Debug.Log("[CatalogBuilder] " + report.Message);
+            else Debug.LogWarning("[CatalogBuilder] " + report.Message);
+
+            EditorUtility.DisplayDialog("Catalog Builder", report.Message, "OK");
         }
 
         // ───────── 下 ─────────
@@ -387,7 +559,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             EditorGUILayout.HelpBox(
                 "保存すると、完成している " + _draft.CompleteCount + " 件だけが書かれます"
                 + "(ID・見出し・URL がそろっているもの)。\n"
-                + "ワールドで再生するには、そのあと Catalog の Inspector で VRCUrl に焼いてください。",
+                + "そのあと「③ VRCUrl へ焼く」を押すと、シーンの SmartMediaPlayer に反映されます。",
                 MessageType.None);
         }
 
@@ -399,6 +571,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             _selected = -1;
             _dirty = false;
             _importMessage = "";
+            _selection.Clear();
 
             if (_asset == null) return;
 
