@@ -23,15 +23,25 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
     {
         private const string Api = "https://www.googleapis.com/youtube/v3/";
 
-        private readonly YouTubeApiSettings _settings;
+        private readonly YouTubeApiSettings _injectedSettings;
 
-        public YouTubeDataApiClient() : this(YouTubeApiSettings.LoadIfPresent())
+        public YouTubeDataApiClient() : this(null)
         {
         }
 
+        /// <summary>設定を差し替える(テストで偽物を入れるため)。渡さなければ毎回ディスクから読み直す。</summary>
         public YouTubeDataApiClient(YouTubeApiSettings settings)
         {
-            _settings = settings;
+            _injectedSettings = settings;
+        }
+
+        /// <summary>
+        /// <b>毎回読み直します。</b>キャッシュすると、窓を開いたままアセットを
+        /// 後から作ったり選び直したりしたときに気づけないままになるためです。
+        /// </summary>
+        private YouTubeApiSettings _settings
+        {
+            get { return _injectedSettings != null ? _injectedSettings : YouTubeApiSettings.LoadIfPresent(); }
         }
 
         public bool IsAvailable
