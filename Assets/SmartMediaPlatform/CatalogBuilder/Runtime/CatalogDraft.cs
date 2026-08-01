@@ -192,7 +192,14 @@ namespace SmartMediaPlatform.CatalogBuilder
 
         // ───────── 取り込み ─────────
 
-        /// <summary>そのまま足す。</summary>
+        /// <summary>
+        /// そのまま足す。同じ ID があれば<b>ずらして別物として入れます</b>。
+        ///
+        /// <b>Phase6-4 で窓の選択肢から外しました。</b>
+        /// 同じチャンネルを 2 回取り込むと同じ曲が <c>abc</c> と <c>abc-2</c> で並び、
+        /// ワールドの一覧が二重になってしまうためです。
+        /// 意図して複製したいときのために残してあります。
+        /// </summary>
         public const int MergeAppend = 0;
 
         /// <summary>同じ ID があれば上書き、無ければ足す。</summary>
@@ -202,12 +209,23 @@ namespace SmartMediaPlatform.CatalogBuilder
         public const int MergeReplace = 2;
 
         /// <summary>
+        /// 同じ ID があれば<b>何もしない</b>、無ければ足す。Phase6-4 の既定。
+        ///
+        /// 同じチャンネルを取り込み直すのはよくあることで、
+        /// そのときに<b>増えた分だけが入る</b>のがいちばん素直な動きです。
+        /// </summary>
+        public const int MergeSkip = 3;
+
+        /// <summary>
         /// 取り込んだものを混ぜる。
         ///
-        /// <b>混ぜ方を 3 つに絞ってあります。</b>
-        /// 取り込み元がどれだけ増えても、<b>混ぜ方はここ 1 か所</b>で済みます。
+        /// <b>混ぜ方をここ 1 か所に集めてあります。</b>
+        /// 取り込み元がどれだけ増えても、混ぜ方はこのメソッドだけで済みます。
+        ///
+        /// <b>同じ ID は二重に入りません</b>(<see cref="MergeAppend"/> を除く)。
+        /// ID が重なったまま焼くと、再生側が別のものを指します。
         /// </summary>
-        /// <returns>足した / 上書きした件数。</returns>
+        /// <returns>足した / 上書きした件数(<b>飛ばしたぶんは数えません</b>)。</returns>
         public int Merge(IReadOnlyList<CatalogDraftItem> incoming, int mode)
         {
             if (incoming == null) return 0;
@@ -221,12 +239,21 @@ namespace SmartMediaPlatform.CatalogBuilder
                 CatalogDraftItem item = incoming[i];
                 if (item == null) continue;
 
-                if (mode == MergeUpdate)
+                if (mode == MergeUpdate || mode == MergeSkip)
                 {
                     int existing = IndexOfId(item.Id);
                     if (existing >= 0)
                     {
-                        _items[existing] = item.Clone();
+                        // 飛ばすときは、手で足した関連や書き直した見出しを残す。
+                        if (mode == MergeSkip) continue;
+
+                        // 上書きするときも、手で足した関連だけは引き継ぐ。
+                        // 取り込み元は関連を知らないので、ここで消すと
+                        // 「更新したらおすすめが消えた」になる。
+                        CatalogDraftItem replacement = item.Clone();
+                        replacement.RelatedIds = KeepRelated(_items[existing], replacement);
+
+                        _items[existing] = replacement;
                         changed++;
                         continue;
                     }
@@ -235,13 +262,48 @@ namespace SmartMediaPlatform.CatalogBuilder
                 var copy = item.Clone();
 
                 // 同じ ID が並ぶと再生側が別のものを指すので、必ずずらす。
-                if (mode != MergeUpdate) copy.Id = MakeUniqueId(copy.Id);
+                if (mode == MergeAppend) copy.Id = MakeUniqueId(copy.Id);
 
                 _items.Add(copy);
                 changed++;
             }
 
             return changed;
+        }
+
+        /// <summary>上書きのとき、取り込み元が持っていない関連は前のものを残す。</summary>
+        private static string[] KeepRelated(CatalogDraftItem old, CatalogDraftItem incoming)
+        {
+            if (incoming.RelatedIds != null && incoming.RelatedIds.Length > 0)
+            {
+                return incoming.RelatedIds;
+            }
+            return old != null && old.RelatedIds != null ? old.RelatedIds : new string[0];
+        }
+
+        /// <summary>
+        /// <paramref name="incoming"/> のうち、まだ入っていないものの件数。
+        /// 窓が「N 件が増えます」と出すために使います。
+        /// </summary>
+        public int CountNew(IReadOnlyList<CatalogDraftItem> incoming)
+        {
+            if (incoming == null) return 0;
+
+            var seen = new List<string>();
+            int count = 0;
+
+            for (int i = 0; i < incoming.Count; i++)
+            {
+                CatalogDraftItem item = incoming[i];
+                if (item == null || string.IsNullOrWhiteSpace(item.Id)) continue;
+
+                string id = item.Id.Trim();
+                if (seen.Contains(id)) continue;
+
+                seen.Add(id);
+                if (IndexOfId(id) < 0) count++;
+            }
+            return count;
         }
 
         /// <summary>既存のカタログを読み込んで編集対象にする。</summary>

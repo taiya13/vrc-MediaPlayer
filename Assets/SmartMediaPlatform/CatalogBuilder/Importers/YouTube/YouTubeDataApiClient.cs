@@ -261,6 +261,10 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 info.PublishedAt = item.snippet.publishedAt != null ? item.snippet.publishedAt : "";
                 info.Description = item.snippet.description != null ? item.snippet.description : "";
                 info.ThumbnailUrl = PickThumbnail(item.snippet.thumbnails);
+
+                // Phase6-4: 関連と絞り込みの材料。どちらも無いことがあるので既定を保つ。
+                if (item.snippet.tags != null) info.Tags = item.snippet.tags;
+                info.CategoryId = item.snippet.categoryId != null ? item.snippet.categoryId : "";
             }
 
             if (item.contentDetails != null)
@@ -450,6 +454,10 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             public string channelTitle;
             public string publishedAt;
             public Thumbnails thumbnails;
+
+            // Phase6-4: 関連(RelatedIds)の材料。tags は付いていない動画も多い。
+            public string[] tags;
+            public string categoryId;
         }
 
         [Serializable]

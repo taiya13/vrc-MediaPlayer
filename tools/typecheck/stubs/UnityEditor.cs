@@ -192,6 +192,7 @@ namespace UnityEditor
         public static void LabelField(string label, params GUILayoutOption[] options) { }
         public static void LabelField(string label, GUIStyle style, params GUILayoutOption[] options) { }
         public static void LabelField(string label, string value, params GUILayoutOption[] options) { }
+        public static void LabelField(string label, string value, GUIStyle style, params GUILayoutOption[] options) { }
         public static void HelpBox(string message, MessageType type) { }
         public static void HelpBox(string message, MessageType type, bool wide) { }
         public static void PropertyField(SerializedProperty property) { }
@@ -200,6 +201,10 @@ namespace UnityEditor
         public static void Space(float width) { }
         public static bool Toggle(bool value, params GUILayoutOption[] options) { return false; }
         public static bool Toggle(string label, bool value, params GUILayoutOption[] options) { return false; }
+        public static bool ToggleLeft(string label, bool value, params GUILayoutOption[] options) { return false; }
+        public static bool ToggleLeft(string label, bool value, GUIStyle style, params GUILayoutOption[] options) { return false; }
+        public static string TextField(string text, GUIStyle style, params GUILayoutOption[] options) { return text; }
+        public static int Popup(int selected, string[] displayed, GUIStyle style, params GUILayoutOption[] options) { return selected; }
         public static bool Foldout(bool foldout, string content) { return false; }
         public static bool Foldout(bool foldout, string content, bool toggleOnLabelClick) { return false; }
         public static int IntField(int value, params GUILayoutOption[] options) { return 0; }
@@ -249,6 +254,10 @@ namespace UnityEditor
         public static GUIStyle wordWrappedMiniLabel { get { return null; } }
         public static GUIStyle boldFont { get { return null; } }
         public static GUIStyle largeLabel { get { return null; } }
+        public static GUIStyle toolbarTextField { get { return null; } }
+        public static GUIStyle toolbarPopup { get { return null; } }
+        public static GUIStyle toolbarDropDown { get { return null; } }
+        public static GUIStyle centeredGreyMiniLabel { get { return null; } }
     }
     public enum MessageType { None, Info, Warning, Error }
 

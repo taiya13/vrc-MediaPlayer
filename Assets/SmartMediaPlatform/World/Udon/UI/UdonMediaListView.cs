@@ -56,8 +56,8 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("0=Library / 1=関連 / 2=Queue")]
         public int Source = SourceLibrary;
 
-        [Tooltip("見出しに出す文字")]
-        public string HeaderLabel = "Library";
+        [Tooltip("見出しに出す文字。空なら種類に合わせて「すべての曲 / おすすめ / 再生予定」")]
+        public string HeaderLabel = "";
 
         [Header("つなぎ先(UdonMediaPanel が自動で入れる)")]
         [Tooltip("状態の 1 行を出す先")]
@@ -87,6 +87,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("末尾では隠す")]
         public GameObject ScrollDownButton;
 
+        [Tooltip("いま鳴っているもの(無ければ先頭)へ戻る。先頭にいるときは隠す")]
+        public GameObject ScrollHomeButton;
+
         [Tooltip("いまどのあたりを見ているかを示すつまみ(RectTransform を動かす)")]
         public RectTransform ScrollHandle;
 
@@ -97,11 +100,26 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("先頭に見えている位置(0 から)")]
         public int Offset;
 
-        [Tooltip("▲▼ 1 回で動く行数。0 なら 1 画面ぶん")]
+        [Tooltip("▲▼ 1 回で動く行数。0 なら「1 画面 − 1 行」(1 行だけ残して目印にする)")]
         public int ScrollStep;
 
         [Tooltip("曲が変わったら、鳴っている行が見えるところまで自動で戻す")]
         public bool FollowNowPlaying;
+
+        [Header("続けて押すと速くなる(VR ではボタンしか押せないため)")]
+        [Tooltip("連打すると 1 回で動く行数が増える")]
+        public bool ScrollAcceleration = true;
+
+        [Tooltip("この秒数以内に続けて押されたら「連打」とみなす")]
+        [Range(0.1f, 1.5f)]
+        public float AccelerationWindow = 0.45f;
+
+        [Tooltip("連打 1 回ごとに何倍にするか")]
+        [Range(1f, 4f)]
+        public float AccelerationFactor = 1.8f;
+
+        [Tooltip("加速しても 1 回でこれ以上は動かない")]
+        public int MaxScrollStep = 64;
 
         [Header("押した感じ")]
         [Tooltip("押した行に印を出す秒数。0 で無効")]
@@ -129,6 +147,11 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         // 追いかけ済みの曲(FollowNowPlaying 用)
         private int _followedIndex = -2;
+
+        // 連打の加速(ListScrollModel の写し)
+        private float _lastScrollAt = -999f;
+        private int _runLength;
+        private int _lastDirection;
 
         void Start()
         {
@@ -303,26 +326,52 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         // ───────── スクロール(ボタンからそのまま呼べる)─────────
 
-        /// <summary>▲ 1 回ぶん戻す。</summary>
+        /// <summary>▲ 1 回ぶん戻す。<b>連打すると加速します。</b></summary>
         public void ScrollUp()
         {
-            ScrollBy(-EffectiveStep());
+            ScrollBy(-StepNow(-1));
         }
 
-        /// <summary>▼ 1 回ぶん進める。</summary>
+        /// <summary>▼ 1 回ぶん進める。<b>連打すると加速します。</b></summary>
         public void ScrollDown()
         {
-            ScrollBy(EffectiveStep());
+            ScrollBy(StepNow(1));
         }
 
         public void ScrollToTop()
         {
+            ResetAcceleration();
             ScrollBy(-TotalCount());
         }
 
         public void ScrollToBottom()
         {
+            ResetAcceleration();
             ScrollBy(TotalCount());
+        }
+
+        /// <summary>
+        /// <b>▲▲ = 迷子からの復帰。</b>
+        /// いま鳴っているものがこの一覧にあればそこへ、無ければ先頭へ。
+        ///
+        /// Queue では先頭 = 鳴っているものなので「先頭へ」と同じ動きになり、
+        /// Library では「さっきかけた曲の場所」へ戻ります。
+        /// <b>ボタンを 1 つ増やさずに、どちらの一覧でも正しいことをします。</b>
+        /// </summary>
+        public void ScrollHome()
+        {
+            ResetAcceleration();
+
+            int position = NowPlayingPosition();
+            if (position < 0)
+            {
+                ScrollToTop();
+                return;
+            }
+
+            // 上端に置く。「見えるところまで」だと、
+            // どこに出るかが押すたびに変わって落ち着かない。
+            ScrollBy(position - Offset);
         }
 
         /// <summary>
@@ -342,16 +391,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>いま鳴っているものが見えるところまで動かす。</summary>
         public void RevealNowPlaying()
         {
-            if (Session == null) return;
-
-            int current = Session.CurrentIndex;
-            if (current < 0) return;
-
-            int position = -1;
-
-            if (Source == SourceQueue) position = Session.IndexInQueue(current);
-            else if (Source == SourceLibrary && Store != null) position = Store.GetPositionOf(current);
-
+            int position = NowPlayingPosition();
             if (position < 0) return;
 
             int rows = RowCount();
@@ -362,6 +402,20 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             if (position < Offset) ScrollBy(position - Offset);
             else ScrollBy(position - (Offset + rows - 1));
+        }
+
+        /// <summary>いま鳴っているものが、この一覧の何番目か。無ければ -1。</summary>
+        public int NowPlayingPosition()
+        {
+            if (Session == null) return -1;
+
+            int current = Session.CurrentIndex;
+            if (current < 0) return -1;
+
+            if (Source == SourceQueue) return Session.IndexInQueue(current);
+            if (Source == SourceLibrary && Store != null) return Store.GetPositionOf(current);
+
+            return -1;
         }
 
         // ── Phase5-3 の名前でも呼べるようにしておく(既存 Prefab のボタン向け)
@@ -380,13 +434,59 @@ namespace SmartMediaPlatform.World.Udon.UI
             ScrollToTop();
         }
 
-        /// <summary>▲▼ 1 回で動く行数。0 なら 1 画面ぶん。</summary>
+        /// <summary>
+        /// ▲▼ 1 回で動く行数。0 なら<b>「1 画面 − 1 行」</b>。
+        /// 1 行だけ残すと、その行が目印になって続きから読めます。
+        /// <see cref="SmartMediaPlatform.World.UdonModel.ListScrollModel.EffectiveStep"/> の写しです。
+        /// </summary>
         public int EffectiveStep()
         {
             if (ScrollStep > 0) return ScrollStep;
 
             int rows = RowCount();
-            return rows > 0 ? rows : 1;
+            if (rows <= 1) return 1;
+
+            return rows - 1;
+        }
+
+        /// <summary>
+        /// いま押されたぶんの移動量。<b>連打すると増えます。</b>
+        /// <see cref="SmartMediaPlatform.World.UdonModel.ListScrollModel.StepAt"/> の写しです。
+        /// <b>数え方を変えるときは必ず両方を直してください。</b>
+        /// </summary>
+        public int StepNow(int direction)
+        {
+            int step = EffectiveStep();
+            if (!ScrollAcceleration) return step;
+
+            // 向きを変えたら初めに戻す。行き過ぎて戻すときに戻しすぎないため。
+            bool continued = direction == _lastDirection
+                             && Time.time - _lastScrollAt <= AccelerationWindow;
+
+            _runLength = continued ? _runLength + 1 : 0;
+            _lastScrollAt = Time.time;
+            _lastDirection = direction;
+
+            float grown = step;
+            for (int i = 0; i < _runLength; i++)
+            {
+                grown *= AccelerationFactor;
+                if (grown >= MaxScrollStep) break;
+            }
+
+            int result = (int)grown;
+            if (result < step) result = step;
+            if (result > MaxScrollStep) result = MaxScrollStep;
+
+            return result;
+        }
+
+        /// <summary>加速を初め(単発)に戻す。</summary>
+        public void ResetAcceleration()
+        {
+            _runLength = 0;
+            _lastDirection = 0;
+            _lastScrollAt = -999f;
         }
 
         /// <summary>これ以上は送れない位置。</summary>
@@ -452,11 +552,31 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Offset > max) Offset = max;
         }
 
+        /// <summary>
+        /// 見出しに出す文字。<see cref="HeaderLabel"/> が空なら種類から決めます。
+        ///
+        /// <b>Phase6-4 で英語をやめました。</b>
+        /// <c>Library</c> / <c>Queue</c> は<b>ワールドに来た人には通じません</b>。
+        /// 既定を空にしてここで決めるようにしたので、
+        /// <b>すでに置いてある Prefab も、見出しの文字を消すだけで日本語になります</b>
+        /// (作り直しも配線のやり直しも要りません)。
+        /// </summary>
+        public string EffectiveHeader()
+        {
+            if (HeaderLabel != null && HeaderLabel.Length > 0) return HeaderLabel;
+
+            if (Source == SourceQueue) return "再生予定";
+            if (Source == SourceRelated) return "おすすめ";
+
+            return "すべての曲";
+        }
+
         private void RefreshChrome(int total, int rows)
         {
-            if (HeaderText != null && HeaderText.text != HeaderLabel)
+            string header = EffectiveHeader();
+            if (HeaderText != null && HeaderText.text != header)
             {
-                HeaderText.text = HeaderLabel;
+                HeaderText.text = header;
             }
 
             int filled = total - Offset;
@@ -479,6 +599,10 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetActive(ScrollUpButton, Offset > 0);
             SetActive(ScrollDownButton, Offset < max);
             SetActive(EmptyMessage, total <= 0);
+
+            // ▲▲ は「戻る先がある」ときだけ出す。
+            // 先頭にいるのに出ていると、押しても何も起きなくて戸惑う。
+            SetActive(ScrollHomeButton, Offset > 0 || NowPlayingPosition() > 0);
 
             RefreshScrollHandle(total, rows, max);
         }

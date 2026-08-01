@@ -147,6 +147,62 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
             Assert.IsTrue(item.IsComplete);
         }
 
+        // ───────── 関連と絞り込みの材料(Phase6-4)─────────
+
+        [Test]
+        public void TheCategoryBecomesAGenre()
+        {
+            var video = new YouTubeVideoInfo();
+            video.VideoId = "abc12345678";
+            video.Title = "テスト曲";
+            video.CategoryId = "10";
+
+            Assert.AreEqual("音楽", video.ToDraftItem().Genre,
+                            "ジャンルが空だと「同じジャンル」の関連が 1 件も効かない");
+        }
+
+        [Test]
+        public void AnUnknownCategoryLeavesTheGenreEmpty()
+        {
+            var video = new YouTubeVideoInfo();
+            video.VideoId = "abc12345678";
+            video.Title = "テスト曲";
+            video.CategoryId = "9999";
+
+            Assert.AreEqual("", video.ToDraftItem().Genre, "知らない番号に勝手な名前を付けない");
+        }
+
+        [Test]
+        public void TagsAreCarriedOverButCapped()
+        {
+            var video = new YouTubeVideoInfo();
+            video.VideoId = "abc12345678";
+            video.Title = "テスト曲";
+
+            var many = new string[30];
+            for (int i = 0; i < many.Length; i++) many[i] = "タグ" + i;
+            video.Tags = many;
+
+            CatalogDraftItem item = video.ToDraftItem();
+
+            Assert.AreEqual(YouTubeVideoInfo.MaxTags, item.Tags.Length,
+                            "30 個そのまま入れると編集画面がタグで埋まる");
+            Assert.AreEqual("タグ0", item.Tags[0]);
+        }
+
+        [Test]
+        public void VideosWithoutTagsStillConvert()
+        {
+            var video = new YouTubeVideoInfo();
+            video.VideoId = "abc12345678";
+            video.Title = "テスト曲";
+
+            CatalogDraftItem item = video.ToDraftItem();
+
+            Assert.AreEqual(0, item.Tags.Length, "タグが付いていない動画も多い");
+            Assert.IsTrue(item.IsComplete);
+        }
+
         [Test]
         public void DurationsAreFormattedForReading()
         {

@@ -220,10 +220,12 @@ namespace SmartMediaPlatform.World.EditorTools
 
             int rewired = 0;
             int synced = 0;
+            int relabelled = 0;
 
             for (int i = 0; i < panels.Length; i++)
             {
                 rewired += Rewire(panels[i]);
+                relabelled += Relabel(panels[i]);
                 synced += SyncPanel(panels[i]);
             }
 
@@ -233,6 +235,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 "ボタンを " + rewired + " 個 繋ぎ直しました。\n"
                 + "  uGUI(onClick)   : " + UdonWorldUiKit.BindCount + " 個\n"
                 + "  「使う」(Interact): " + UdonWorldUiKit.InteractCount + " 個\n"
+                + "見出しを " + relabelled + " 個 日本語にしました。\n"
                 + "Udon へ " + synced + " 個 書き戻しました。\n\n"
                 + "シーンを保存してから Build & Test してください。";
 
@@ -282,6 +285,47 @@ namespace SmartMediaPlatform.World.EditorTools
             return count;
         }
 
+        /// <summary>
+        /// <b>英語の見出しを日本語に直す。</b>Phase6-4。
+        ///
+        /// <b>すでに置いてある Prefab のためのものです。</b>
+        /// <c>UdonMediaListView.HeaderLabel</c> は Phase6-4 から
+        /// <b>空にしておくと種類に合わせた日本語</b>が出るようになりました。
+        /// 古い Prefab には <c>Library</c> / <c>Queue</c> が焼かれているので、
+        /// <b>ここで空に戻して既定に任せます</b>(作り直しは要りません)。
+        ///
+        /// <b>自分で付けた名前は残します。</b>置き換えるのは
+        /// ビルダーが入れていた英語の名前だけです。
+        /// </summary>
+        private static int Relabel(UdonMediaPanel panel)
+        {
+            int changed = 0;
+
+            var lists = panel.GetComponentsInChildren<UdonMediaListView>(true);
+            for (int i = 0; i < lists.Length; i++)
+            {
+                UdonMediaListView list = lists[i];
+                if (list == null) continue;
+
+                if (!IsBuilderEnglish(list.HeaderLabel)) continue;
+
+                list.HeaderLabel = "";
+                if (list.HeaderText != null) list.HeaderText.text = list.EffectiveHeader();
+
+                changed++;
+            }
+
+            return changed;
+        }
+
+        /// <summary>ビルダーが Phase6-3 まで入れていた見出しか。</summary>
+        private static bool IsBuilderEnglish(string label)
+        {
+            if (string.IsNullOrEmpty(label)) return false;
+
+            return label == "Library" || label == "Queue" || label == "Related" || label == "関連";
+        }
+
         /// <summary>「使う」の部品を一度外す。半端に付いている状態から作り直すため。</summary>
         private static void RemoveInteract(Button button)
         {
@@ -323,7 +367,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 else if (name == "Secondary")
                 {
                     eventName = "ClickSecondary";
-                    caption = queue ? "Queue から外す" : "Queue に追加";
+                    caption = queue ? "再生予定から外す" : "再生予定に追加";
                 }
                 return eventName != null;
             }
@@ -337,12 +381,18 @@ namespace SmartMediaPlatform.World.EditorTools
                 if (name == "ScrollDown" || name == "NextPage")
                 {
                     eventName = "ScrollDown";
-                    caption = "下へ";
+                    caption = "下へ(続けて押すと速い)";
                 }
                 else if (name == "ScrollUp" || name == "PreviousPage")
                 {
                     eventName = "ScrollUp";
-                    caption = "上へ";
+                    caption = "上へ(続けて押すと速い)";
+                }
+                else if (name == "ScrollHome" || name == "FirstPage")
+                {
+                    // Phase6-4 で足した「迷子からの復帰」。
+                    eventName = "ScrollHome";
+                    caption = "再生中 / 先頭へ";
                 }
                 return eventName != null;
             }
@@ -358,7 +408,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 else if (name == "Stop") { eventName = "Stop"; caption = "停止"; }
                 else if (name == "VolumeUp") { eventName = "VolumeUp"; caption = "音量を上げる"; }
                 else if (name == "VolumeDown") { eventName = "VolumeDown"; caption = "音量を下げる"; }
-                else if (name == "ClearUpcoming") { eventName = "ClearUpcoming"; caption = "Queue を空にする"; }
+                else if (name == "ClearUpcoming") { eventName = "ClearUpcoming"; caption = "再生予定を空にする"; }
 
                 return eventName != null;
             }

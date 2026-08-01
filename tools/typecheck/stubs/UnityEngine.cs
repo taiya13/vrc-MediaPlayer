@@ -562,7 +562,11 @@ namespace UnityEngine
         public static void Label(Rect r, GUIContent content) { }
         public static bool Button(Rect r, string text) { return false; }
         public static void DrawTexture(Rect r, Texture image) { }
+        public static void DrawTexture(Rect r, Texture image, ScaleMode scaleMode) { }
+        public static void DrawTexture(Rect r, Texture image, ScaleMode scaleMode, bool alphaBlend) { }
     }
+
+    public enum ScaleMode { StretchToFill, ScaleAndCrop, ScaleToFit }
 }
 
 namespace UnityEngine.Events
@@ -689,6 +693,8 @@ namespace UnityEngine
         public static Object Load(string path) { return null; }
         public static T GetBuiltinResource<T>(string path) where T : Object { return default(T); }
         public static Object GetBuiltinResource(Type type, string path) { return null; }
+        public static T[] FindObjectsOfTypeAll<T>() where T : Object { return new T[0]; }
+        public static Object[] FindObjectsOfTypeAll(Type type) { return new Object[0]; }
     }
     public class TextAsset : Object { public string text { get { return null; } } }
 
@@ -761,6 +767,8 @@ namespace UnityEngine.Networking
         public Result result { get { return Result.Success; } }
         public DownloadHandler downloadHandler { get; set; }
 
+        public bool isDone { get { return true; } }
+
         public UnityWebRequestAsyncOperation SendWebRequest() { return new UnityWebRequestAsyncOperation(); }
         public void Abort() { }
         public void Dispose() { }
@@ -774,5 +782,11 @@ namespace UnityEngine.Networking
     public class UnityWebRequestTexture
     {
         public static UnityWebRequest GetTexture(string uri) { return new UnityWebRequest(); }
+    }
+
+    public class DownloadHandlerTexture : DownloadHandler
+    {
+        public Texture2D texture { get { return null; } }
+        public static Texture2D GetContent(UnityWebRequest request) { return null; }
     }
 }

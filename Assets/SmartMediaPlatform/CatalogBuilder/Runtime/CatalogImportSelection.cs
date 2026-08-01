@@ -21,7 +21,21 @@ namespace SmartMediaPlatform.CatalogBuilder
         private readonly List<bool> _selected = new List<bool>();
         private readonly List<bool> _existing = new List<bool>();
 
+        /// <summary>
+        /// チャンネルごとのまとまり(Phase6-4)。
+        /// <see cref="SetItems"/> のたびに作り直します。
+        /// </summary>
+        public CatalogItemGrouping Grouping { get; private set; }
+
+        public CatalogImportSelection()
+        {
+            Grouping = new CatalogItemGrouping();
+        }
+
         public int Count { get { return _items.Count; } }
+
+        /// <summary>取り込んだものそのもの。絞り込みや並べ替えに使います。</summary>
+        public IReadOnlyList<CatalogDraftItem> Items { get { return _items; } }
 
         public bool IsEmpty { get { return _items.Count == 0; } }
 
@@ -51,6 +65,8 @@ namespace SmartMediaPlatform.CatalogBuilder
                 _selected.Add(true);
                 _existing.Add(false);
             }
+
+            Grouping.Build(_items);
         }
 
         public void Clear()
@@ -58,6 +74,14 @@ namespace SmartMediaPlatform.CatalogBuilder
             _items.Clear();
             _selected.Clear();
             _existing.Clear();
+            Grouping.Clear();
+        }
+
+        /// <summary>まとめ方を変えて作り直す。</summary>
+        public void Regroup(int mode)
+        {
+            Grouping.Mode = mode;
+            Grouping.Build(_items);
         }
 
         // ───────── 選ぶ ─────────
@@ -161,6 +185,48 @@ namespace SmartMediaPlatform.CatalogBuilder
                 }
                 return count;
             }
+        }
+
+        // ───────── まとまりごとに選ぶ(Phase6-4)─────────
+
+        /// <summary>そのまとまりを丸ごと入り / 切りにする。</summary>
+        public void SetGroupSelected(int group, bool value)
+        {
+            int[] members = Grouping.GetIndices(group);
+            for (int i = 0; i < members.Length; i++) SetSelected(members[i], value);
+        }
+
+        /// <summary>そのまとまりで選ばれている件数。</summary>
+        public int GroupSelectedCount(int group)
+        {
+            int[] members = Grouping.GetIndices(group);
+
+            int count = 0;
+            for (int i = 0; i < members.Length; i++)
+            {
+                if (IsSelected(members[i])) count++;
+            }
+            return count;
+        }
+
+        /// <summary>そのまとまりがすべて選ばれているか(0 件なら false)。</summary>
+        public bool IsGroupFullySelected(int group)
+        {
+            int total = Grouping.GetCount(group);
+            return total > 0 && GroupSelectedCount(group) == total;
+        }
+
+        /// <summary>そのまとまりで、すでにカタログにある件数。</summary>
+        public int GroupExistingCount(int group)
+        {
+            int[] members = Grouping.GetIndices(group);
+
+            int count = 0;
+            for (int i = 0; i < members.Length; i++)
+            {
+                if (IsExisting(members[i])) count++;
+            }
+            return count;
         }
     }
 }

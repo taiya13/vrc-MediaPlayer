@@ -56,11 +56,13 @@ namespace SmartMediaPlatform.World.UdonModel
         }
 
         /// <summary>
-        /// ▲▼ 1 回ぶんの移動量。<b>0 なら 1 画面ぶん</b>。
+        /// ▲▼ 1 回ぶんの移動量。<b>0 なら「1 画面 − 1 行」</b>。
         ///
-        /// 1 行ずつだと 24 件で 18 回押すことになり、
-        /// 1 画面ずつだと見ていた行が全部入れ替わって位置を見失います。
-        /// 既定は「半画面」くらいが押しやすい、という判断です。
+        /// 1 行ずつだと 24 件で 18 回押すことになります。
+        /// かといって 1 画面ずつだと<b>見ていた行が全部入れ替わって</b>
+        /// どこまで見たのか分からなくなります。
+        /// <b>1 行だけ残す</b>と、その 1 行が目印になって続きから読めます
+        /// (Phase6-4 で「1 画面ぶん」から変えました)。
         /// </summary>
         public int Step
         {
@@ -74,8 +76,91 @@ namespace SmartMediaPlatform.World.UdonModel
             get
             {
                 if (_step > 0) return _step;
-                return _rowCount > 0 ? _rowCount : 1;
+                if (_rowCount <= 1) return 1;
+
+                return _rowCount - 1;
             }
+        }
+
+        // ───────── 続けて押すと速くなる(Phase6-4)─────────
+
+        /// <summary>
+        /// <b>続けて押すほど 1 回で動く行数が増える。</b>
+        ///
+        /// <b>なぜ要るのか</b><br/>
+        /// VR では長押しもホイールも使えず、押せるのはボタンだけです。
+        /// 200 件を 1 画面ずつ送ると 30 回以上押すことになります。
+        /// 連打すると加速するようにすれば、<b>同じボタンのまま</b>
+        /// 「少しだけ」も「一気に」も出せます。
+        /// </summary>
+        public bool Acceleration = true;
+
+        /// <summary>この秒数以内に続けて押されたら「連打」とみなす。</summary>
+        public float AccelerationWindow = 0.45f;
+
+        /// <summary>連打 1 回ごとに何倍にするか。</summary>
+        public float AccelerationFactor = 1.8f;
+
+        /// <summary>加速しても 1 回でこれ以上は動かない。</summary>
+        public int MaxStep = 64;
+
+        private float _lastScrollAt = -999f;
+        private int _runLength;
+        private int _lastDirection;
+
+        /// <summary>いま何連打目か(0 = 単発)。</summary>
+        public int RunLength { get { return _runLength; } }
+
+        /// <summary>
+        /// <paramref name="now"/> に <paramref name="direction"/> 方向へ押されたときの移動量。
+        ///
+        /// <b>向きを変えたら加速はリセットします。</b>
+        /// 行き過ぎて戻すときに、戻しすぎるのを避けるためです。
+        /// </summary>
+        public int StepAt(float now, int direction)
+        {
+            int step = EffectiveStep;
+            if (!Acceleration) return step;
+
+            bool continued = direction == _lastDirection
+                             && now - _lastScrollAt <= AccelerationWindow;
+
+            _runLength = continued ? _runLength + 1 : 0;
+            _lastScrollAt = now;
+            _lastDirection = direction;
+
+            float grown = step;
+            for (int i = 0; i < _runLength; i++)
+            {
+                grown *= AccelerationFactor;
+                if (grown >= MaxStep) break;
+            }
+
+            int result = (int)grown;
+            if (result < step) result = step;
+            if (result > MaxStep) result = MaxStep;
+
+            return result;
+        }
+
+        /// <summary>加速を初め(単発)に戻す。端へ飛んだあとなどに呼びます。</summary>
+        public void ResetAcceleration()
+        {
+            _runLength = 0;
+            _lastDirection = 0;
+            _lastScrollAt = -999f;
+        }
+
+        /// <summary>上へ 1 回ぶん(連打なら加速する)。</summary>
+        public bool ScrollUpAt(float now)
+        {
+            return ScrollBy(-StepAt(now, -1));
+        }
+
+        /// <summary>下へ 1 回ぶん(連打なら加速する)。</summary>
+        public bool ScrollDownAt(float now)
+        {
+            return ScrollBy(StepAt(now, 1));
         }
 
         /// <summary>

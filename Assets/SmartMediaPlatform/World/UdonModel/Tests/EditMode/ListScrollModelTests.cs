@@ -61,14 +61,25 @@ namespace SmartMediaPlatform.World.UdonModel.Tests
         // ───────── 動かす ─────────
 
         [Test]
-        public void TheStepDefaultsToOneScreen()
+        public void TheStepDefaultsToOneScreenMinusOneRow()
         {
             var model = Model(6, 30);
 
-            Assert.AreEqual(6, model.EffectiveStep, "Step が 0 なら 1 画面ぶん");
+            Assert.AreEqual(5, model.EffectiveStep, "Step が 0 なら「1 画面 − 1 行」");
 
             model.ScrollDown();
-            Assert.AreEqual(6, model.Offset);
+            Assert.AreEqual(5, model.Offset, "1 行だけ残るので、そこを目印に続きから読める");
+        }
+
+        [Test]
+        public void AOneRowListStillMovesByOne()
+        {
+            var model = Model(1, 10);
+
+            Assert.AreEqual(1, model.EffectiveStep, "0 行ずつ動いて止まってしまわないこと");
+
+            model.ScrollDown();
+            Assert.AreEqual(1, model.Offset);
         }
 
         [Test]
@@ -117,6 +128,7 @@ namespace SmartMediaPlatform.World.UdonModel.Tests
         public void TheShownRangeIsCountedFromOne()
         {
             var model = Model(6, 24);
+            model.Step = 6;
 
             Assert.AreEqual(1, model.FirstShownNumber);
             Assert.AreEqual(6, model.LastShownNumber);
@@ -268,6 +280,104 @@ namespace SmartMediaPlatform.World.UdonModel.Tests
             var model = Model(6, 30);
 
             Assert.AreEqual(0.2f, model.VisibleFraction, 0.001f, "30 件のうち 6 行ぶん");
+        }
+
+        // ───────── 続けて押すと速くなる(Phase6-4)─────────
+
+        [Test]
+        public void ASinglePressMovesOneStep()
+        {
+            var model = Model(6, 200);
+
+            Assert.AreEqual(5, model.StepAt(0f, 1), "1 回目は普通の 1 回ぶん");
+            Assert.AreEqual(0, model.RunLength);
+        }
+
+        [Test]
+        public void PressingAgainQuicklyMovesFurther()
+        {
+            var model = Model(6, 200);
+
+            int first = model.StepAt(0f, 1);
+            int second = model.StepAt(0.2f, 1);
+            int third = model.StepAt(0.4f, 1);
+
+            Assert.AreEqual(5, first);
+            Assert.Greater(second, first, "連打すると 1 回で動く行数が増える");
+            Assert.Greater(third, second);
+        }
+
+        [Test]
+        public void PausingResetsTheSpeed()
+        {
+            var model = Model(6, 200);
+
+            model.StepAt(0f, 1);
+            model.StepAt(0.2f, 1);
+
+            // AccelerationWindow(0.45 秒)より長く空けたら単発に戻る。
+            Assert.AreEqual(5, model.StepAt(2f, 1), "手を止めたら元の速さへ");
+            Assert.AreEqual(0, model.RunLength);
+        }
+
+        [Test]
+        public void ChangingDirectionResetsTheSpeed()
+        {
+            var model = Model(6, 200);
+
+            model.StepAt(0f, 1);
+            model.StepAt(0.2f, 1);
+            model.StepAt(0.4f, 1);
+
+            Assert.AreEqual(5, model.StepAt(0.5f, -1),
+                            "行き過ぎて戻すときに、戻しすぎないこと");
+        }
+
+        [Test]
+        public void TheSpeedHasACeiling()
+        {
+            var model = Model(6, 5000);
+            model.MaxStep = 40;
+
+            int step = 0;
+            for (int i = 0; i < 30; i++) step = model.StepAt(i * 0.1f, 1);
+
+            Assert.AreEqual(40, step, "どれだけ連打しても上限で止まる");
+        }
+
+        [Test]
+        public void AccelerationCanBeTurnedOff()
+        {
+            var model = Model(6, 200);
+            model.Acceleration = false;
+
+            model.StepAt(0f, 1);
+            Assert.AreEqual(5, model.StepAt(0.1f, 1), "切っておけばいつでも同じ量");
+        }
+
+        [Test]
+        public void HammeringTheButtonReachesTheEndOfALongList()
+        {
+            var model = Model(6, 400);
+
+            // 400 件を 1 画面ずつだと 66 回。連打の加速で「押し続けなくても」端へ届く。
+            int presses = 0;
+            while (model.ScrollDownAt(presses * 0.2f) && presses < 100) presses++;
+
+            Assert.AreEqual(394, model.Offset, "400 − 6 で止まる");
+            Assert.Less(presses, 15, "十数回で端まで行けること");
+        }
+
+        [Test]
+        public void ResettingAccelerationGoesBackToASinglePress()
+        {
+            var model = Model(6, 200);
+
+            model.StepAt(0f, 1);
+            model.StepAt(0.2f, 1);
+            model.ResetAcceleration();
+
+            Assert.AreEqual(5, model.StepAt(0.3f, 1));
         }
 
         // ───────── 何を知らないか ─────────

@@ -118,7 +118,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Controller == null || !Accept(5)) return;
 
             Controller.ClearUpcoming();
-            Report(Controller.LastResult, "Queue の掃除");
+            Report(Controller.LastResult, "再生予定の掃除");
         }
 
         // ───────── 音量 ─────────

@@ -28,6 +28,15 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         public string Description = "";
 
         /// <summary>
+        /// 動画に付いているタグ。Phase6-4 で足しました。
+        /// <b>付いていない動画も多い</b>ので、空を前提に扱ってください。
+        /// </summary>
+        public string[] Tags = new string[0];
+
+        /// <summary>カテゴリ番号。<see cref="YouTubeCategoryNames"/> でジャンル名に直します。</summary>
+        public string CategoryId = "";
+
+        /// <summary>
         /// 非公開・削除済みなど、再生できないもの。
         /// <b>取得結果から黙って消さずに、印を付けて残します</b> —
         /// 「入れたはずの曲が無い」より「これは使えません」と出るほうが分かるためです。
@@ -85,7 +94,35 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             item.ThumbnailPath = ThumbnailUrl;
             item.Source = "YouTube";
 
+            // Phase6-4: 関連(RelatedIds)と絞り込みの材料。
+            item.Genre = YouTubeCategoryNames.Of(CategoryId);
+            item.Tags = TrimTags(MaxTags);
+
             return item;
+        }
+
+        /// <summary>
+        /// 持ち込むタグの上限。
+        /// YouTube は 30 個以上付いていることがあり、そのまま入れると
+        /// <b>編集画面がタグで埋まって使えなくなります</b>。
+        /// </summary>
+        public const int MaxTags = 8;
+
+        private string[] TrimTags(int limit)
+        {
+            if (Tags == null || Tags.Length == 0) return new string[0];
+
+            int take = Tags.Length < limit ? Tags.Length : limit;
+
+            var result = new System.Collections.Generic.List<string>();
+            for (int i = 0; i < Tags.Length && result.Count < take; i++)
+            {
+                string tag = Tags[i];
+                if (string.IsNullOrWhiteSpace(tag)) continue;
+
+                result.Add(tag.Trim());
+            }
+            return result.ToArray();
         }
     }
 }
