@@ -46,10 +46,10 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string RemotePanelPrefabPath = PrefabFolder + "/MediaRemotePanel.prefab";
 
         private const string MenuPath =
-            "Tools/Smart Media Platform/Create SmartMediaPlayer Prefab (VRChat 実機・Udon)";
+            "Tools/Smart Media Platform/SmartMediaPlayer を作る/VRChat 実機 (AVPro)";
 
         private const string UnityPlayerMenuPath =
-            "Tools/Smart Media Platform/Create SmartMediaPlayer Prefab (VRChat 実機・Udon / Unity 版)";
+            "Tools/Smart Media Platform/SmartMediaPlayer を作る/VRChat 実機 (Unity Video)";
 
         /// <summary>この Prefab が使う UdonSharpBehaviour。プログラムを先に作る対象。</summary>
         private static Type[] BehaviourTypes()
@@ -72,7 +72,7 @@ namespace SmartMediaPlatform.World.EditorTools
             return types.ToArray();
         }
 
-        [MenuItem(MenuPath)]
+        [MenuItem(MenuPath, false, -100)]
         public static void CreatePrefab()
         {
             Build(VideoPlayerPreference.AVPro, MenuPath);
@@ -82,7 +82,7 @@ namespace SmartMediaPlatform.World.EditorTools
         /// AVPro はエディタ(ClientSim)で映像を出さないので、
         /// <b>エディタで絵を確認したいとき用</b>の Unity 版も用意しておきます。
         /// </summary>
-        [MenuItem(UnityPlayerMenuPath)]
+        [MenuItem(UnityPlayerMenuPath, false, -99)]
         public static void CreateUnityPlayerPrefab()
         {
             Build(VideoPlayerPreference.Unity, UnityPlayerMenuPath);

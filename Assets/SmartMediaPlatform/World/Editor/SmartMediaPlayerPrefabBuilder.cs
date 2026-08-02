@@ -36,11 +36,11 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string NoSdkPrefabPath = PrefabFolder + "/SmartMediaPlayer_NoSDK.prefab";
 
         private const string NoSdkMenuPath =
-            "Tools/Smart Media Platform/Create SmartMediaPlayer Prefab (SDK 不要・ログのみ)";
+            "Tools/Smart Media Platform/SmartMediaPlayer を作る/エディタ確認用 (SDK 不要・ログのみ)";
 
         // ───────── SDK 不要版 ─────────
 
-        [MenuItem(NoSdkMenuPath)]
+        [MenuItem(NoSdkMenuPath, false, -80)]
         public static void CreateNoSdkPrefab()
         {
             var root = BuildCommonStructure("SmartMediaPlayer_NoSDK", out var screen, out var player);
@@ -63,12 +63,12 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string PrefabPath = PrefabFolder + "/SmartMediaPlayer.prefab";
 
         private const string MenuPath =
-            "Tools/Smart Media Platform/Create SmartMediaPlayer Prefab (実際に再生)";
+            "Tools/Smart Media Platform/SmartMediaPlayer を作る/エディタ確認用 (AVPro)";
 
         private const string UnityPlayerMenuPath =
-            "Tools/Smart Media Platform/Create SmartMediaPlayer Prefab (Unity 版・エディタで確認)";
+            "Tools/Smart Media Platform/SmartMediaPlayer を作る/エディタ確認用 (Unity Video)";
 
-        [MenuItem(MenuPath)]
+        [MenuItem(MenuPath, false, -82)]
         public static void CreatePrefab()
         {
             Build(VideoPlayerPreference.AVPro, MenuPath);
@@ -78,7 +78,7 @@ namespace SmartMediaPlatform.World.EditorTools
         /// AVPro はエディタ(ClientSim)で映像を出さないため、
         /// <b>エディタで絵を確認したいとき用</b>の Unity 版も用意しておきます。
         /// </summary>
-        [MenuItem(UnityPlayerMenuPath)]
+        [MenuItem(UnityPlayerMenuPath, false, -81)]
         public static void CreateUnityPlayerPrefab()
         {
             Build(VideoPlayerPreference.Unity, UnityPlayerMenuPath);

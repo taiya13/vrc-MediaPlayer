@@ -132,6 +132,183 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             return report;
         }
 
+        // ───────── 焼き忘れの検出(Phase6-5)─────────
+
+        /// <summary>ずれの調べ結果。</summary>
+        public sealed class SyncReport
+        {
+            /// <summary>調べられたか(SDK / カタログ / シーンがそろっているか)。</summary>
+            public bool Checked;
+
+            /// <summary>ずれていないか。</summary>
+            public bool InSync;
+
+            public int Targets;
+            public int AssetCount;
+            public int SceneCount;
+
+            /// <summary>アセットにあってシーンに無いもの(焼き忘れ)。</summary>
+            public string[] MissingInScene = new string[0];
+
+            /// <summary>シーンにあってアセットに無いもの(消したのに焼いていない)。</summary>
+            public string[] StaleInScene = new string[0];
+
+            /// <summary>並びだけが違うか。</summary>
+            public bool OrderDiffers;
+
+            public string Message = "";
+        }
+
+        /// <summary>
+        /// <b>Catalog.asset とシーンの VRCUrl がそろっているかを調べる。</b>
+        ///
+        /// <b>なぜ要るのか</b><br/>
+        /// 保存しただけではワールドに反映されません。焼き込みを忘れると
+        /// <b>「直したはずなのに現地では古いまま」</b>になり、
+        /// しかも<b>何も警告が出ません</b>。Phase6-3 からの積み残しでした。
+        ///
+        /// <b>ID の並びで見ます。</b>件数だけだと
+        /// 「1 件消して 1 件足した」を見逃します。
+        /// </summary>
+        public static SyncReport CompareWithScene(MediaCatalogAsset asset)
+        {
+            var report = new SyncReport();
+
+            if (asset == null || !IsAvailable) return report;
+
+            Type catalogType = FindType(CatalogTypeName);
+            UnityEngine.Object[] found = UnityEngine.Object.FindObjectsOfType(catalogType);
+
+            if (found == null || found.Length == 0) return report;
+
+            IReadOnlyList<MediaItem> items = asset.LoadItems();
+            var assetIds = new List<string>();
+            if (items != null)
+            {
+                for (int i = 0; i < items.Count; i++)
+                {
+                    if (items[i] != null) assetIds.Add(items[i].Id);
+                }
+            }
+
+            report.Checked = true;
+            report.Targets = found.Length;
+            report.AssetCount = assetIds.Count;
+
+            var missing = new List<string>();
+            var stale = new List<string>();
+            bool orderDiffers = false;
+            int sceneCount = 0;
+
+            for (int i = 0; i < found.Length; i++)
+            {
+                string[] sceneIds = ReadIds(found[i]);
+                if (sceneIds == null) continue;
+
+                if (sceneIds.Length > sceneCount) sceneCount = sceneIds.Length;
+
+                for (int a = 0; a < assetIds.Count; a++)
+                {
+                    if (Contains(sceneIds, assetIds[a])) continue;
+                    if (!missing.Contains(assetIds[a])) missing.Add(assetIds[a]);
+                }
+
+                for (int s = 0; s < sceneIds.Length; s++)
+                {
+                    if (assetIds.Contains(sceneIds[s])) continue;
+                    if (!stale.Contains(sceneIds[s])) stale.Add(sceneIds[s]);
+                }
+
+                if (SameOrder(assetIds, sceneIds)) continue;
+                orderDiffers = true;
+            }
+
+            report.SceneCount = sceneCount;
+            report.MissingInScene = missing.ToArray();
+            report.StaleInScene = stale.ToArray();
+
+            // 並びの違いは、中身が同じときだけ「並びだけ」と言える。
+            report.OrderDiffers = orderDiffers && missing.Count == 0 && stale.Count == 0;
+            report.InSync = missing.Count == 0 && stale.Count == 0 && !orderDiffers;
+
+            report.Message = Describe(report);
+            return report;
+        }
+
+        private static string Describe(SyncReport report)
+        {
+            if (report.InSync) return "シーンの VRCUrl はカタログと一致しています。";
+
+            var sb = new System.Text.StringBuilder();
+            sb.Append("シーンの VRCUrl がカタログと違います。「③ VRCUrl へ焼く」を押してください。\n");
+
+            if (report.MissingInScene.Length > 0)
+            {
+                sb.Append("  ワールドにまだ無い: ").Append(report.MissingInScene.Length).Append(" 件");
+                sb.Append(" (").Append(Preview(report.MissingInScene)).Append(")\n");
+            }
+
+            if (report.StaleInScene.Length > 0)
+            {
+                sb.Append("  消したのに残っている: ").Append(report.StaleInScene.Length).Append(" 件");
+                sb.Append(" (").Append(Preview(report.StaleInScene)).Append(")\n");
+            }
+
+            if (report.OrderDiffers) sb.Append("  中身は同じですが並びが違います。\n");
+
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string Preview(string[] ids)
+        {
+            int take = ids.Length < 3 ? ids.Length : 3;
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < take; i++)
+            {
+                if (i > 0) sb.Append(", ");
+                sb.Append(ids[i]);
+            }
+            if (ids.Length > take) sb.Append(" ほか");
+
+            return sb.ToString();
+        }
+
+        /// <summary>焼き込まれている ID の並びを読み返す。読めなければ null。</summary>
+        private static string[] ReadIds(UnityEngine.Object catalog)
+        {
+            if (catalog == null) return null;
+
+            FieldInfo field = catalog.GetType().GetField(
+                "Ids", BindingFlags.Public | BindingFlags.Instance);
+
+            if (field == null) return null;
+
+            return field.GetValue(catalog) as string[];
+        }
+
+        private static bool Contains(string[] values, string wanted)
+        {
+            if (values == null || wanted == null) return false;
+
+            for (int i = 0; i < values.Length; i++)
+            {
+                if (values[i] == wanted) return true;
+            }
+            return false;
+        }
+
+        private static bool SameOrder(List<string> assetIds, string[] sceneIds)
+        {
+            if (sceneIds == null || assetIds.Count != sceneIds.Length) return false;
+
+            for (int i = 0; i < sceneIds.Length; i++)
+            {
+                if (assetIds[i] != sceneIds[i]) return false;
+            }
+            return true;
+        }
+
         /// <summary>シーンにある <c>UdonMediaCatalog</c> の数。ボタンの出し分けに使う。</summary>
         public static int CountInScene()
         {

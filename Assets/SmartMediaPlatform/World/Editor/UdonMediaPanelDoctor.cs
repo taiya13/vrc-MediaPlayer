@@ -41,7 +41,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
         // ───────── 診断 ─────────
 
-        [MenuItem(DiagnoseMenu)]
+        [MenuItem(DiagnoseMenu, false, -60)]
         public static void DiagnoseMenuItem()
         {
             Debug.Log(Diagnose());
@@ -201,7 +201,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
         // ───────── 修復 ─────────
 
-        [MenuItem(RepairMenu)]
+        [MenuItem(RepairMenu, false, -59)]
         public static void RepairMenuItem()
         {
             UdonMediaPanel[] panels = FindPanels();

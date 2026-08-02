@@ -371,6 +371,122 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
                 "通信は IYouTubeClient の仕事(差し替えられるようにするため)");
         }
 
+        // ───────── 新着だけ取る(Phase6-5)─────────
+
+        [Test]
+        public void OnlyUnknownVideosComeBack()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("new1", "新しい 1"));
+            client.Videos.Add(Video("old1", "もうある 1"));
+            client.Videos.Add(Video("old2", "もうある 2"));
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            var boundary = new CatalogImportBoundary();
+            boundary.KnownIds = new[] { "old1", "old2" };
+
+            CatalogImportResult result = importer.ImportNew(
+                "https://www.youtube.com/@channel", boundary);
+
+            Assert.IsTrue(result.Ok);
+            Assert.AreEqual(1, result.Count, "知らないものだけ返る");
+            Assert.AreEqual("new1", result.Items[0].Id);
+            Assert.IsFalse(result.MayHaveMore, "知っているものに当たったので、そこまで");
+        }
+
+        [Test]
+        public void NothingNewIsSaidPlainly()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("old1", "もうある"));
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            var boundary = new CatalogImportBoundary();
+            boundary.StopAtId = "old1";
+
+            CatalogImportResult result = importer.ImportNew("@channel", boundary);
+
+            Assert.IsTrue(result.Ok, "新着 0 件は失敗ではない");
+            Assert.AreEqual(0, result.Count);
+            StringAssert.Contains("新着はありません", result.Message);
+        }
+
+        [Test]
+        public void AFullPageOfNewItemsWarnsThatMoreMayExist()
+        {
+            var client = new FakeClient();
+            for (int i = 0; i < 5; i++) client.Videos.Add(Video("v" + i, "曲" + i));
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            var boundary = new CatalogImportBoundary();
+            boundary.MaxNewItems = 5;
+
+            CatalogImportResult result = importer.ImportNew("@channel", boundary);
+
+            Assert.AreEqual(5, result.Count);
+            Assert.IsTrue(result.MayHaveMore,
+                          "取りこぼしを黙っていると「入れたはずの曲が無い」になる");
+            StringAssert.Contains("まだ先にある", result.Message);
+        }
+
+        [Test]
+        public void TheSourceNameAndKindComeBackForTheSubscription()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("v1", "曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            CatalogImportResult channel = importer.ImportNew(
+                "https://www.youtube.com/@channel", new CatalogImportBoundary());
+
+            Assert.AreEqual(CatalogSubscription.KindChannel, channel.SourceKind);
+            Assert.AreEqual("チャンネル", channel.SourceName, "動画に付いてくるチャンネル名を使う");
+
+            CatalogImportResult playlist = importer.ImportNew(
+                "https://www.youtube.com/playlist?list=PLabc", new CatalogImportBoundary());
+
+            Assert.AreEqual(CatalogSubscription.KindPlaylist, playlist.SourceKind);
+            StringAssert.Contains("PLabc", playlist.SourceName);
+        }
+
+        [Test]
+        public void PlaylistsGoThroughTheSamePath()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("v1", "曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.ImportNew("https://www.youtube.com/playlist?list=PLabc",
+                               new CatalogImportBoundary());
+
+            Assert.AreEqual("playlist:PLabc", client.LastCall,
+                            "チャンネルもプレイリストも同じ入口");
+        }
+
+        [Test]
+        public void ImportingEverythingStillIgnoresTheBoundary()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("old1", "もうある"));
+            client.Videos.Add(Video("new1", "新しい"));
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            Assert.AreEqual(2, importer.Import("@channel").Count,
+                            "「全部取得」は今までどおり全部返す");
+        }
+
+        [Test]
+        public void TheImporterOffersTheIncrementalDoor()
+        {
+            Assert.IsTrue(new YouTubeCatalogImporter() is IIncrementalCatalogImporter,
+                          "Builder はこの口があるかどうかでボタンを出し分ける");
+        }
+
         // ───────── 道具 ─────────
 
         private static YouTubeVideoInfo Video(string id, string title)

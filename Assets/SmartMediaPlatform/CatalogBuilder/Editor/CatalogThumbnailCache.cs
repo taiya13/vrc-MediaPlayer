@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -13,14 +14,18 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
     /// 200 件の一覧が文字だけだと、見分けるのに 1 件ずつ読むことになります。
     /// 絵が出ていれば<b>一目で分かります</b>。
     ///
-    /// <b>プロジェクトには 1 枚も保存しません。</b>覚えているのは
-    /// エディタが動いている間のメモリだけです。
+    /// <b>Assets の下には 1 枚も置きません。</b>置き場所は
+    /// <c>Library/SmartMediaPlatform/Thumbnails/</c> です(Phase6-5)。
     /// <list type="bullet">
-    /// <item>ワールドの容量が増えない(VRChat のアップロード上限に効いてくる)</item>
-    /// <item>取り込み直しても古い絵が残らない</item>
-    /// <item>要らなくなったら Unity を閉じるだけで消える</item>
+    /// <item><b>ワールドには入りません。</b><c>Library</c> は Unity が作る作業場で、
+    ///       <c>Assets</c> の外なので<b>ビルドにも git にも入りません</b></item>
+    /// <item><b>Unity を閉じても消えません。</b>200 枚を毎回取り直すと
+    ///       起動のたびに数十秒かかり、YouTube にも無駄に当たります</item>
+    /// <item>要らなくなったら「絵を捨てる」で丸ごと消せます</item>
     /// </list>
-    /// 絵をアセットとして持ちたい場合は Phase6-5 以降で足します。
+    ///
+    /// <b>2 段構えです。</b>まずメモリ、次にディスク、最後に通信。
+    /// 2 度目からは<b>通信しません</b>。
     ///
     /// <b>待ちません。</b><see cref="Get"/> はまだ無ければ <c>null</c> を返し、
     /// 裏で取りに行きます。窓は<b>絵が無い前提</b>で描いてください
@@ -46,7 +51,12 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
         private static bool _pumping;
 
-        /// <summary>取れた絵。まだ無ければ <c>null</c>(裏で取りに行きます)。</summary>
+        /// <summary>
+        /// 取れた絵。まだ無ければ <c>null</c>(裏で取りに行きます)。
+        ///
+        /// 探す順は<b>メモリ → ディスク → 通信</b>。
+        /// 前に一度でも見た絵なら、Unity を再起動しても<b>通信しません</b>。
+        /// </summary>
         public static Texture2D Get(string url)
         {
             if (!IsSupported(url)) return null;
@@ -58,8 +68,117 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             if (_failed.Contains(key)) return null;
 
+            Texture2D fromDisk = LoadFromDisk(key);
+            if (fromDisk != null)
+            {
+                _done[key] = fromDisk;
+                return fromDisk;
+            }
+
             Request(key);
             return null;
+        }
+
+        // ───────── ディスク(Library の下)─────────
+
+        /// <summary>絵の置き場所。<c>Assets</c> の外なのでビルドにも git にも入らない。</summary>
+        public static string CacheDirectory
+        {
+            get
+            {
+                // Application.dataPath は <project>/Assets。その隣が Library。
+                string project = Directory.GetParent(Application.dataPath).FullName;
+                return Path.Combine(project, "Library/SmartMediaPlatform/Thumbnails")
+                           .Replace('\\', '/');
+            }
+        }
+
+        /// <summary>ディスクに残っている枚数。</summary>
+        public static int DiskCount
+        {
+            get
+            {
+                try
+                {
+                    if (!Directory.Exists(CacheDirectory)) return 0;
+                    return Directory.GetFiles(CacheDirectory, "*.png").Length;
+                }
+                catch (System.Exception)
+                {
+                    return 0;
+                }
+            }
+        }
+
+        /// <summary>ディスクのぶんも含めて全部捨てる。</summary>
+        public static void ClearDisk()
+        {
+            try
+            {
+                if (Directory.Exists(CacheDirectory)) Directory.Delete(CacheDirectory, true);
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogWarning("[CatalogThumbnailCache] 絵を消せませんでした: " + e.Message);
+            }
+
+            Clear();
+        }
+
+        private static Texture2D LoadFromDisk(string url)
+        {
+            try
+            {
+                string path = PathFor(url);
+                if (!File.Exists(path)) return null;
+
+                var texture = new Texture2D(2, 2);
+                if (texture.LoadImage(File.ReadAllBytes(path))) return texture;
+
+                Object.DestroyImmediate(texture);
+                return null;
+            }
+            catch (System.Exception)
+            {
+                return null;
+            }
+        }
+
+        private static void SaveToDisk(string url, Texture2D texture)
+        {
+            if (texture == null) return;
+
+            try
+            {
+                Directory.CreateDirectory(CacheDirectory);
+                File.WriteAllBytes(PathFor(url), texture.EncodeToPNG());
+            }
+            catch (System.Exception)
+            {
+                // 書けなくても表示はできる。次の起動でまた取りに行くだけ。
+            }
+        }
+
+        /// <summary>
+        /// URL からファイル名を作る。
+        /// URL をそのまま使えないので<b>中身から決まる名前</b>にします
+        /// (同じ URL なら必ず同じ名前 = 何度実行しても同じ絵に当たる)。
+        /// </summary>
+        private static string PathFor(string url)
+        {
+            return Path.Combine(CacheDirectory, HashOf(url) + ".png").Replace('\\', '/');
+        }
+
+        private static string HashOf(string value)
+        {
+            using (var md5 = System.Security.Cryptography.MD5.Create())
+            {
+                byte[] bytes = md5.ComputeHash(System.Text.Encoding.UTF8.GetBytes(value));
+
+                var sb = new System.Text.StringBuilder();
+                for (int i = 0; i < bytes.Length; i++) sb.Append(bytes[i].ToString("x2"));
+                return sb.ToString();
+            }
         }
 
         /// <summary>取りに行ける形か。<b>http(s) だけ</b>を相手にします。</summary>
@@ -145,7 +264,13 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 changed = true;
 
                 Texture2D texture = job.TakeTexture();
-                if (texture != null) _done[job.Url] = texture;
+                if (texture != null)
+                {
+                    _done[job.Url] = texture;
+
+                    // 次の起動で取り直さないよう、その場で書き残す。
+                    SaveToDisk(job.Url, texture);
+                }
                 else _failed.Add(job.Url);
 
                 job.Dispose();

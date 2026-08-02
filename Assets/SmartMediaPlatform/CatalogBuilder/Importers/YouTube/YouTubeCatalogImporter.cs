@@ -17,7 +17,7 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
     /// <see cref="LastVideos"/> にそのまま残るので、
     /// プレビュー窓がそれを見ます(反映は Phase6-3)。
     /// </summary>
-    public sealed class YouTubeCatalogImporter : ICatalogImporter
+    public sealed class YouTubeCatalogImporter : ICatalogImporter, IIncrementalCatalogImporter
     {
         private readonly IYouTubeClient _client;
 
@@ -89,6 +89,42 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
         public CatalogImportResult Import(string input)
         {
+            return Run(input, null);
+        }
+
+        // ───────── 新着だけ(Phase6-5)─────────
+
+        /// <summary>
+        /// 1 回で見に行く件数。<b>チャンネルは新しい順に返ってきます</b>から、
+        /// この数だけ見れば新着はまず入っています。
+        /// </summary>
+        public const int NewItemsPageSize = 50;
+
+        /// <summary>
+        /// <b>新着だけ取る。</b>
+        ///
+        /// <b>全件は取りません。</b>チャンネルもプレイリストも新しい順に返るので、
+        /// <see cref="NewItemsPageSize"/> 件だけ見て、知っているものを落とします。
+        /// 400 件のチャンネルなら<b>取得が 8 回から 1 回</b>になります。
+        ///
+        /// <b>上限いっぱいが全部新しかったときは</b>
+        /// <see cref="CatalogImportResult.MayHaveMore"/> を立てます。
+        /// 取りこぼしたかもしれないことを黙っておくと、
+        /// <b>「入れたはずの曲が無い」</b>になるためです。
+        /// </summary>
+        public CatalogImportResult ImportNew(string input, CatalogImportBoundary boundary)
+        {
+            return Run(input, boundary != null ? boundary : new CatalogImportBoundary());
+        }
+
+        // ───────── 内部 ─────────
+
+        /// <summary>
+        /// 取り込みの本体。<paramref name="boundary"/> が null なら全部、
+        /// あれば知らないものだけ。<b>取得と変換の道は 1 本だけ</b>にしてあります。
+        /// </summary>
+        private CatalogImportResult Run(string input, CatalogImportBoundary boundary)
+        {
             LastVideos = new YouTubeVideoInfo[0];
             LastTarget = YouTubeUrlParser.Parse(input);
 
@@ -104,7 +140,13 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             if (client == null) return CatalogImportResult.Failure("取得の係がありません。");
             if (!client.IsAvailable) return CatalogImportResult.Failure(client.UnavailableReason);
 
-            YouTubeFetchResult fetched = Fetch(client, LastTarget);
+            int limit = MaxCount;
+            if (boundary != null)
+            {
+                limit = boundary.MaxNewItems > 0 ? boundary.MaxNewItems : NewItemsPageSize;
+            }
+
+            YouTubeFetchResult fetched = Fetch(client, LastTarget, limit);
 
             if (fetched == null) return CatalogImportResult.Failure("取得の係が結果を返しませんでした。");
             if (!fetched.Ok) return CatalogImportResult.Failure(fetched.Message);
@@ -112,33 +154,96 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             LastVideos = fetched.Videos;
 
             var items = new List<CatalogDraftItem>();
+            int skipped = 0;
+
             for (int i = 0; i < fetched.Videos.Count; i++)
             {
                 YouTubeVideoInfo video = fetched.Videos[i];
                 if (video == null) continue;
 
                 // 再生できないものは Builder へ渡さない。
-                // プレビューには LastVideos 経由で「使えません」として残る。
+                // LastVideos には「使えません」として残る。
                 if (video.IsUnavailable) continue;
+
+                if (boundary != null && boundary.IsKnown(video.VideoId))
+                {
+                    skipped++;
+                    continue;
+                }
 
                 items.Add(video.ToDraftItem());
             }
 
-            return CatalogImportResult.Success(items, fetched.Message);
+            if (boundary == null)
+            {
+                return CatalogImportResult.Success(items, fetched.Message)
+                                          .From(DescribeSource(), KindOf(LastTarget));
+            }
+
+            // 上限まで見て 1 件も知っているものが無かった = まだ先にあるかもしれない。
+            bool mayHaveMore = skipped == 0 && fetched.Count >= limit;
+
+            CatalogImportResult result = CatalogImportResult
+                .Success(items, DescribeNew(items.Count, skipped, mayHaveMore))
+                .From(DescribeSource(), KindOf(LastTarget));
+
+            result.MayHaveMore = mayHaveMore;
+            return result;
         }
 
-        // ───────── 内部 ─────────
+        private static string DescribeNew(int fresh, int skipped, bool mayHaveMore)
+        {
+            string message = fresh == 0
+                ? "新着はありませんでした(すでに " + skipped + " 件は取り込み済み)。"
+                : "新着 " + fresh + " 件が見つかりました(" + skipped + " 件は取り込み済み)。";
 
-        private YouTubeFetchResult Fetch(IYouTubeClient client, YouTubeUrlParser.Target target)
+            if (mayHaveMore)
+            {
+                message += "\n上限まで全部が新しかったので、まだ先にあるかもしれません。"
+                           + "追加したあと、もう一度「新着だけ取る」を押してください。";
+            }
+            return message;
+        }
+
+        /// <summary>取り込み元の人が読む名前。取れたものから拾います。</summary>
+        private string DescribeSource()
+        {
+            if (LastTarget.Kind == YouTubeUrlParser.TargetPlaylist)
+            {
+                return "再生リスト " + LastTarget.Id;
+            }
+
+            // チャンネル名は動画に付いてくる。ID だけより読みやすい。
+            for (int i = 0; i < LastVideos.Count; i++)
+            {
+                if (LastVideos[i] == null) continue;
+                if (string.IsNullOrEmpty(LastVideos[i].ChannelTitle)) continue;
+
+                return LastVideos[i].ChannelTitle;
+            }
+
+            return LastTarget.Describe();
+        }
+
+        private static string KindOf(YouTubeUrlParser.Target target)
+        {
+            if (target.Kind == YouTubeUrlParser.TargetPlaylist) return CatalogSubscription.KindPlaylist;
+            if (target.Kind == YouTubeUrlParser.TargetVideo) return CatalogSubscription.KindSingle;
+
+            return CatalogSubscription.KindChannel;
+        }
+
+        private YouTubeFetchResult Fetch(
+            IYouTubeClient client, YouTubeUrlParser.Target target, int maxCount)
         {
             if (target.Kind == YouTubeUrlParser.TargetPlaylist)
-                return client.FetchPlaylist(target.Id, MaxCount);
+                return client.FetchPlaylist(target.Id, maxCount);
 
             if (target.Kind == YouTubeUrlParser.TargetChannelId)
-                return client.FetchChannel(target.Id, false, MaxCount);
+                return client.FetchChannel(target.Id, false, maxCount);
 
             if (target.Kind == YouTubeUrlParser.TargetChannelName)
-                return client.FetchChannel(target.Id, true, MaxCount);
+                return client.FetchChannel(target.Id, true, maxCount);
 
             if (target.Kind == YouTubeUrlParser.TargetVideo)
                 return client.FetchVideo(target.Id);

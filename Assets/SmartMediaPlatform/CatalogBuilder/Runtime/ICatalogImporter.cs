@@ -78,9 +78,36 @@ namespace SmartMediaPlatform.CatalogBuilder
 
         public int Count { get { return Items.Count; } }
 
+        /// <summary>
+        /// 取り込み元の人が読む名前(「○○チャンネル」「お気に入り」など)。Phase6-5。
+        /// <b>空でも構いません。</b>窓は貼られた文字列で代わりにします。
+        /// </summary>
+        public string SourceName = "";
+
+        /// <summary>
+        /// <c>CatalogSubscription.KindChannel</c> など。Phase6-5。
+        /// <b>空でも構いません。</b>
+        /// </summary>
+        public string SourceKind = "";
+
+        /// <summary>
+        /// <b>取り切れなかった見込みがあるか。</b>Phase6-5。
+        /// 新着だけ取ったときに「上限まで全部が新しかった」場合に立てます。
+        /// 窓が「もう一度押してください」と案内します。
+        /// </summary>
+        public bool MayHaveMore;
+
         public static CatalogImportResult Success(IReadOnlyList<CatalogDraftItem> items, string message)
         {
             return new CatalogImportResult(true, message, items);
+        }
+
+        /// <summary>取り込み元の名前と種類を添えて返す。</summary>
+        public CatalogImportResult From(string sourceName, string sourceKind)
+        {
+            SourceName = sourceName ?? "";
+            SourceKind = sourceKind ?? "";
+            return this;
         }
 
         public static CatalogImportResult Failure(string message)

@@ -1,5 +1,6 @@
 #if UNITY_EDITOR
 using System;
+using System.Collections.Generic;
 using SmartMediaPlatform.Catalog;
 using SmartMediaPlatform.Catalog.Assets;
 using UnityEditor;
@@ -8,37 +9,55 @@ using UnityEngine;
 namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 {
     /// <summary>
-    /// <b>Catalog Builder。</b>Phase6-1。<c>Tools > Smart Media Platform > Catalog Builder</c>。
+    /// <b>Catalog Builder。</b>Phase6-1 → Phase6-5。
+    /// <c>Tools > Smart Media Platform > Catalog Builder</c>。
     ///
     /// <b>この窓は判断を持ちません。</b>持っているのは
     /// <list type="bullet">
     /// <item>いま何を編集しているか(<see cref="_asset"/> / <see cref="_draft"/>)</item>
-    /// <item>どこを開いているか(スクロール位置・折りたたみ)</item>
+    /// <item>どこを開いているか(タブ・スクロール位置・折りたたみ)</item>
+    /// <item>何にチェックを付けたか(<see cref="_checkedIds"/>)</item>
     /// </list>
-    /// だけで、<b>足す・消す・混ぜる・絞る・まとめる・関連を作る</b>はすべて
-    /// <see cref="CatalogDraft"/> / <see cref="CatalogItemFilter"/> /
-    /// <see cref="CatalogItemGrouping"/> / <see cref="RelatedIdGenerator"/> /
-    /// <see cref="CatalogDraftIO"/> の仕事です。
+    /// だけで、<b>足す・消す・混ぜる・絞る・並べる・まとめる・関連を作る</b>は
+    /// すべて <c>Runtime</c> 側の純粋 C# の仕事です。
     /// おかげで判断の部分は EditMode で検証できます
     /// (Phase5 の「UI はロジックを持たない」と同じ考え方)。
     ///
     /// <b>取り込み元を足しても、この窓は変わりません。</b>
-    /// 絞り込みもまとめ方も関連も、見ているのは <see cref="CatalogDraftItem"/> だけで、
-    /// YouTube 固有の言葉はどこにも出てきません。
-    /// JSON / CSV の取り込みを足しても<b>直すのは <see cref="ICatalogImporter"/> の実装 1 つだけ</b>です。
+    /// 絞り込みも並べ替えもまとめ方も関連も、見ているのは
+    /// <see cref="CatalogDraftItem"/> だけで、YouTube 固有の言葉は 1 つも出てきません。
+    /// 新着だけ取る仕組みも <see cref="IIncrementalCatalogImporter"/> 越しなので、
+    /// <b>実装していない取り込み元(CSV など)もそのまま並びます</b>。
+    ///
+    /// <b>Phase6-5 で右側をタブにしました。</b>
+    /// 縦に伸び続けて下のボタンが画面外へ出ていたためです。
+    /// 左の一覧は常に見えたまま、右だけが切り替わります。
     ///
     /// <b>MediaPlayer 本体には触りません。</b>書き込み先は
-    /// <see cref="MediaCatalogAsset"/> 1 つだけです。
+    /// <see cref="MediaCatalogAsset"/> と、その横の覚え書き JSON だけです。
     /// </summary>
     public sealed class CatalogBuilderWindow : EditorWindow
     {
         private const string MenuPath = "Tools/Smart Media Platform/Catalog Builder";
 
+        private const int TabItem = 0;
+        private const int TabBulk = 1;
+        private const int TabImport = 2;
+        private const int TabSubscriptions = 3;
+
+        private static readonly string[] TabLabels =
+        {
+            "選んだ 1 件", "まとめて直す", "取り込む", "チャンネル",
+        };
+
         private MediaCatalogAsset _asset;
         private CatalogDraft _draft = new CatalogDraft();
+        private readonly CatalogSubscriptionBook _book = new CatalogSubscriptionBook();
 
         private Vector2 _listScroll;
+        private Vector2 _rightScroll;
         private int _selected = -1;
+        private int _tab = TabItem;
         private bool _dirty;
 
         // 取り込み
@@ -46,25 +65,36 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private string _importerInput = "";
         private int _mergeMode = CatalogDraft.MergeSkip;
         private string _importMessage = "";
-
-        // Phase6-3: 取り込んだものを選んでから入れる
-        private readonly CatalogImportSelection _selection = new CatalogImportSelection();
-        private Vector2 _selectionScroll;
         private bool _lastImportOk;
 
-        // Phase6-4: 絞り込み / まとめ / 絵 / 関連
+        private readonly CatalogImportSelection _selection = new CatalogImportSelection();
+        private Vector2 _selectionScroll;
+
+        // 絞り込み / 並べ替え / まとめ / 絵 / 関連
         private readonly CatalogItemFilter _filter = new CatalogItemFilter();
         private readonly CatalogItemGrouping _draftGrouping = new CatalogItemGrouping();
         private readonly RelatedIdGenerator _related = new RelatedIdGenerator();
 
+        private int _sortOrder = CatalogSortOrder.Manual;
+        private bool _sortDescending;
+
         private bool _showThumbnails = true;
-        private bool _groupDraft = true;
+        private bool _groupDraft;
         private bool _groupSelection = true;
         private bool _autoRelated = true;
         private bool _showRelatedOptions;
         private int[] _visible = new int[0];
 
-        /// <summary>混ぜ方のプルダウン。並びと中身をここ 1 か所で結び付ける。</summary>
+        // まとめて直す
+        private readonly List<string> _checkedIds = new List<string>();
+        private string _bulkGenre = "";
+        private string _bulkArtist = "";
+        private string _bulkTag = "";
+
+        // 焼き忘れの検出。毎フレーム調べると重いので間を空ける。
+        private CatalogUrlTableBridge.SyncReport _syncReport;
+        private double _nextSyncCheck;
+
         private static readonly int[] MergeModes =
         {
             CatalogDraft.MergeSkip, CatalogDraft.MergeUpdate, CatalogDraft.MergeReplace,
@@ -80,11 +110,11 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             "チャンネルごと", "ジャンルごと", "取り込み元ごと", "まとめない",
         };
 
-        [MenuItem(MenuPath, false, -90)]
+        [MenuItem(MenuPath, false, -200)]
         public static void Open()
         {
             var window = GetWindow<CatalogBuilderWindow>("Catalog Builder");
-            window.minSize = new Vector2(820f, 560f);
+            window.minSize = new Vector2(900f, 600f);
             window.Show();
         }
 
@@ -98,17 +128,14 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 return;
             }
 
+            DrawSyncWarning();
             DrawFilterBar();
 
             EditorGUILayout.BeginHorizontal();
             DrawList();
-            DrawInspector();
+            DrawRightPane();
             EditorGUILayout.EndHorizontal();
 
-            DrawImportBar();
-            DrawSelection();
-            DrawRelatedBar();
-            DrawBakeBar();
             DrawFooter();
         }
 
@@ -119,7 +146,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
 
             var picked = (MediaCatalogAsset)EditorGUILayout.ObjectField(
-                _asset, typeof(MediaCatalogAsset), false, GUILayout.Width(240f));
+                _asset, typeof(MediaCatalogAsset), false, GUILayout.Width(220f));
 
             if (picked != _asset)
             {
@@ -128,7 +155,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 ReloadFromAsset();
             }
 
-            if (GUILayout.Button("新規", EditorStyles.toolbarButton, GUILayout.Width(56f)))
+            if (GUILayout.Button("新規", EditorStyles.toolbarButton, GUILayout.Width(48f)))
             {
                 if (ConfirmDiscard())
                 {
@@ -143,12 +170,12 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             using (new EditorGUI.DisabledScope(_asset == null))
             {
-                if (GUILayout.Button("読み直す", EditorStyles.toolbarButton, GUILayout.Width(72f)))
+                if (GUILayout.Button("読み直す", EditorStyles.toolbarButton, GUILayout.Width(64f)))
                 {
                     if (ConfirmDiscard()) ReloadFromAsset();
                 }
 
-                if (GUILayout.Button("保存", EditorStyles.toolbarButton, GUILayout.Width(56f)))
+                if (GUILayout.Button("保存", EditorStyles.toolbarButton, GUILayout.Width(48f)))
                 {
                     SaveToAsset();
                 }
@@ -189,12 +216,53 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             }
         }
 
-        // ───────── 絞り込み(Phase6-4)─────────
+        // ───────── 焼き忘れの警告(Phase6-5)─────────
 
         /// <summary>
-        /// 見出し・チャンネル・ジャンル・タグで絞る。
-        /// <b>絞っても編集先はずれません</b> — 一覧が持っているのは元の位置だからです。
+        /// <b>保存しただけではワールドに反映されません。</b>
+        /// 焼き忘れると「直したはずなのに現地では古いまま」になり、
+        /// しかも何も言われないのが Phase6-3 からの積み残しでした。
         /// </summary>
+        private void DrawSyncWarning()
+        {
+            RefreshSyncReport(false);
+
+            if (_syncReport == null || !_syncReport.Checked || _syncReport.InSync) return;
+
+            EditorGUILayout.BeginHorizontal(EditorStyles.helpBox);
+
+            EditorGUILayout.LabelField("⚠ " + _syncReport.Message, EditorStyles.wordWrappedMiniLabel);
+
+            using (new EditorGUI.DisabledScope(_dirty))
+            {
+                if (GUILayout.Button("いま焼く", GUILayout.Width(80f), GUILayout.Height(32f)))
+                {
+                    Bake();
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            if (_dirty)
+            {
+                EditorGUILayout.LabelField(
+                    "  先に保存してください(未保存のぶんは焼かれません)。",
+                    EditorStyles.miniLabel);
+            }
+        }
+
+        /// <summary>ずれを調べ直す。<paramref name="force"/> でなければ間隔を空ける。</summary>
+        private void RefreshSyncReport(bool force)
+        {
+            if (!force && EditorApplication.timeSinceStartup < _nextSyncCheck) return;
+
+            // シーン全部を探して反射で読み返すので、毎フレームやるには重い。
+            _nextSyncCheck = EditorApplication.timeSinceStartup + 2.0;
+            _syncReport = CatalogUrlTableBridge.CompareWithScene(_asset);
+        }
+
+        // ───────── 絞り込みと並べ替え ─────────
+
         private void DrawFilterBar()
         {
             EditorGUILayout.BeginHorizontal(EditorStyles.toolbar);
@@ -202,24 +270,23 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             GUILayout.Label("絞り込み", EditorStyles.miniBoldLabel, GUILayout.Width(52f));
 
             _filter.Query = EditorGUILayout.TextField(
-                _filter.Query, EditorStyles.toolbarTextField, GUILayout.Width(180f));
+                _filter.Query, EditorStyles.toolbarTextField, GUILayout.Width(150f));
 
             _filter.Channel = DrawPickList(
-                "チャンネル", _filter.Channel, CatalogItemFilter.CollectChannels(_draft.Items), 130f);
+                "チャンネル", _filter.Channel, CatalogItemFilter.CollectChannels(_draft.Items), 120f);
 
             _filter.Genre = DrawPickList(
-                "ジャンル", _filter.Genre, CatalogItemFilter.CollectGenres(_draft.Items), 110f);
+                "ジャンル", _filter.Genre, CatalogItemFilter.CollectGenres(_draft.Items), 100f);
 
             _filter.Tag = DrawPickList(
-                "タグ", _filter.Tag, CatalogItemFilter.CollectTags(_draft.Items), 110f);
+                "タグ", _filter.Tag, CatalogItemFilter.CollectTags(_draft.Items), 100f);
 
             _filter.OnlyIncomplete = GUILayout.Toggle(
-                _filter.OnlyIncomplete, "作りかけだけ", EditorStyles.toolbarButton,
-                GUILayout.Width(88f));
+                _filter.OnlyIncomplete, "作りかけ", EditorStyles.toolbarButton, GUILayout.Width(64f));
 
             using (new EditorGUI.DisabledScope(_filter.IsEmpty))
             {
-                if (GUILayout.Button("解除", EditorStyles.toolbarButton, GUILayout.Width(44f)))
+                if (GUILayout.Button("解除", EditorStyles.toolbarButton, GUILayout.Width(40f)))
                 {
                     _filter.Clear();
                     GUI.FocusControl(null);
@@ -228,19 +295,24 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             GUILayout.FlexibleSpace();
 
+            GUILayout.Label("並び", EditorStyles.miniBoldLabel, GUILayout.Width(28f));
+
+            _sortOrder = EditorGUILayout.Popup(
+                _sortOrder, CatalogSortOrder.Labels, EditorStyles.toolbarPopup, GUILayout.Width(88f));
+
+            _sortDescending = GUILayout.Toggle(
+                _sortDescending, _sortDescending ? "↓ 降順" : "↑ 昇順",
+                EditorStyles.toolbarButton, GUILayout.Width(58f));
+
             _showThumbnails = GUILayout.Toggle(
-                _showThumbnails, "絵を出す", EditorStyles.toolbarButton, GUILayout.Width(66f));
+                _showThumbnails, "絵", EditorStyles.toolbarButton, GUILayout.Width(30f));
 
             _groupDraft = GUILayout.Toggle(
-                _groupDraft, "まとめる", EditorStyles.toolbarButton, GUILayout.Width(66f));
+                _groupDraft, "まとめる", EditorStyles.toolbarButton, GUILayout.Width(60f));
 
             EditorGUILayout.EndHorizontal();
         }
 
-        /// <summary>
-        /// 「(すべて)」＋出てきた値のプルダウン。
-        /// 手で打たせないのは、打ち間違いだと 1 件も出ずに理由が分からないためです。
-        /// </summary>
         private static string DrawPickList(string label, string current, string[] values, float width)
         {
             var names = new string[values.Length + 1];
@@ -250,7 +322,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             for (int i = 0; i < values.Length; i++)
             {
                 names[i + 1] = values[i];
-                if (string.Equals(values[i], current, System.StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(values[i], current, StringComparison.OrdinalIgnoreCase))
                 {
                     selected = i + 1;
                 }
@@ -266,19 +338,13 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
         private void DrawList()
         {
-            EditorGUILayout.BeginVertical(GUILayout.Width(360f));
+            EditorGUILayout.BeginVertical(GUILayout.Width(400f));
 
-            _visible = _filter.Apply(_draft.Items);
+            // 絞ってから並べる。どちらも「元の位置」を返すので重ねられる。
+            _visible = CatalogSortOrder.Apply(
+                _draft.Items, _filter.Apply(_draft.Items), _sortOrder, _sortDescending);
 
-            string heading = _draft.Count + " 件 / 完成 " + _draft.CompleteCount + " 件";
-            if (!_filter.IsEmpty) heading = _visible.Length + " 件を表示中 (" + heading + ")";
-
-            EditorGUILayout.LabelField(heading, EditorStyles.boldLabel);
-
-            if (!_filter.IsEmpty)
-            {
-                EditorGUILayout.LabelField(_filter.Describe(), EditorStyles.miniLabel);
-            }
+            DrawListHeading();
 
             _listScroll = EditorGUILayout.BeginScrollView(_listScroll);
 
@@ -288,10 +354,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                     _draft.Count == 0 ? "まだ 1 件もありません。" : "絞り込みに合うものがありません。",
                     EditorStyles.miniLabel);
             }
-            else if (_groupDraft)
-            {
-                DrawGroupedList();
-            }
+            else if (_groupDraft) DrawGroupedList();
             else
             {
                 for (int i = 0; i < _visible.Length; i++) DrawListRow(_visible[i]);
@@ -303,7 +366,40 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             EditorGUILayout.EndVertical();
         }
 
-        /// <summary>まとまりごとに並べる。絞り込みで 0 件になったまとまりは出しません。</summary>
+        private void DrawListHeading()
+        {
+            string heading = _draft.Count + " 件 / 完成 " + _draft.CompleteCount + " 件";
+            if (!_filter.IsEmpty) heading = _visible.Length + " 件を表示中 (" + heading + ")";
+
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField(heading, EditorStyles.boldLabel);
+
+            if (_checkedIds.Count > 0)
+            {
+                EditorGUILayout.LabelField(
+                    "☑ " + _checkedIds.Count + " 件", EditorStyles.miniBoldLabel,
+                    GUILayout.Width(64f));
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("表示中を全部チェック", EditorStyles.miniButtonLeft))
+            {
+                for (int i = 0; i < _visible.Length; i++) SetChecked(_visible[i], true);
+            }
+
+            using (new EditorGUI.DisabledScope(_checkedIds.Count == 0))
+            {
+                if (GUILayout.Button("チェックを外す", EditorStyles.miniButtonRight))
+                {
+                    _checkedIds.Clear();
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
         private void DrawGroupedList()
         {
             _draftGrouping.Build(_draft.Items);
@@ -315,22 +411,32 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 int shown = 0;
                 for (int i = 0; i < members.Length; i++)
                 {
-                    if (System.Array.IndexOf(_visible, members[i]) >= 0) shown++;
+                    if (Array.IndexOf(_visible, members[i]) >= 0) shown++;
                 }
                 if (shown == 0) continue;
 
+                EditorGUILayout.BeginHorizontal();
+
                 bool expanded = EditorGUILayout.Foldout(
                     _draftGrouping.IsExpanded(group),
-                    _draftGrouping.GetName(group) + "  (" + shown + " 件)",
-                    true);
+                    _draftGrouping.GetName(group) + "  (" + shown + " 件)", true);
 
                 _draftGrouping.SetExpanded(group, expanded);
+
+                // まとまりごとチェックできると、「このチャンネル全部にジャンル」が 2 手で終わる。
+                if (GUILayout.Button("全部☑", EditorStyles.miniButton, GUILayout.Width(48f)))
+                {
+                    for (int i = 0; i < members.Length; i++) SetChecked(members[i], true);
+                }
+
+                EditorGUILayout.EndHorizontal();
+
                 if (!expanded) continue;
 
                 EditorGUI.indentLevel++;
                 for (int i = 0; i < members.Length; i++)
                 {
-                    if (System.Array.IndexOf(_visible, members[i]) < 0) continue;
+                    if (Array.IndexOf(_visible, members[i]) < 0) continue;
                     DrawListRow(members[i]);
                 }
                 EditorGUI.indentLevel--;
@@ -344,6 +450,12 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             EditorGUILayout.BeginHorizontal();
 
+            bool wasChecked = IsChecked(item);
+            if (EditorGUILayout.Toggle(wasChecked, GUILayout.Width(18f)) != wasChecked)
+            {
+                SetChecked(index, !wasChecked);
+            }
+
             DrawThumbnail(item, 46f);
 
             bool wasSelected = index == _selected;
@@ -352,16 +464,13 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             if (GUILayout.Toggle(wasSelected, label, EditorStyles.miniButton) != wasSelected)
             {
                 _selected = index;
+                _tab = TabItem;
                 GUI.FocusControl(null);
             }
 
             EditorGUILayout.EndHorizontal();
         }
 
-        /// <summary>
-        /// 絵を 1 枚。まだ取れていなければ<b>同じ大きさの枠だけ</b>出します
-        /// (取れた瞬間に行の高さが変わって、押す場所がずれるのを避けるため)。
-        /// </summary>
         private void DrawThumbnail(CatalogDraftItem item, float width)
         {
             if (!_showThumbnails) return;
@@ -382,6 +491,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             if (GUILayout.Button("＋ 追加"))
             {
                 _selected = _draft.Add();
+                _tab = TabItem;
                 MarkDirty();
             }
 
@@ -402,9 +512,12 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                     }
                 }
 
-                // 並べ替えは絞り込み中でも「元の並び」に対して効く。
-                // 見えている隣ではなく本当の隣と入れ替わるので、絞り込み中は止める。
-                using (new EditorGUI.DisabledScope(!_filter.IsEmpty))
+                // 並べ替えは「元の並び」に対して効く。見えている隣と本当の隣が
+                // 違うときに動かすと、思っていない場所へ飛ぶ。
+                bool canMove = _filter.IsEmpty && _sortOrder == CatalogSortOrder.Manual
+                               && !_sortDescending;
+
+                using (new EditorGUI.DisabledScope(!canMove))
                 {
                     if (GUILayout.Button("▲", GUILayout.Width(28f)))
                     {
@@ -419,19 +532,80 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             }
 
             EditorGUILayout.EndHorizontal();
+
+            if (_sortOrder != CatalogSortOrder.Manual)
+            {
+                EditorGUILayout.LabelField(
+                    "並べ替えて表示中です。中身の順は変わっていません(手動順に戻せます)。",
+                    EditorStyles.miniLabel);
+            }
         }
 
-        // ───────── 右:1 件の編集 ─────────
+        // ───────── チェックしたもの ─────────
 
-        private void DrawInspector()
+        /// <summary>
+        /// チェックは<b>位置ではなく ID</b>で覚えます。
+        /// 並べ替えても絞り込んでも、選んだものが入れ替わらないようにするためです。
+        /// </summary>
+        private bool IsChecked(CatalogDraftItem item)
+        {
+            return item != null && !string.IsNullOrWhiteSpace(item.Id)
+                   && _checkedIds.Contains(item.Id.Trim());
+        }
+
+        private void SetChecked(int index, bool value)
+        {
+            CatalogDraftItem item = _draft.GetAt(index);
+            if (item == null || string.IsNullOrWhiteSpace(item.Id)) return;
+
+            string id = item.Id.Trim();
+
+            if (value)
+            {
+                if (!_checkedIds.Contains(id)) _checkedIds.Add(id);
+            }
+            else _checkedIds.Remove(id);
+        }
+
+        /// <summary>チェックしたものの「元の位置」。まとめて直すのに渡します。</summary>
+        private int[] CheckedPositions()
+        {
+            var result = new List<int>();
+
+            for (int i = 0; i < _draft.Count; i++)
+            {
+                if (IsChecked(_draft.GetAt(i))) result.Add(i);
+            }
+            return result.ToArray();
+        }
+
+        // ───────── 右:タブ ─────────
+
+        private void DrawRightPane()
         {
             EditorGUILayout.BeginVertical(EditorStyles.helpBox);
 
+            _tab = GUILayout.Toolbar(_tab, TabLabels);
+
+            _rightScroll = EditorGUILayout.BeginScrollView(_rightScroll);
+
+            if (_tab == TabBulk) DrawBulkTab();
+            else if (_tab == TabImport) DrawImportTab();
+            else if (_tab == TabSubscriptions) DrawSubscriptionTab();
+            else DrawItemTab();
+
+            EditorGUILayout.EndScrollView();
+            EditorGUILayout.EndVertical();
+        }
+
+        // ───────── タブ:1 件の編集 ─────────
+
+        private void DrawItemTab()
+        {
             CatalogDraftItem item = _draft.GetAt(_selected);
             if (item == null)
             {
                 EditorGUILayout.LabelField("左の一覧から選んでください。");
-                EditorGUILayout.EndVertical();
                 return;
             }
 
@@ -444,11 +618,20 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             item.Type = (MediaType)EditorGUILayout.EnumPopup("種別", item.Type);
             item.Url = EditorGUILayout.TextField("URL", item.Url);
             item.DurationSeconds = EditorGUILayout.IntField("長さ(秒)", item.DurationSeconds);
+            item.PublishedAt = EditorGUILayout.TextField("公開日", item.PublishedAt);
 
             EditorGUILayout.Space();
             item.Tags = DrawStringList("タグ", item.Tags);
 
-            DrawRelatedEditor(item);
+            item.RelatedIds = DrawStringList("関連 ID(おすすめに出る)", item.RelatedIds);
+            if (GUILayout.Button("この 1 件の関連を作り直す", EditorStyles.miniButton))
+            {
+                var single = new RelatedIdGenerator();
+                CopyRelatedSettings(single);
+
+                item.RelatedIds = single.Suggest(_draft.Items, _selected);
+                MarkDirty();
+            }
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("出どころ", item.Source);
@@ -469,26 +652,6 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 item.Id = _draft.MakeUniqueId(item.Id);
                 MarkDirty();
             }
-
-            EditorGUILayout.EndVertical();
-        }
-
-        /// <summary>
-        /// 関連 ID。<b>手で足す / 消すはそのまま残してあります</b>。
-        /// 自動で作るのは「この 1 件だけ作り直す」ボタンからで、
-        /// <b>押さないかぎり書き換わりません</b>。
-        /// </summary>
-        private void DrawRelatedEditor(CatalogDraftItem item)
-        {
-            item.RelatedIds = DrawStringList("関連 ID(おすすめに出る)", item.RelatedIds);
-
-            if (!GUILayout.Button("この 1 件の関連を作り直す", EditorStyles.miniButton)) return;
-
-            var single = new RelatedIdGenerator();
-            CopyRelatedSettings(single);
-
-            item.RelatedIds = single.Suggest(_draft.Items, _selected);
-            MarkDirty();
         }
 
         private void DrawThumbnailPreview(CatalogDraftItem item)
@@ -542,15 +705,163 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             return shrunk;
         }
 
-        // ───────── 取り込み ─────────
+        // ───────── タブ:まとめて直す(Phase6-5)─────────
 
-        private void DrawImportBar()
+        private void DrawBulkTab()
+        {
+            int[] positions = CheckedPositions();
+
+            EditorGUILayout.LabelField(
+                "チェックした " + positions.Length + " 件を直します", EditorStyles.boldLabel);
+
+            if (positions.Length == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "左の一覧でチェックを付けてください。\n"
+                    + "「絞り込み」で目当てのものだけ出してから"
+                    + "「表示中を全部チェック」が速いです。",
+                    MessageType.Info);
+                return;
+            }
+
+            using (new EditorGUI.DisabledScope(false))
+            {
+                DrawBulkGenre(positions);
+                DrawBulkArtist(positions);
+                DrawBulkTags(positions);
+                DrawBulkRelated(positions);
+            }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("チェックしたもの", EditorStyles.miniBoldLabel);
+
+            int preview = positions.Length < 8 ? positions.Length : 8;
+            for (int i = 0; i < preview; i++)
+            {
+                EditorGUILayout.LabelField("  " + _draft.GetAt(positions[i]), EditorStyles.miniLabel);
+            }
+            if (positions.Length > preview)
+            {
+                EditorGUILayout.LabelField(
+                    "  ほか " + (positions.Length - preview) + " 件", EditorStyles.miniLabel);
+            }
+        }
+
+        private void DrawBulkGenre(int[] positions)
         {
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField("取り込み", EditorStyles.boldLabel);
+            EditorGUILayout.BeginHorizontal();
+
+            _bulkGenre = EditorGUILayout.TextField("ジャンル", _bulkGenre);
+
+            if (GUILayout.Button("入れる", GUILayout.Width(64f)))
+            {
+                Report(CatalogBulkEdit.SetGenre(_draft.Items, positions, _bulkGenre), "ジャンル");
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawBulkArtist(int[] positions)
+        {
+            EditorGUILayout.BeginHorizontal();
+
+            _bulkArtist = EditorGUILayout.TextField("チャンネル", _bulkArtist);
+
+            if (GUILayout.Button("入れる", GUILayout.Width(64f)))
+            {
+                Report(CatalogBulkEdit.SetArtist(_draft.Items, positions, _bulkArtist), "チャンネル");
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawBulkTags(int[] positions)
+        {
+            EditorGUILayout.BeginHorizontal();
+
+            _bulkTag = EditorGUILayout.TextField("タグ", _bulkTag);
+
+            using (new EditorGUI.DisabledScope(string.IsNullOrWhiteSpace(_bulkTag)))
+            {
+                if (GUILayout.Button("足す", GUILayout.Width(48f)))
+                {
+                    Report(CatalogBulkEdit.AddTag(_draft.Items, positions, _bulkTag), "タグを足す");
+                }
+
+                if (GUILayout.Button("外す", GUILayout.Width(48f)))
+                {
+                    Report(CatalogBulkEdit.RemoveTag(_draft.Items, positions, _bulkTag), "タグを外す");
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        private void DrawBulkRelated(int[] positions)
+        {
+            EditorGUILayout.Space();
+
+            if (GUILayout.Button("チェックしたものの関連を作り直す", GUILayout.Height(24f)))
+            {
+                var generator = new RelatedIdGenerator();
+                CopyRelatedSettings(generator);
+
+                Report(CatalogBulkEdit.RegenerateRelated(_draft.Items, positions, generator),
+                       "関連");
+            }
+
+            _showRelatedOptions = EditorGUILayout.Foldout(_showRelatedOptions, "関連の細かい設定", true);
+            if (_showRelatedOptions) DrawRelatedOptions();
+
             EditorGUILayout.LabelField(
-                "① 取得 → ② 選んで追加 → 保存 → ③ VRCUrl へ焼く",
-                EditorStyles.miniLabel);
+                "近さは一覧の全部から探し、書き込むのはチェックしたものだけです。",
+                EditorStyles.wordWrappedMiniLabel);
+        }
+
+        private void DrawRelatedOptions()
+        {
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            _related.MaxPerItem = EditorGUILayout.IntSlider("1 件に入れる数", _related.MaxPerItem, 1, 16);
+            _related.UseChannel = EditorGUILayout.Toggle("同じチャンネルを見る", _related.UseChannel);
+            _related.UseGenre = EditorGUILayout.Toggle("同じジャンルを見る", _related.UseGenre);
+            _related.UseTags = EditorGUILayout.Toggle("同じタグを見る", _related.UseTags);
+
+            _related.ChannelScore = EditorGUILayout.IntSlider("重み:チャンネル", _related.ChannelScore, 0, 10);
+            _related.GenreScore = EditorGUILayout.IntSlider("重み:ジャンル", _related.GenreScore, 0, 10);
+            _related.TagScore = EditorGUILayout.IntSlider("重み:タグ 1 つ", _related.TagScore, 0, 10);
+
+            EditorGUILayout.EndVertical();
+        }
+
+        private void Report(int changed, string what)
+        {
+            _lastImportOk = changed > 0;
+            _importMessage = changed > 0
+                ? what + " を " + changed + " 件に反映しました。"
+                : what + " は 1 件も変わりませんでした(もともと同じでした)。";
+
+            if (changed > 0) MarkDirty();
+        }
+
+        private void CopyRelatedSettings(RelatedIdGenerator target)
+        {
+            target.MaxPerItem = _related.MaxPerItem;
+            target.UseChannel = _related.UseChannel;
+            target.UseGenre = _related.UseGenre;
+            target.UseTags = _related.UseTags;
+            target.ChannelScore = _related.ChannelScore;
+            target.GenreScore = _related.GenreScore;
+            target.TagScore = _related.TagScore;
+        }
+
+        // ───────── タブ:取り込む ─────────
+
+        private void DrawImportTab()
+        {
+            EditorGUILayout.LabelField(
+                "① 取得 → ② 選んで追加 → 保存 → ③ VRCUrl へ焼く", EditorStyles.miniLabel);
 
             ICatalogImporter[] importers = CatalogImporterRegistry.All();
 
@@ -567,36 +878,42 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             var names = new string[importers.Length];
             for (int i = 0; i < importers.Length; i++) names[i] = importers[i].DisplayName;
 
-            _importerIndex = EditorGUILayout.Popup("取り込み元", _importerIndex, names);
-            _importerIndex = Mathf.Clamp(_importerIndex, 0, importers.Length - 1);
+            _importerIndex = Mathf.Clamp(
+                EditorGUILayout.Popup("取り込み元", _importerIndex, names), 0, importers.Length - 1);
 
             ICatalogImporter importer = importers[_importerIndex];
 
             EditorGUILayout.LabelField(importer.InputHint, EditorStyles.wordWrappedMiniLabel);
             _importerInput = EditorGUILayout.TextField(_importerInput);
 
+            bool canImport = importer.IsAvailable && importer.CanImport(_importerInput);
+
             EditorGUILayout.BeginHorizontal();
 
-            using (new EditorGUI.DisabledScope(
-                       !importer.IsAvailable || !importer.CanImport(_importerInput)))
+            using (new EditorGUI.DisabledScope(!canImport))
             {
-                if (GUILayout.Button("① 取得する", GUILayout.Height(24f)))
+                // 新着だけ取れる取り込み元なら、そちらを先に(速くて API も食わない)。
+                if (importer is IIncrementalCatalogImporter
+                    && GUILayout.Button("① 新着だけ取る", GUILayout.Height(24f)))
                 {
-                    RunImport(importer);
+                    RunImport(importer, true);
                 }
-            }
 
-            // 取り込み直す前に前の結果を消せるようにする。
-            // 残ったまま次を取ると、どちらの結果を見ているのか分からなくなる。
-            using (new EditorGUI.DisabledScope(_selection.IsEmpty))
-            {
-                if (GUILayout.Button("取得結果をクリア", GUILayout.Height(24f), GUILayout.Width(140f)))
+                if (GUILayout.Button("① 全部取得する", GUILayout.Height(24f)))
                 {
-                    ClearImportResult();
+                    RunImport(importer, false);
                 }
             }
 
             EditorGUILayout.EndHorizontal();
+
+            using (new EditorGUI.DisabledScope(_selection.IsEmpty))
+            {
+                if (GUILayout.Button("取得結果をクリア", EditorStyles.miniButton))
+                {
+                    ClearImportResult();
+                }
+            }
 
             if (!importer.IsAvailable)
             {
@@ -605,25 +922,36 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             if (_importMessage.Length > 0)
             {
-                EditorGUILayout.HelpBox(_importMessage, _lastImportOk
-                                                            ? MessageType.Info
-                                                            : MessageType.None);
+                EditorGUILayout.HelpBox(
+                    _importMessage, _lastImportOk ? MessageType.Info : MessageType.None);
             }
+
+            DrawSelection();
         }
 
         /// <summary>
         /// 取得する。<b>この時点では Catalog にも編集中の一覧にも入れません。</b>
         /// 下の一覧で選んでから「② 追加する」で入ります。
         /// </summary>
-        private void RunImport(ICatalogImporter importer)
+        private void RunImport(ICatalogImporter importer, bool onlyNew)
         {
             _selection.Clear();
 
+            // 見張っていなくても「新着だけ」は使えます。
+            // 前回の目印が無くても、いま持っているカタログの ID が目印になるためです。
+            bool incremental = onlyNew && importer is IIncrementalCatalogImporter;
+            CatalogSubscription subscription = _book.Find(importer.DisplayName, _importerInput);
+
             CatalogImportResult result;
+
             EditorUtility.DisplayProgressBar("Catalog Builder", "取得しています…", 0.5f);
             try
             {
-                result = importer.Import(_importerInput);
+                result = incremental
+                    ? ((IIncrementalCatalogImporter)importer).ImportNew(
+                        _importerInput,
+                        CatalogImportBoundary.From(subscription, _draft.Items))
+                    : importer.Import(_importerInput);
             }
             finally
             {
@@ -646,20 +974,34 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             _selection.SetItems(result.Items);
 
-            // すでに入っているものへ印を付ける。
-            // 同じチャンネルを 2 回取り込むのはよくあることで、
-            // どれが新しいのかが分からないと選びようがない。
             int existing = _selection.MarkExisting(_draft);
 
             _lastImportOk = true;
             _importMessage = result.Message;
             if (existing > 0)
             {
-                _importMessage += "(うち " + existing + " 件はすでにあります。"
-                                  + "「すでにあるものは飛ばす」なら二重になりません)";
+                _importMessage += "(うち " + existing + " 件はすでにあります)";
             }
 
+            // 見張り先として覚えておく。次からは「新着だけ取る」が使える。
+            RememberSubscription(importer, result);
+
             Repaint();
+        }
+
+        private void RememberSubscription(ICatalogImporter importer, CatalogImportResult result)
+        {
+            if (string.IsNullOrWhiteSpace(_importerInput)) return;
+
+            // 単発の動画 1 本は見張っても意味がない。
+            if (result.SourceKind == CatalogSubscription.KindSingle) return;
+
+            string name = string.IsNullOrWhiteSpace(result.SourceName)
+                ? _importerInput.Trim()
+                : result.SourceName;
+
+            _book.Register(importer.DisplayName, _importerInput, name, result.SourceKind);
+            MarkDirty();
         }
 
         private void ClearImportResult()
@@ -668,14 +1010,11 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             _importMessage = "";
             _lastImportOk = false;
 
-            // 絵は取り込み結果と一緒に捨てる。編集中の一覧のぶんは次に描くとき取り直す。
-            CatalogThumbnailCache.Clear();
-
             GUI.FocusControl(null);
             Repaint();
         }
 
-        // ───────── 取り込んだものを選ぶ(Phase6-3 / まとめは Phase6-4)─────────
+        // ───────── 取り込んだものを選ぶ ─────────
 
         private void DrawSelection()
         {
@@ -687,43 +1026,46 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 EditorStyles.boldLabel);
 
             EditorGUILayout.BeginHorizontal();
-            if (GUILayout.Button("全選択")) _selection.SelectAll();
-            if (GUILayout.Button("全解除")) _selection.SelectNone();
-            if (GUILayout.Button("反転")) _selection.InvertSelection();
+            if (GUILayout.Button("全選択", EditorStyles.miniButtonLeft)) _selection.SelectAll();
+            if (GUILayout.Button("全解除", EditorStyles.miniButtonMid)) _selection.SelectNone();
+            if (GUILayout.Button("反転", EditorStyles.miniButtonMid)) _selection.InvertSelection();
 
             using (new EditorGUI.DisabledScope(_selection.ExistingCount == 0))
             {
-                if (GUILayout.Button("まだ無いものだけ")) _selection.SelectOnlyNew();
+                if (GUILayout.Button("まだ無いものだけ", EditorStyles.miniButtonRight))
+                {
+                    _selection.SelectOnlyNew();
+                }
             }
-
-            _groupSelection = GUILayout.Toggle(
-                _groupSelection, "まとめる", EditorStyles.miniButton, GUILayout.Width(72f));
-
             EditorGUILayout.EndHorizontal();
 
-            if (_groupSelection && _selection.Grouping.IsMeaningful)
+            if (_selection.Grouping.IsMeaningful)
             {
                 EditorGUILayout.BeginHorizontal();
 
-                int mode = EditorGUILayout.Popup(
-                    "まとめ方", _selection.Grouping.Mode, GroupLabels);
+                _groupSelection = GUILayout.Toggle(
+                    _groupSelection, "まとめる", EditorStyles.miniButton, GUILayout.Width(60f));
 
-                if (mode != _selection.Grouping.Mode) _selection.Regroup(mode);
+                if (_groupSelection)
+                {
+                    int mode = EditorGUILayout.Popup(_selection.Grouping.Mode, GroupLabels);
+                    if (mode != _selection.Grouping.Mode) _selection.Regroup(mode);
 
-                if (GUILayout.Button("全部開く", GUILayout.Width(80f)))
-                {
-                    _selection.Grouping.ExpandAll();
-                }
-                if (GUILayout.Button("全部たたむ", GUILayout.Width(88f)))
-                {
-                    _selection.Grouping.CollapseAll();
+                    if (GUILayout.Button("開く", EditorStyles.miniButtonLeft, GUILayout.Width(40f)))
+                    {
+                        _selection.Grouping.ExpandAll();
+                    }
+                    if (GUILayout.Button("たたむ", EditorStyles.miniButtonRight, GUILayout.Width(48f)))
+                    {
+                        _selection.Grouping.CollapseAll();
+                    }
                 }
 
                 EditorGUILayout.EndHorizontal();
             }
 
             _selectionScroll = EditorGUILayout.BeginScrollView(
-                _selectionScroll, GUILayout.Height(220f));
+                _selectionScroll, GUILayout.Height(200f));
 
             if (_groupSelection && _selection.Grouping.IsMeaningful) DrawSelectionGroups();
             else
@@ -744,8 +1086,6 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             {
                 EditorGUILayout.BeginHorizontal();
 
-                // まとまりごと入り / 切りできるようにする。
-                // 3 チャンネルぶん取り込んで 1 つだけ要る、が一番よくある。
                 bool all = _selection.IsGroupFullySelected(group);
                 if (EditorGUILayout.Toggle(all, GUILayout.Width(18f)) != all)
                 {
@@ -790,9 +1130,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             if (!item.IsComplete) label = "⚠ " + label;
 
             EditorGUILayout.LabelField(label);
-
-            EditorGUILayout.LabelField(item.Artist, GUILayout.Width(130f));
-            EditorGUILayout.LabelField(FormatDuration(item.DurationSeconds), GUILayout.Width(56f));
+            EditorGUILayout.LabelField(FormatDuration(item.DurationSeconds), GUILayout.Width(52f));
 
             EditorGUILayout.EndHorizontal();
         }
@@ -843,9 +1181,16 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             if (_autoRelated)
             {
-                int linked = GenerateRelated();
+                var generator = new RelatedIdGenerator();
+                CopyRelatedSettings(generator);
+
+                int linked = generator.Generate(_draft.Items);
                 if (linked > 0) _importMessage += " 関連を " + linked + " 件ぶん作りました。";
             }
+
+            // 見張り先に「どこまで取ったか」を書き残す。
+            // これが無いと、次も全部取り直すことになる。
+            MarkSubscriptionFetched(chosen, changed);
 
             _importMessage += " 保存するとカタログに入ります。";
 
@@ -856,154 +1201,135 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             MarkDirty();
         }
 
-        // ───────── 関連(Phase6-4)─────────
-
-        private void DrawRelatedBar()
+        private void MarkSubscriptionFetched(CatalogDraftItem[] added, int changed)
         {
+            ICatalogImporter[] importers = CatalogImporterRegistry.All();
+            if (importers.Length == 0) return;
+
+            ICatalogImporter importer = importers[Mathf.Clamp(_importerIndex, 0, importers.Length - 1)];
+            CatalogSubscription subscription = _book.Find(importer.DisplayName, _importerInput);
+            if (subscription == null) return;
+
+            // 取り込み元は新しい順に返すので、先頭がいちばん新しい。
+            string newest = added != null && added.Length > 0 ? added[0].Id : "";
+
+            subscription.MarkFetched(newest, changed, DateTime.UtcNow.ToString("o"));
+        }
+
+        // ───────── タブ:見張っているチャンネル(Phase6-5)─────────
+
+        private void DrawSubscriptionTab()
+        {
+            EditorGUILayout.LabelField("見張っている取り込み元", EditorStyles.boldLabel);
+
+            if (_book.Count == 0)
+            {
+                EditorGUILayout.HelpBox(
+                    "まだありません。\n"
+                    + "「取り込む」タブでチャンネルや再生リストを 1 度取り込むと、"
+                    + "自動でここに並びます。\n"
+                    + "次からは「新着だけ取る」で、増えたぶんだけを取れます。",
+                    MessageType.Info);
+                return;
+            }
+
+            EditorGUILayout.LabelField(
+                "覚えているのは Catalog.asset の横の JSON です(ワールドには入りません)。",
+                EditorStyles.wordWrappedMiniLabel);
+
             EditorGUILayout.Space();
 
-            EditorGUILayout.BeginHorizontal();
-            EditorGUILayout.LabelField("関連(ワールドの「おすすめ」)", EditorStyles.boldLabel);
-
-            _showRelatedOptions = GUILayout.Toggle(
-                _showRelatedOptions, "細かい設定", EditorStyles.miniButton, GUILayout.Width(80f));
-
-            EditorGUILayout.EndHorizontal();
-
-            if (_showRelatedOptions) DrawRelatedOptions();
-
-            EditorGUILayout.BeginHorizontal();
-
-            using (new EditorGUI.DisabledScope(_draft.Count == 0))
+            int removeAt = -1;
+            for (int i = 0; i < _book.Count; i++)
             {
-                if (GUILayout.Button("空いているものだけ作る"))
-                {
-                    _related.Overwrite = false;
-                    RunRelated();
-                }
-
-                if (GUILayout.Button("全部作り直す"))
-                {
-                    if (EditorUtility.DisplayDialog(
-                            "Catalog Builder",
-                            "手で書いた関連も消えて、全部作り直します。よいですか?",
-                            "作り直す", "やめる"))
-                    {
-                        _related.Overwrite = true;
-                        RunRelated();
-                        _related.Overwrite = false;
-                    }
-                }
+                if (DrawSubscriptionRow(i)) removeAt = i;
             }
+
+            if (removeAt >= 0)
+            {
+                _book.RemoveAt(removeAt);
+                MarkDirty();
+            }
+        }
+
+        /// <summary>1 行ぶん。消してほしければ true。</summary>
+        private bool DrawSubscriptionRow(int index)
+        {
+            CatalogSubscription subscription = _book.GetAt(index);
+            if (subscription == null) return false;
+
+            bool remove = false;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginHorizontal();
+
+            bool enabled = EditorGUILayout.Toggle(subscription.Enabled, GUILayout.Width(18f));
+            if (enabled != subscription.Enabled)
+            {
+                subscription.Enabled = enabled;
+                MarkDirty();
+            }
+
+            EditorGUILayout.LabelField(subscription.DisplayName, EditorStyles.boldLabel);
+
+            EditorGUILayout.LabelField(
+                subscription.Source + " / " + subscription.KindLabel,
+                EditorStyles.miniLabel, GUILayout.Width(140f));
+
+            if (GUILayout.Button("×", EditorStyles.miniButton, GUILayout.Width(24f))) remove = true;
 
             EditorGUILayout.EndHorizontal();
 
             EditorGUILayout.LabelField(
-                "同じチャンネル / 同じジャンル / 同じタグ が多いものほど先に並びます。"
-                + "手で足したものは「空いているものだけ」では触りません。",
-                EditorStyles.wordWrappedMiniLabel);
-        }
+                "最後に取得: " + subscription.FormatLastFetched()
+                + "  /  これまで " + subscription.ImportedCount + " 件"
+                + (subscription.LastNewCount > 0
+                       ? "  /  前回の新着 " + subscription.LastNewCount + " 件"
+                       : ""),
+                EditorStyles.miniLabel);
 
-        private void DrawRelatedOptions()
-        {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.SelectableLabel(subscription.Input, EditorStyles.miniLabel,
+                                            GUILayout.Height(16f));
 
-            _related.MaxPerItem = EditorGUILayout.IntSlider("1 件に入れる数", _related.MaxPerItem, 1, 16);
+            EditorGUILayout.BeginHorizontal();
 
-            _related.UseChannel = EditorGUILayout.Toggle("同じチャンネルを見る", _related.UseChannel);
-            _related.UseGenre = EditorGUILayout.Toggle("同じジャンルを見る", _related.UseGenre);
-            _related.UseTags = EditorGUILayout.Toggle("同じタグを見る", _related.UseTags);
-
-            EditorGUILayout.LabelField("重み", EditorStyles.miniBoldLabel);
-            _related.ChannelScore = EditorGUILayout.IntSlider("チャンネル", _related.ChannelScore, 0, 10);
-            _related.GenreScore = EditorGUILayout.IntSlider("ジャンル", _related.GenreScore, 0, 10);
-            _related.TagScore = EditorGUILayout.IntSlider("タグ 1 つ", _related.TagScore, 0, 10);
-
-            EditorGUILayout.EndVertical();
-        }
-
-        private void RunRelated()
-        {
-            int changed = GenerateRelated();
-
-            _importMessage = changed > 0
-                ? changed + " 件の関連を作りました。保存するとカタログに入ります。"
-                : "書き換えるものがありませんでした。";
-
-            _lastImportOk = changed > 0;
-            if (changed > 0) MarkDirty();
-        }
-
-        private int GenerateRelated()
-        {
-            var generator = new RelatedIdGenerator();
-            CopyRelatedSettings(generator);
-            generator.Overwrite = _related.Overwrite;
-
-            return generator.Generate(_draft.Items);
-        }
-
-        /// <summary>窓で決めた重みを、その場で使う 1 個へ写す。</summary>
-        private void CopyRelatedSettings(RelatedIdGenerator target)
-        {
-            target.MaxPerItem = _related.MaxPerItem;
-            target.UseChannel = _related.UseChannel;
-            target.UseGenre = _related.UseGenre;
-            target.UseTags = _related.UseTags;
-            target.ChannelScore = _related.ChannelScore;
-            target.GenreScore = _related.GenreScore;
-            target.TagScore = _related.TagScore;
-        }
-
-        // ───────── VRCUrl へ焼く(Phase6-3)─────────
-
-        private void DrawBakeBar()
-        {
-            EditorGUILayout.Space();
-            EditorGUILayout.LabelField("ワールドへ反映", EditorStyles.boldLabel);
-
-            if (!CatalogUrlTableBridge.IsAvailable)
+            if (GUILayout.Button("新着だけ取る", EditorStyles.miniButtonLeft))
             {
-                EditorGUILayout.HelpBox(CatalogUrlTableBridge.UnavailableReason, MessageType.None);
+                OpenImportFor(subscription, true);
+            }
+
+            if (GUILayout.Button("全部取り直す", EditorStyles.miniButtonRight))
+            {
+                OpenImportFor(subscription, false);
+            }
+
+            EditorGUILayout.EndHorizontal();
+            EditorGUILayout.EndVertical();
+
+            return remove;
+        }
+
+        /// <summary>その取り込み元を「取り込む」タブへ載せて、そのまま取りに行く。</summary>
+        private void OpenImportFor(CatalogSubscription subscription, bool onlyNew)
+        {
+            ICatalogImporter[] importers = CatalogImporterRegistry.All();
+
+            for (int i = 0; i < importers.Length; i++)
+            {
+                if (importers[i].DisplayName != subscription.Source) continue;
+
+                _importerIndex = i;
+                _importerInput = subscription.Input;
+                _tab = TabImport;
+
+                RunImport(importers[i], onlyNew);
                 return;
             }
 
-            int targets = CatalogUrlTableBridge.CountInScene();
-
-            using (new EditorGUI.DisabledScope(_dirty || targets == 0))
-            {
-                if (GUILayout.Button(
-                        "③ VRCUrl へ焼く(シーンの Catalog " + targets + " 個)",
-                        GUILayout.Height(26f)))
-                {
-                    Bake();
-                }
-            }
-
-            if (_dirty)
-            {
-                EditorGUILayout.HelpBox("先に保存してください(未保存のぶんは焼かれません)。",
-                                        MessageType.Warning);
-            }
-            else if (targets == 0)
-            {
-                EditorGUILayout.HelpBox(
-                    "シーンに SmartMediaPlayer がありません。Hierarchy へ置いてください。",
-                    MessageType.Info);
-            }
-        }
-
-        private void Bake()
-        {
-            CatalogUrlTableBridge.BakeReport report = CatalogUrlTableBridge.BakeIntoScene(_asset);
-
-            _importMessage = report.Message;
-            _lastImportOk = report.Ok;
-
-            if (report.Ok) Debug.Log("[CatalogBuilder] " + report.Message);
-            else Debug.LogWarning("[CatalogBuilder] " + report.Message);
-
-            EditorUtility.DisplayDialog("Catalog Builder", report.Message, "OK");
+            _lastImportOk = false;
+            _importMessage = "「" + subscription.Source + "」が見つかりません"
+                             + "(取り込み元のクラスが消えていませんか)。";
+            _tab = TabImport;
         }
 
         // ───────── 下 ─────────
@@ -1019,11 +1345,44 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                     MessageType.Error);
             }
 
-            EditorGUILayout.HelpBox(
-                "保存すると、完成している " + _draft.CompleteCount + " 件だけが書かれます"
-                + "(ID・見出し・URL がそろっているもの)。\n"
-                + "そのあと「③ VRCUrl へ焼く」を押すと、シーンの SmartMediaPlayer に反映されます。",
-                MessageType.None);
+            EditorGUILayout.BeginHorizontal();
+
+            int targets = CatalogUrlTableBridge.IsAvailable
+                ? CatalogUrlTableBridge.CountInScene()
+                : 0;
+
+            using (new EditorGUI.DisabledScope(_dirty || targets == 0))
+            {
+                if (GUILayout.Button(
+                        "③ VRCUrl へ焼く(シーンの Catalog " + targets + " 個)",
+                        GUILayout.Height(26f)))
+                {
+                    Bake();
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.LabelField(
+                "保存すると、完成している " + _draft.CompleteCount + " 件だけが書かれます。"
+                + (targets == 0 && CatalogUrlTableBridge.IsAvailable
+                       ? "  シーンに SmartMediaPlayer を置くと ③ が押せます。"
+                       : ""),
+                EditorStyles.miniLabel);
+        }
+
+        private void Bake()
+        {
+            CatalogUrlTableBridge.BakeReport report = CatalogUrlTableBridge.BakeIntoScene(_asset);
+
+            _importMessage = report.Message;
+            _lastImportOk = report.Ok;
+
+            if (report.Ok) Debug.Log("[CatalogBuilder] " + report.Message);
+            else Debug.LogWarning("[CatalogBuilder] " + report.Message);
+
+            RefreshSyncReport(true);
+            EditorUtility.DisplayDialog("Catalog Builder", report.Message, "OK");
         }
 
         // ───────── 状態 ─────────
@@ -1037,28 +1396,31 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             _selection.Clear();
             _filter.Clear();
             _draftGrouping.Clear();
-            CatalogThumbnailCache.Clear();
+            _checkedIds.Clear();
+            _syncReport = null;
+            _nextSyncCheck = 0;
 
-            if (_asset == null) return;
+            if (_asset == null)
+            {
+                _book.Clear();
+                return;
+            }
 
-            CatalogDraftIO.Load(_asset, _draft);
+            CatalogDraftIO.Load(_asset, _draft, _book);
             if (_draft.Count > 0) _selected = 0;
-        }
-
-        private void OnDisable()
-        {
-            // 窓を閉じたら絵を捨てる。開いている間だけ覚えていればよい。
-            CatalogThumbnailCache.Clear();
         }
 
         private void SaveToAsset()
         {
-            int written = CatalogDraftIO.Save(_asset, _draft);
+            int written = CatalogDraftIO.Save(_asset, _draft, _book);
             if (written < 0) return;
 
             _dirty = false;
             _lastImportOk = true;
             _importMessage = written + " 件を保存しました。";
+
+            // 保存した直後こそ焼き忘れが起きやすい。すぐ調べ直す。
+            RefreshSyncReport(true);
         }
 
         private void MarkDirty()

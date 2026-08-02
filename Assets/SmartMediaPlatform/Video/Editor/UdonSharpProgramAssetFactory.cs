@@ -69,7 +69,7 @@ namespace SmartMediaPlatform.Video.EditorTools
 
         // ───────── メニュー ─────────
 
-        [MenuItem(MenuRoot + "Create Missing UdonSharp Program Assets")]
+        [MenuItem(MenuRoot + "足りないプログラムを作る")]
         public static void CreateMissingProgramAssetsMenu()
         {
             if (!IsAvailable)
@@ -96,7 +96,7 @@ namespace SmartMediaPlatform.Video.EditorTools
             EditorUtility.DisplayDialog("Smart Media Platform", message, "OK");
         }
 
-        [MenuItem(MenuRoot + "Repair Broken UdonSharp Program Assets")]
+        [MenuItem(MenuRoot + "壊れたプログラムを直す")]
         public static void RepairBrokenProgramAssetsMenu()
         {
             if (!IsAvailable)
@@ -198,7 +198,7 @@ namespace SmartMediaPlatform.Video.EditorTools
             return null;
         }
 
-        [MenuItem(MenuRoot + "Diagnose UdonSharp Setup")]
+        [MenuItem(MenuRoot + "状態を調べる")]
         public static void DiagnoseMenu()
         {
             Debug.Log(Diagnose());

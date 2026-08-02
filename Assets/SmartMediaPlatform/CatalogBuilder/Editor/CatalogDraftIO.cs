@@ -29,14 +29,31 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
         // ───────── 読む ─────────
 
-        /// <summary>アセットの中身を編集用へ写す。</summary>
+        /// <summary>
+        /// アセットの中身を編集用へ写す。
+        ///
+        /// <b>横の覚え書きも一緒に読みます</b>(Phase6-5)。
+        /// <c>MediaItem</c> にはサムネイル・公開日・出どころが無いので、
+        /// これが無いと保存して読み直すたびに消えていました。
+        /// </summary>
         public static bool Load(MediaCatalogAsset asset, CatalogDraft draft)
+        {
+            return Load(asset, draft, null);
+        }
+
+        /// <summary><paramref name="book"/> を渡すと、見張っている取り込み元も戻します。</summary>
+        public static bool Load(
+            MediaCatalogAsset asset, CatalogDraft draft, CatalogSubscriptionBook book)
         {
             if (asset == null || draft == null) return false;
 
             IReadOnlyList<MediaItem> items = asset.LoadItems();
             draft.LoadFrom(items);
             draft.SourceDescription = asset.SourceDescription;
+
+            CatalogSidecar sidecar = CatalogSidecarIO.Load(asset);
+            sidecar.ApplyTo(draft.Items, book);
+
             return true;
         }
 
@@ -48,6 +65,13 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         /// </summary>
         /// <returns>書いた件数。書けなければ -1。</returns>
         public static int Save(MediaCatalogAsset asset, CatalogDraft draft)
+        {
+            return Save(asset, draft, null);
+        }
+
+        /// <summary><paramref name="book"/> を渡すと、見張っている取り込み元も書き残します。</summary>
+        public static int Save(
+            MediaCatalogAsset asset, CatalogDraft draft, CatalogSubscriptionBook book)
         {
             if (asset == null || draft == null) return -1;
 
@@ -63,6 +87,11 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             EditorUtility.SetDirty(asset);
             AssetDatabase.SaveAssets();
+
+            // 再生に要らないものはアセットに入れず、横の JSON へ(Phase6-5)。
+            // ワールドの容量を増やさずに、編集の続きができる。
+            CatalogSidecarIO.Save(asset, CatalogSidecar.CaptureFrom(draft.Items, book));
+
             return entries.Count;
         }
 

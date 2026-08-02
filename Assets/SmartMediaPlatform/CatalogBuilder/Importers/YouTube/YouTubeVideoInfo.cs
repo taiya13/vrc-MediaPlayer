@@ -98,6 +98,9 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             item.Genre = YouTubeCategoryNames.Of(CategoryId);
             item.Tags = TrimTags(MaxTags);
 
+            // Phase6-5: 並べ替えの材料。
+            item.PublishedAt = PublishedAt;
+
             return item;
         }
 

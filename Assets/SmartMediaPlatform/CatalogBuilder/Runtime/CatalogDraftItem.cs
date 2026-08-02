@@ -32,11 +32,33 @@ namespace SmartMediaPlatform.CatalogBuilder
         /// </summary>
         public string Source = "手入力";
 
-        /// <summary>
-        /// サムネイルの場所。<b>Phase6-1 では持つだけで、まだ使いません。</b>
-        /// あとから足すと全部の取り込み口を直すことになるので、先に枠だけ空けています。
-        /// </summary>
+        /// <summary>サムネイルの場所(URL)。Phase6-4 から一覧に絵を出すのに使っています。</summary>
         public string ThumbnailPath = "";
+
+        /// <summary>
+        /// 公開日(ISO8601 / 「2024-05-01」でも可)。並べ替えに使います。Phase6-5。
+        /// 取れなければ空文字。
+        /// </summary>
+        public string PublishedAt = "";
+
+        /// <summary>
+        /// <b>再生側に無い情報。</b><see cref="MediaItem"/> は
+        /// ID・見出し・URL など<b>再生に要るものしか持ちません</b>。
+        /// 出どころ・サムネイル・公開日は編集のためだけのものなので、
+        /// <b>アセットの横に置く JSON</b> に書き残します(<c>CatalogSidecarIO</c>)。
+        ///
+        /// <b>ワールドの容量を増やさないため</b>にこう分けています。
+        /// Phase6-4 まではここが抜けていて、保存して読み直すと絵が消えていました。
+        /// </summary>
+        public bool HasEditorMetadata
+        {
+            get
+            {
+                return !string.IsNullOrWhiteSpace(ThumbnailPath)
+                       || !string.IsNullOrWhiteSpace(PublishedAt)
+                       || (!string.IsNullOrWhiteSpace(Source) && Source != "手入力");
+            }
+        }
 
         public CatalogDraftItem()
         {
@@ -110,6 +132,7 @@ namespace SmartMediaPlatform.CatalogBuilder
             copy.RelatedIds = Clean(RelatedIds);
             copy.Source = Source;
             copy.ThumbnailPath = ThumbnailPath;
+            copy.PublishedAt = PublishedAt;
             return copy;
         }
 

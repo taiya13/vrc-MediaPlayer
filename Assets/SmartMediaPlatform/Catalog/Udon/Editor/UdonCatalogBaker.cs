@@ -22,32 +22,10 @@ namespace SmartMediaPlatform.Catalog.UdonEditor
     /// </summary>
     public static class UdonCatalogBaker
     {
-        private const string MenuPath = "Tools/Smart Media Platform/Bake Dummy Catalog Into Selected";
-
-        [MenuItem(MenuPath)]
-        private static void BakeSelected()
-        {
-            var go = Selection.activeGameObject;
-            var target = go != null ? go.GetComponent<UdonMediaCatalog>() : null;
-            if (target == null)
-            {
-                EditorUtility.DisplayDialog(
-                    "Smart Media Platform",
-                    "UdonMediaCatalog を持つ GameObject を選択してから実行してください。",
-                    "OK");
-                return;
-            }
-
-            Bake(target, new DummyCatalogSource().LoadItems());
-            Debug.Log($"[UdonCatalogBaker] Baked {target.Count} items into '{target.name}'.");
-        }
-
-        [MenuItem(MenuPath, validate = true)]
-        private static bool BakeSelectedValidate()
-        {
-            var go = Selection.activeGameObject;
-            return go != null && go.GetComponent<UdonMediaCatalog>() != null;
-        }
+        // Phase6-5: 「ダミーを焼く」メニューは外した。
+        // 焼き込みは Catalog Builder の「③ VRCUrl へ焼く」1 か所に集約されたので、
+        // 同じことをする入口が 2 つあると、どちらを押したか分からなくなる。
+        // Bake(target, items) は CatalogUrlTableBridge が名前で呼ぶため残す。
 
         /// <summary>
         /// 任意のアイテム列を UdonMediaCatalog へ焼き込む。

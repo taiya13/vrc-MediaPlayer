@@ -49,6 +49,7 @@ namespace UnityEditor
         public static void ExecuteMenuItem(string menuItemPath) { }
         public static Action update;
         public static Action delayCall;
+        public static double timeSinceStartup { get { return 0.0; } }
     }
 
     public static class EditorGUIUtility
@@ -258,6 +259,9 @@ namespace UnityEditor
         public static GUIStyle toolbarPopup { get { return null; } }
         public static GUIStyle toolbarDropDown { get { return null; } }
         public static GUIStyle centeredGreyMiniLabel { get { return null; } }
+        public static GUIStyle miniButtonLeft { get { return null; } }
+        public static GUIStyle miniButtonMid { get { return null; } }
+        public static GUIStyle miniButtonRight { get { return null; } }
     }
     public enum MessageType { None, Info, Warning, Error }
 

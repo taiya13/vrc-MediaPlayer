@@ -19,11 +19,11 @@ namespace SmartMediaPlatform.World.EditorTools
     /// </summary>
     public sealed class SmartMediaPlatformSetupWindow : EditorWindow
     {
-        private const string MenuPath = "Tools/Smart Media Platform/セットアップ";
+        private const string MenuPath = "Tools/Smart Media Platform/セットアップを確認する";
 
         private Vector2 _scroll;
 
-        [MenuItem(MenuPath, false, -100)]
+        [MenuItem(MenuPath, false, -190)]
         public static void Open()
         {
             var window = GetWindow<SmartMediaPlatformSetupWindow>("Smart Media Platform");

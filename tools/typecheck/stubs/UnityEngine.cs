@@ -181,7 +181,15 @@ namespace UnityEngine
     }
     public class Shader : Object { public static Shader Find(string name) { return null; } }
     public class Texture : Object { public int width { get; set; } public int height { get; set; } }
-    public class Texture2D : Texture { public Texture2D(int w, int h) { } }
+    public class Texture2D : Texture
+    {
+        public Texture2D(int w, int h) { }
+        public bool LoadImage(byte[] data) { return false; }
+        public bool LoadImage(byte[] data, bool markNonReadable) { return false; }
+        public byte[] EncodeToPNG() { return new byte[0]; }
+        public byte[] EncodeToJPG() { return new byte[0]; }
+        public void Apply() { }
+    }
     public class RenderTexture : Texture { public RenderTexture(int w, int h, int depth) { } }
     public class Collider : Component { public bool enabled { get; set; } public bool isTrigger { get; set; } }
     public class BoxCollider : Collider
