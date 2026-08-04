@@ -96,6 +96,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("1 件も無いときだけ出す")]
         public GameObject EmptyMessage;
 
+        [Tooltip("1 件も無いときの文字。空なら種類に合わせた文を出す")]
+        public Text EmptyText;
+
         [Header("スクロール")]
         [Tooltip("先頭に見えている位置(0 から)")]
         public int Offset;
@@ -250,13 +253,20 @@ namespace SmartMediaPlatform.World.Udon.UI
                     continue;
                 }
 
+                // 絵が無いカタログでも穴が開かないよう、ジャンルの色を先に渡す。
+                string genre = Store != null ? Store.GetGenre(catalogIndex) : "";
+                target.SetFallbackColor(GenreColor(genre));
+
                 target.ShowItem(
                     IndexLabel(position),
                     Store != null ? Store.GetTitle(catalogIndex) : "",
-                    Store != null ? Store.GetArtist(catalogIndex) : "",
+                    SubLabel(catalogIndex, genre),
                     Store != null ? Store.FormatDuration(catalogIndex) : "",
                     IsNowPlaying(catalogIndex),
-                    HasSecondary(position));
+                    HasSecondary(position),
+                    Store != null ? Store.GetThumbnail(catalogIndex) : null,
+                    FallbackInitial(genre),
+                    SecondaryLabel());
 
                 // 押した行に短く印を出す。
                 // uGUI の色変化は「使う」で押したときには出ないので、
@@ -571,6 +581,30 @@ namespace SmartMediaPlatform.World.Udon.UI
             return "すべての曲";
         }
 
+        /// <summary>
+        /// 1 件も無いときに出す文。<b>種類ごとに書き分けます</b>(Phase7)。
+        ///
+        /// 同じ「ありません」でも、<b>次に何をすればよいかが違います</b>。
+        /// おすすめが空なのは何も悪くないので謝りません。
+        /// Queue が空なのは「足せば入る」と伝えます。
+        /// </summary>
+        public string EmptyMessageFor()
+        {
+            if (Source == SourceRelated)
+            {
+                // 曲が鳴っていないときと、鳴っているが関連が無いときは別のこと。
+                bool playing = Session != null && Session.CurrentIndex >= 0;
+
+                return playing
+                    ? "関連する曲はありません"
+                    : "曲を再生すると、似た曲がここに出ます";
+            }
+
+            if (Source == SourceQueue) return "再生予定はありません";
+
+            return "曲がまだ入っていません";
+        }
+
         private void RefreshChrome(int total, int rows)
         {
             string header = EffectiveHeader();
@@ -598,7 +632,13 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             SetActive(ScrollUpButton, Offset > 0);
             SetActive(ScrollDownButton, Offset < max);
+
             SetActive(EmptyMessage, total <= 0);
+            if (total <= 0 && EmptyText != null)
+            {
+                string empty = EmptyMessageFor();
+                if (EmptyText.text != empty) EmptyText.text = empty;
+            }
 
             // ▲▲ は「戻る先がある」ときだけ出す。
             // 先頭にいるのに出ていると、押しても何も起きなくて戸惑う。
@@ -630,12 +670,90 @@ namespace SmartMediaPlatform.World.Udon.UI
             ScrollHandle.offsetMax = new Vector2(0f, 0f);
         }
 
-        /// <summary>行の頭に出す印。Queue だけ「♪ / 1. / 2. …」の並びにする。</summary>
+        /// <summary>行の頭に出す印。Queue だけ「♪ / 次 / 2 …」の並びにする。</summary>
         private string IndexLabel(int position)
         {
-            if (Source == SourceQueue) return position == 0 ? "♪" : "" + position;
-            if (Source == SourceRelated) return "▷";
-            return "" + (position + 1);
+            if (Source != SourceQueue) return "";
+
+            // 「次に何がかかるか」がいちばん知りたいこと。数字より言葉で書く。
+            if (position == 0) return "♪";
+            if (position == 1) return "次";
+
+            return "" + position;
+        }
+
+        /// <summary>
+        /// 2 行目。<b>チャンネル · ジャンル</b>の形にします。
+        /// ジャンルまで出すのは、同じチャンネルの中から選ぶときの手がかりになるためです。
+        /// </summary>
+        private string SubLabel(int catalogIndex, string genre)
+        {
+            if (Store == null) return "";
+
+            string artist = Store.GetArtist(catalogIndex);
+
+            if (genre == null || genre.Length == 0) return artist;
+            if (artist == null || artist.Length == 0) return genre;
+
+            return artist + " · " + genre;
+        }
+
+        /// <summary>
+        /// 2 つめのボタンに出す文字。
+        /// <b>「＋」だけでは何をするボタンか分かりません</b>ので、
+        /// 常に言葉を添えます(Phase7)。
+        /// </summary>
+        private string SecondaryLabel()
+        {
+            return Source == SourceQueue ? "外す" : "予定へ";
+        }
+
+        /// <summary>絵が無いときに枠へ出す 1 文字。ジャンルの頭を取る。</summary>
+        private string FallbackInitial(string genre)
+        {
+            if (genre == null || genre.Length == 0) return "♪";
+            return genre.Substring(0, 1);
+        }
+
+        [Header("絵が無いときの色(ジャンルごとに割り当てる)")]
+        [Tooltip("ジャンル名から 1 つ選ぶ。空なら組み込みの 8 色")]
+        public Color[] GenrePalette;
+
+        /// <summary>
+        /// ジャンルの色。絵が焼き込まれていないカタログでも、
+        /// <b>同じジャンルは必ず同じ色</b>になるので目印として使えます。
+        ///
+        /// <b>ジャンルの表を持ちません。</b>文字から色を決めるので、
+        /// Phase6-6 の辞書にジャンルを足しても<b>ここは直さなくて済みます</b>。
+        ///
+        /// 色は<b>くすんだ 8 色</b>に絞ってあります。鮮やかにすると、
+        /// 絵が入っている行と入っていない行がちぐはぐに見えるためです。
+        /// </summary>
+        public Color GenreColor(string genre)
+        {
+            if (genre == null || genre.Length == 0) return new Color(0.18f, 0.20f, 0.26f, 1f);
+
+            int hash = 0;
+            for (int i = 0; i < genre.Length; i++) hash = hash * 31 + genre[i];
+
+            if (hash < 0) hash = -hash;
+
+            if (GenrePalette != null && GenrePalette.Length > 0)
+            {
+                return GenrePalette[hash % GenrePalette.Length];
+            }
+
+            // Inspector で色を入れていないときの組み込み。
+            int slot = hash % 8;
+
+            if (slot == 0) return new Color(0.26f, 0.35f, 0.50f, 1f);   // 藍
+            if (slot == 1) return new Color(0.42f, 0.30f, 0.48f, 1f);   // 藤
+            if (slot == 2) return new Color(0.22f, 0.42f, 0.42f, 1f);   // 青緑
+            if (slot == 3) return new Color(0.48f, 0.32f, 0.28f, 1f);   // 煉瓦
+            if (slot == 4) return new Color(0.30f, 0.40f, 0.28f, 1f);   // 苔
+            if (slot == 5) return new Color(0.46f, 0.38f, 0.24f, 1f);   // 芥子
+            if (slot == 6) return new Color(0.28f, 0.32f, 0.46f, 1f);   // 群青
+            return new Color(0.44f, 0.28f, 0.36f, 1f);                  // 葡萄
         }
 
         private bool IsNowPlaying(int catalogIndex)

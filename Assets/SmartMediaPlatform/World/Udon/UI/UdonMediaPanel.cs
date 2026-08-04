@@ -71,8 +71,11 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("再生操作のボタン群")]
         public UdonTransportView Transport;
 
-        [Tooltip("Library / 関連 / Queue。並べたぶんだけ書き直す")]
+        [Tooltip("すべての曲 / おすすめ / 再生予定。並べたぶんだけ書き直す")]
         public UdonMediaListView[] Lists;
+
+        [Tooltip("一覧の切り替え(Phase7)。空なら全部の一覧を同時に出す")]
+        public UdonMediaTabs Tabs;
 
         [Tooltip("直近の操作の結果")]
         public Text StatusText;
@@ -157,6 +160,8 @@ namespace SmartMediaPlatform.World.Udon.UI
                 }
             }
 
+            if (Tabs != null) Tabs.EnsureInitialized();
+
             if (TitleLabel != null && PanelName.Length > 0) TitleLabel.text = PanelName;
 
             // 操作のたびに Refresh を送ってもらう。
@@ -177,11 +182,21 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (NowPlaying != null) NowPlaying.Refresh();
             if (Transport != null) Transport.Refresh();
 
+            // 見出しの件数は、開いていないタブのぶんも書き直す。
+            // 「再生予定 3」が見えていれば、押さなくても入っていると分かる。
+            if (Tabs != null) Tabs.Refresh();
+
             if (Lists != null)
             {
                 for (int i = 0; i < Lists.Length; i++)
                 {
-                    if (Lists[i] != null) Lists[i].Refresh();
+                    UdonMediaListView list = Lists[i];
+                    if (list == null) continue;
+
+                    // 隠れている一覧を書き直しても誰も見ないので飛ばす。
+                    if (Tabs != null && !list.gameObject.activeInHierarchy) continue;
+
+                    list.Refresh();
                 }
             }
 

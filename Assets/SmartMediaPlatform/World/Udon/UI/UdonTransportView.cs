@@ -33,6 +33,10 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("状態を読む相手(見出しの出し分けに使う)")]
         public UdonPlayerSession Session;
 
+        [Header("そのほかの操作(Phase7)")]
+        [Tooltip("「…」で開く引き出し。停止と「予定を空に」を入れる。空なら常に出したまま")]
+        public GameObject MoreSheet;
+
         [Tooltip("音量の行き先")]
         public UdonMediaScreen Screen;
 
@@ -162,6 +166,20 @@ namespace SmartMediaPlatform.World.Udon.UI
             }
 
             RefreshVolume();
+        }
+
+        /// <summary>
+        /// <b>「…」の引き出しを開け閉てする。</b>Phase7。
+        ///
+        /// 停止と「予定を空に」は、めったに使わないのに
+        /// 再生ボタンと同じ大きさで並んでいました。<b>初めて見た人の選択肢を
+        /// 3 つに減らす</b>ため、ここへ畳んであります。
+        /// </summary>
+        public void ToggleMore()
+        {
+            if (MoreSheet == null) return;
+
+            MoreSheet.SetActive(!MoreSheet.activeSelf);
         }
 
         // ───────── 内部 ─────────

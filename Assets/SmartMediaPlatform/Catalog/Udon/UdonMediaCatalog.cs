@@ -49,6 +49,21 @@ namespace SmartMediaPlatform.Catalog.Udon
         public string[] RelatedIds;
         public int[] RelatedOffsets;   // 長さ = Count + 1
 
+        /// <summary>
+        /// <b>曲の絵。</b>Phase7。Ids と同じ並び。空でも動く。
+        ///
+        /// <b>なぜワールドに焼き込むのか</b><br/>
+        /// URL(<c>VRCUrl</c>)と同じで、<b>実行時に用意する道がありません</b>。
+        /// 実行時にダウンロードする方法もありますが、画像の URL 自体が
+        /// <c>VRCUrl</c> なので<b>結局焼き込みが要る</b>うえ、
+        /// 読み込み待ちと失敗が増えます。編集時に入れておけば
+        /// <b>ワールドに入った瞬間から出ていて、絶対に失敗しません</b>。
+        ///
+        /// <b>Sprite Atlas でまとめます。</b>1 枚ずつのテクスチャだと
+        /// 描画のたびに切り替えが起きるので、編集時に 1 枚へ詰めます。
+        /// </summary>
+        public Sprite[] Thumbnails;
+
         // === 実行時に構築する派生データ(シリアライズしない)===
         private bool _initialized;
         private string[] _idsLower;
@@ -95,6 +110,25 @@ namespace SmartMediaPlatform.Catalog.Udon
         public int Count
         {
             get { return Ids != null ? Ids.Length : 0; }
+        }
+
+        /// <summary>
+        /// その曲の絵。無ければ <c>null</c>。
+        /// <b>呼ぶ側は必ず null を想定してください</b> —
+        /// 焼き込んでいないカタログでも動くようにするためです。
+        /// </summary>
+        public Sprite GetThumbnail(int index)
+        {
+            if (Thumbnails == null) return null;
+            if (index < 0 || index >= Thumbnails.Length) return null;
+
+            return Thumbnails[index];
+        }
+
+        /// <summary>絵が 1 枚でも入っているか。パネルが枠を出すかどうかの判断に使う。</summary>
+        public bool HasThumbnails
+        {
+            get { return Thumbnails != null && Thumbnails.Length > 0; }
         }
 
         // === ID 検索(DataDictionary 経由 / 線形フォールバック)===

@@ -88,6 +88,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private bool _autoRelated = true;
         private bool _showRelatedOptions;
         private bool _showSetup;
+        private int _thumbnailSize = CatalogThumbnailBaker.SizeMedium;
         private int[] _visible = new int[0];
 
         // まとめて直す
@@ -1560,6 +1561,8 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                     MessageType.Error);
             }
 
+            DrawThumbnailSetting();
+
             EditorGUILayout.BeginHorizontal();
 
             int targets = CatalogUrlTableBridge.IsAvailable
@@ -1586,8 +1589,39 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 EditorStyles.miniLabel);
         }
 
+        /// <summary>
+        /// <b>絵の大きさ。</b>Phase7。
+        ///
+        /// VR の見え方から逆算した目安を出します。2 m 先の壁パネルでは、
+        /// 一覧の絵は <b>120 px 程度しか画面に映りません</b>ので、
+        /// 128 px でもほぼ足ります。大きくして効くのは<b>再生中の大きな絵</b>だけです。
+        /// </summary>
+        private void DrawThumbnailSetting()
+        {
+            EditorGUILayout.BeginHorizontal();
+
+            int picked = System.Array.IndexOf(CatalogThumbnailBaker.Sizes, _thumbnailSize);
+            if (picked < 0) picked = 1;
+
+            picked = EditorGUILayout.Popup("絵の大きさ", picked, CatalogThumbnailBaker.SizeLabels);
+            _thumbnailSize = CatalogThumbnailBaker.Sizes[picked];
+
+            float megabytes = CatalogThumbnailBaker.EstimateMegabytes(
+                _draft.CompleteCount, _thumbnailSize);
+
+            EditorGUILayout.LabelField(
+                "ワールドに +" + megabytes.ToString("0.0") + " MB",
+                EditorStyles.miniLabel, GUILayout.Width(140f));
+
+            EditorGUILayout.EndHorizontal();
+        }
+
         private void Bake()
         {
+            // 絵の URL を持っているのは編集中の中身だけ。焼く直前に渡す。
+            CatalogUrlTableBridge.ThumbnailSize = _thumbnailSize;
+            CatalogUrlTableBridge.ThumbnailSource = _draft.Items;
+
             CatalogUrlTableBridge.BakeReport report = CatalogUrlTableBridge.BakeIntoScene(_asset);
 
             _importMessage = report.Message;

@@ -13,6 +13,8 @@ namespace UnityEditor
         public static void SaveAssetIfDirty(UnityEngine.Object asset) { }
         public static void Refresh() { }
         public static void ImportAsset(string path) { }
+        public static void ImportAsset(string path, ImportAssetOptions options) { }
+        public static UnityEngine.Object[] LoadAllAssetsAtPath(string path) { return new UnityEngine.Object[0]; }
         public static string GetAssetPath(UnityEngine.Object asset) { return ""; }
         public static string AssetPathToGUID(string path) { return ""; }
         public static string GUIDToAssetPath(string guid) { return ""; }
@@ -263,6 +265,42 @@ namespace UnityEditor
         public static GUIStyle miniButtonMid { get { return null; } }
         public static GUIStyle miniButtonRight { get { return null; } }
     }
+
+    public enum ImportAssetOptions { Default, ForceUpdate, ForceSynchronousImport, ImportRecursive }
+    public enum TextureImporterType { Default, Sprite, NormalMap, GUI }
+    public enum SpriteImportMode { None, Single, Multiple, Polygon }
+    public enum TextureImporterCompression { Uncompressed, Compressed, CompressedHQ, CompressedLQ }
+
+    public struct SpriteMetaData
+    {
+        public string name;
+        public UnityEngine.Rect rect;
+        public int alignment;
+        public UnityEngine.Vector2 pivot;
+        public UnityEngine.Vector4 border;
+    }
+
+    public class AssetImporter : UnityEngine.Object
+    {
+        public string assetPath { get; set; }
+        public void SaveAndReimport() { }
+        public static AssetImporter GetAtPath(string path) { return null; }
+    }
+
+    public class TextureImporter : AssetImporter
+    {
+        public TextureImporterType textureType { get; set; }
+        public SpriteImportMode spriteImportMode { get; set; }
+        public SpriteMetaData[] spritesheet { get; set; }
+        public bool mipmapEnabled { get; set; }
+        public bool alphaIsTransparency { get; set; }
+        public bool isReadable { get; set; }
+        public UnityEngine.FilterMode filterMode { get; set; }
+        public UnityEngine.TextureWrapMode wrapMode { get; set; }
+        public int maxTextureSize { get; set; }
+        public TextureImporterCompression textureCompression { get; set; }
+    }
+
     public enum MessageType { None, Info, Warning, Error }
 
     public sealed class EditorGUIDisabledScope : System.IDisposable

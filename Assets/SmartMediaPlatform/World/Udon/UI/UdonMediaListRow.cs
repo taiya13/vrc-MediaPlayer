@@ -49,6 +49,13 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("長さ")]
         public Text DurationText;
 
+        [Header("絵(Phase7)")]
+        [Tooltip("曲の絵。焼き込んでいなければジャンルの色で塗る")]
+        public Image Artwork;
+
+        [Tooltip("絵が無いときに出す文字(ジャンルの頭 1 文字など)")]
+        public Text ArtworkFallbackText;
+
         [Header("出し分け(空でも動く)")]
         [Tooltip("中身がある行だけ出す入れ物。必ず「子」を指すこと(この行自身は不可)")]
         public GameObject Content;
@@ -62,8 +69,23 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("押した直後だけ出る印。「使う」で押したときの手応えになる")]
         public GameObject PressedMarker;
 
-        [Tooltip("2 つめのボタン(＋ Queue / × 削除)。使えない行では隠す")]
+        [Tooltip("2 つめのボタン(予定へ追加 / 予定から外す)。使えない行では隠す")]
         public GameObject SecondaryButton;
+
+        [Tooltip("2 つめのボタンに出す文字。何をするボタンかを常に見せる")]
+        public Text SecondaryLabel;
+
+        [Header("鳴っている印(Phase7)")]
+        [Tooltip("動く 3 本の棒。いま鳴っている行だけ動かす。空でも動く")]
+        public RectTransform[] EqualizerBars;
+
+        [Tooltip("棒が動く速さ")]
+        [Range(0.5f, 6f)]
+        public float EqualizerSpeed = 2.4f;
+
+        [Tooltip("棒のいちばん低いとき(0〜1)")]
+        [Range(0f, 1f)]
+        public float EqualizerFloor = 0.25f;
 
         [Header("文字の色")]
         [Tooltip("いま鳴っている行の見出しはこの色にする")]
@@ -99,6 +121,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         public void ShowEmpty()
         {
             _empty = true;
+            _nowPlaying = false;
 
             SetActive(Content, false);
             SetActive(Highlight, false);
@@ -110,6 +133,8 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetText(TitleText, "");
             SetText(SubText, "");
             SetText(DurationText, "");
+
+            ShowEqualizer(false);
         }
 
         /// <summary>中身を書く。呼ぶのは <see cref="UdonMediaListView"/> だけ。</summary>
@@ -117,7 +142,23 @@ namespace SmartMediaPlatform.World.Udon.UI
             string indexLabel, string title, string sub, string duration,
             bool highlight, bool secondary)
         {
+            ShowItem(indexLabel, title, sub, duration, highlight, secondary, null, "", "");
+        }
+
+        /// <summary>
+        /// 中身を書く(絵つき)。Phase7。
+        ///
+        /// <b>絵が無くても穴が開きません。</b><paramref name="artwork"/> が
+        /// <c>null</c> なら、ジャンルの色で塗って頭 1 文字を出します。
+        /// 焼き込んでいないカタログでも、並びが崩れないようにするためです。
+        /// </summary>
+        public void ShowItem(
+            string indexLabel, string title, string sub, string duration,
+            bool highlight, bool secondary,
+            Sprite artwork, string fallbackText, string secondaryLabel)
+        {
             _empty = false;
+            _nowPlaying = highlight;
 
             SetActive(Content, true);
             SetActive(Highlight, highlight);
@@ -128,6 +169,9 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetText(TitleText, title);
             SetText(SubText, sub);
             SetText(DurationText, duration);
+            SetText(SecondaryLabel, secondaryLabel);
+
+            ShowArtwork(artwork, fallbackText);
 
             // 鳴っている行だけ見出しを明るくする。
             // 色の差は、離れて見たときに縦棒より先に目に入る。
@@ -135,6 +179,39 @@ namespace SmartMediaPlatform.World.Udon.UI
             {
                 Color wanted = highlight ? NowPlayingTitleColor : TitleColor;
                 if (TitleText.color != wanted) TitleText.color = wanted;
+            }
+
+            // 色と縦棒だけだと、色が見えにくい人には差が伝わらない。
+            // 動きは、色に頼らずに「これが鳴っている」と分かる 3 つめの手がかり。
+            ShowEqualizer(highlight);
+        }
+
+        /// <summary>
+        /// 鳴っている行の棒を動かす。
+        ///
+        /// <b>鳴っている 1 行だけが Update を使います。</b>
+        /// 全部の行で毎フレーム動かすと、5 行 × 3 本 = 15 個の
+        /// RectTransform を触ることになって重くなります。
+        /// </summary>
+        void Update()
+        {
+            if (!_nowPlaying || EqualizerBars == null) return;
+
+            for (int i = 0; i < EqualizerBars.Length; i++)
+            {
+                RectTransform bar = EqualizerBars[i];
+                if (bar == null) continue;
+
+                // 棒ごとに波をずらす。そろって動くと機械的に見える。
+                float phase = Time.time * EqualizerSpeed + i * 1.7f;
+                float wave = (Mathf.Sin(phase) + 1f) * 0.5f;
+
+                float height = EqualizerFloor + (1f - EqualizerFloor) * wave;
+
+                bar.anchorMin = new Vector2(bar.anchorMin.x, 0f);
+                bar.anchorMax = new Vector2(bar.anchorMax.x, height);
+                bar.offsetMin = new Vector2(bar.offsetMin.x, 0f);
+                bar.offsetMax = new Vector2(bar.offsetMax.x, 0f);
             }
         }
 
@@ -151,6 +228,49 @@ namespace SmartMediaPlatform.World.Udon.UI
         }
 
         // ───────── 内部 ─────────
+
+        private bool _nowPlaying;
+
+        /// <summary>
+        /// 絵を入れる。無ければジャンルの色で塗って頭 1 文字を出す。
+        /// <b>枠の大きさは変えません</b> — 絵の有無で行の高さが変わると、
+        /// 押す場所がずれてしまうためです。
+        /// </summary>
+        private void ShowArtwork(Sprite artwork, string fallbackText)
+        {
+            if (Artwork == null) return;
+
+            bool hasArtwork = artwork != null;
+
+            if (Artwork.sprite != artwork) Artwork.sprite = artwork;
+
+            // 絵があるときは白(素の色)、無いときは塗りつぶしの色を活かす。
+            Color wanted = hasArtwork ? Color.white : _fallbackColor;
+            if (Artwork.color != wanted) Artwork.color = wanted;
+
+            if (ArtworkFallbackText == null) return;
+
+            SetText(ArtworkFallbackText, hasArtwork ? "" : fallbackText);
+        }
+
+        /// <summary>絵が無いときの塗り色。一覧から渡します。</summary>
+        public void SetFallbackColor(Color color)
+        {
+            _fallbackColor = color;
+        }
+
+        private Color _fallbackColor = new Color(0.18f, 0.20f, 0.26f, 1f);
+
+        private void ShowEqualizer(bool visible)
+        {
+            if (EqualizerBars == null) return;
+
+            for (int i = 0; i < EqualizerBars.Length; i++)
+            {
+                if (EqualizerBars[i] == null) continue;
+                SetActive(EqualizerBars[i].gameObject, visible);
+            }
+        }
 
         // 同じ値なら触らない。uGUI は text / SetActive のたびに再レイアウトが走るため。
         private void SetText(Text target, string value)

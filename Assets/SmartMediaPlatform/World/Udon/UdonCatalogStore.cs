@@ -1,4 +1,5 @@
 using UdonSharp;
+using UnityEngine;
 using SmartMediaPlatform.Catalog.Udon;
 
 namespace SmartMediaPlatform.World.Udon
@@ -162,6 +163,23 @@ namespace SmartMediaPlatform.World.Udon
         /// <b>サーバーから受け取る ID に差し替えても、ここは変わりません</b>
         /// (Phase4-2 で決めた形をそのまま保っています)。
         /// </summary>
+        /// <summary>
+        /// その曲の絵。無ければ <c>null</c>。Phase7。
+        /// <b>URL は返しません。</b>Phase4-2 の約束どおり、
+        /// この窓口から出るのは<b>見せてよいものだけ</b>です。
+        /// </summary>
+        public Sprite GetThumbnail(int catalogIndex)
+        {
+            if (Catalog == null) return null;
+            return Catalog.GetThumbnail(catalogIndex);
+        }
+
+        /// <summary>絵が焼き込まれているか。枠を出すかどうかの判断に使う。</summary>
+        public bool HasThumbnails()
+        {
+            return Catalog != null && Catalog.HasThumbnails;
+        }
+
         public int[] GetRelatedIndices(int catalogIndex)
         {
             if (!IsValid(catalogIndex)) return new int[0];

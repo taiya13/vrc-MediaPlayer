@@ -85,6 +85,8 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine("     Transport       : " + (panel.Transport != null ? "OK" : "なし"));
             sb.AppendLine("     Lists           : "
                           + (panel.Lists != null ? panel.Lists.Length + " 本" : "なし"));
+            sb.AppendLine("     タブ            : "
+                          + (panel.Tabs != null ? panel.Tabs.TabCount + " 枚" : "なし(全部同時に出る)"));
 
             // 2. 裏の UdonBehaviour があるか
             int behaviours = 0;
@@ -397,6 +399,20 @@ namespace SmartMediaPlatform.World.EditorTools
                 return eventName != null;
             }
 
+            // Phase7: タブ。一覧より先に見る(タブは一覧の外にあるため)。
+            var tabs = button.GetComponentInParent<UdonMediaTabs>();
+            if (tabs != null && name.StartsWith("Tab"))
+            {
+                target = tabs;
+                caption = "ここを見る";
+
+                if (name == "Tab0") eventName = "SelectTab0";
+                else if (name == "Tab1") eventName = "SelectTab1";
+                else if (name == "Tab2") eventName = "SelectTab2";
+
+                return eventName != null;
+            }
+
             var transport = button.GetComponentInParent<UdonTransportView>();
             if (transport != null)
             {
@@ -409,6 +425,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 else if (name == "VolumeUp") { eventName = "VolumeUp"; caption = "音量を上げる"; }
                 else if (name == "VolumeDown") { eventName = "VolumeDown"; caption = "音量を下げる"; }
                 else if (name == "ClearUpcoming") { eventName = "ClearUpcoming"; caption = "再生予定を空にする"; }
+                else if (name == "More") { eventName = "ToggleMore"; caption = "そのほかの操作"; }
 
                 return eventName != null;
             }

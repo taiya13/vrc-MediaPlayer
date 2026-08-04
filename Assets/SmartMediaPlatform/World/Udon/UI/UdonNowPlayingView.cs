@@ -52,6 +52,22 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("いま誰が操作しているか(同期しているときだけ出る)")]
         public Text SyncText;
 
+        [Tooltip("ジャンル。丸い札に出す")]
+        public Text GenreText;
+
+        [Tooltip("ジャンルの札そのもの。ジャンルが無い曲では隠す")]
+        public GameObject GenreChip;
+
+        [Header("絵(Phase7)")]
+        [Tooltip("いま鳴っている曲の絵。焼き込んでいなければジャンルの色で塗る")]
+        public Image Artwork;
+
+        [Tooltip("絵が無いときに枠へ出す文字")]
+        public Text ArtworkFallbackText;
+
+        [Tooltip("絵が無いときの塗り色を決める一覧(ジャンルの色を借りる)")]
+        public UdonMediaListView PaletteSource;
+
         [Header("進捗(空でも動く)")]
         [Tooltip("Image Type を Filled にしておくこと")]
         public Image ProgressFill;
@@ -85,6 +101,9 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             SetText(TitleText, Store != null ? Store.GetTitle(current) : "");
             SetText(ArtistText, Store != null ? Store.GetArtist(current) : "");
+
+            ShowGenre(Store != null ? Store.GetGenre(current) : "");
+            ShowArtwork(current);
 
             // 「いま鳴っているもの」を含めた件数なので、待ちは 1 引いた数。
             int upcoming = Session.QueueCount - 1;
@@ -128,6 +147,61 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetText(StateText, state);
             SetText(QueueCountText, "");
             SetFill(0f);
+
+            ShowGenre("");
+            ShowArtwork(-1);
+        }
+
+        /// <summary>ジャンルの札。無い曲では札ごと隠す(空の丸が残らないように)。</summary>
+        private void ShowGenre(string genre)
+        {
+            bool has = genre != null && genre.Length > 0;
+
+            SetActive(GenreChip, has);
+            SetText(GenreText, has ? genre : "");
+        }
+
+        /// <summary>
+        /// 絵を入れる。<b>枠は必ず残します</b> —
+        /// 曲が変わるたびに大きさが変わると、目が落ち着きません。
+        /// </summary>
+        private void ShowArtwork(int catalogIndex)
+        {
+            if (Artwork == null) return;
+
+            Sprite sprite = catalogIndex >= 0 && Store != null
+                ? Store.GetThumbnail(catalogIndex)
+                : null;
+
+            if (Artwork.sprite != sprite) Artwork.sprite = sprite;
+
+            Color wanted = Color.white;
+            string fallback = "";
+
+            if (sprite == null)
+            {
+                string genre = catalogIndex >= 0 && Store != null
+                    ? Store.GetGenre(catalogIndex)
+                    : "";
+
+                // 一覧と同じ色の決め方を借りる。行と大きい絵で色が違うと、
+                // 同じ曲だと分からなくなる。
+                wanted = PaletteSource != null
+                    ? PaletteSource.GenreColor(genre)
+                    : new Color(0.18f, 0.20f, 0.26f, 1f);
+
+                fallback = genre != null && genre.Length > 0 ? genre : "♪";
+            }
+
+            if (Artwork.color != wanted) Artwork.color = wanted;
+            SetText(ArtworkFallbackText, fallback);
+        }
+
+        private void SetActive(GameObject target, bool value)
+        {
+            if (target == null) return;
+            if (target.activeSelf == value) return;
+            target.SetActive(value);
         }
 
         /// <summary>長さ。動画から取れなければカタログの値を使う。</summary>

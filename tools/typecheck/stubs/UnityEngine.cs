@@ -184,6 +184,12 @@ namespace UnityEngine
     public class Texture2D : Texture
     {
         public Texture2D(int w, int h) { }
+        public Texture2D(int w, int h, TextureFormat format, bool mipChain) { }
+        public Color GetPixel(int x, int y) { return default(Color); }
+        public void SetPixel(int x, int y, Color c) { }
+        public void SetPixels32(Color32[] colors) { }
+        public void SetPixels32(int x, int y, int w, int h, Color32[] colors) { }
+        public Color32[] GetPixels32() { return new Color32[0]; }
         public bool LoadImage(byte[] data) { return false; }
         public bool LoadImage(byte[] data, bool markNonReadable) { return false; }
         public byte[] EncodeToPNG() { return new byte[0]; }
@@ -402,7 +408,15 @@ namespace UnityEngine
         public static Color clear { get { return default(Color); } }
     }
 
-    public struct Color32 { public byte r, g, b, a; public Color32(byte r, byte g, byte b, byte a) { this.r = r; this.g = g; this.b = b; this.a = a; } }
+    public struct Color32
+    {
+        public byte r, g, b, a;
+        public Color32(byte r, byte g, byte b, byte a) { this.r = r; this.g = g; this.b = b; this.a = a; }
+
+        // Unity と同じく Color と行き来できる。
+        public static implicit operator Color32(Color c) { return new Color32(0, 0, 0, 0); }
+        public static implicit operator Color(Color32 c) { return default(Color); }
+    }
 
     public struct Rect
     {
@@ -575,6 +589,10 @@ namespace UnityEngine
     }
 
     public enum ScaleMode { StretchToFill, ScaleAndCrop, ScaleToFit }
+    public enum FilterMode { Point, Bilinear, Trilinear }
+    public enum TextureWrapMode { Repeat, Clamp, Mirror, MirrorOnce }
+    public enum TextureFormat { Alpha8, RGB24, RGBA32, ARGB32, DXT1, DXT5 }
+    public enum SpriteAlignment { Center, TopLeft, TopCenter, TopRight, LeftCenter, RightCenter, BottomLeft, BottomCenter, BottomRight, Custom }
 }
 
 namespace UnityEngine.Events
