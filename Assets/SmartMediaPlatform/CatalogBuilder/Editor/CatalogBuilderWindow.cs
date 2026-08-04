@@ -87,6 +87,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private bool _groupSelection = true;
         private bool _autoRelated = true;
         private bool _showRelatedOptions;
+        private bool _showSetup;
         private int[] _visible = new int[0];
 
         // まとめて直す
@@ -1036,10 +1037,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 }
             }
 
-            if (!importer.IsAvailable)
-            {
-                EditorGUILayout.HelpBox(importer.UnavailableReason, MessageType.Warning);
-            }
+            DrawImporterSetup(importer);
 
             if (_importMessage.Length > 0)
             {
@@ -1048,6 +1046,102 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             }
 
             DrawSelection();
+        }
+
+        /// <summary>
+        /// <b>使う前のひと手間を、その場で終わらせる。</b>Phase7。
+        ///
+        /// Phase6-5 まで、キーが無いと
+        /// <b>「窓の『設定を作る』を押してください」</b>としか出ませんでした。
+        /// ところが<b>その窓はもうありません</b>(Phase6-5 で統合したときに消えました)。
+        /// ここで<b>手順と入力欄をその場に出す</b>ので、窓を探し回らずに済みます。
+        ///
+        /// <b>この窓は YouTube を知りません。</b>
+        /// 見出しも手順も入力欄の名前も、取り込み元が
+        /// <see cref="ICatalogImporterSetup"/> で名乗ったものをそのまま出しているだけです。
+        /// </summary>
+        private void DrawImporterSetup(ICatalogImporter importer)
+        {
+            var setup = importer as ICatalogImporterSetup;
+
+            if (setup == null)
+            {
+                // 設定の口を持たない取り込み元。今までどおり理由だけ出す。
+                if (!importer.IsAvailable)
+                {
+                    EditorGUILayout.HelpBox(importer.UnavailableReason, MessageType.Warning);
+                }
+                return;
+            }
+
+            bool ready = setup.IsConfigured;
+
+            // 済んでいるなら畳んでおく。毎回出ていると邪魔なので。
+            _showSetup = EditorGUILayout.Foldout(
+                _showSetup || !ready,
+                setup.SetupTitle + (ready ? "  (設定済み)" : "  ← まず、ここ"),
+                true);
+
+            if (!_showSetup && ready) return;
+
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+
+            if (!ready)
+            {
+                EditorGUILayout.LabelField(
+                    "この取り込み元を使うには、下の欄に " + setup.SecretLabel + " が要ります。",
+                    EditorStyles.wordWrappedLabel);
+
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("取り方", EditorStyles.miniBoldLabel);
+
+                string[] steps = setup.SetupSteps;
+                for (int i = 0; i < steps.Length; i++)
+                {
+                    EditorGUILayout.LabelField(
+                        "  " + (i + 1) + ". " + steps[i], EditorStyles.wordWrappedMiniLabel);
+                }
+
+                EditorGUILayout.Space();
+            }
+
+            EditorGUI.BeginChangeCheck();
+
+            // 伏せ字にするのは、画面共有や配信に映っても漏れないようにするため。
+            string typed = EditorGUILayout.PasswordField(setup.SecretLabel, setup.SecretValue);
+
+            if (EditorGUI.EndChangeCheck())
+            {
+                setup.SecretValue = typed;
+                Repaint();
+            }
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (setup.HasStorage)
+            {
+                EditorGUILayout.LabelField(
+                    "保存先: " + setup.StorageLocation, EditorStyles.miniLabel);
+
+                if (GUILayout.Button("開く", EditorStyles.miniButton, GUILayout.Width(48f)))
+                {
+                    setup.RevealStorage();
+                }
+            }
+            else if (GUILayout.Button("設定ファイルを作る", EditorStyles.miniButton))
+            {
+                setup.CreateStorage();
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.LabelField(
+                ready
+                    ? "このファイルはワールドには入りません。公開リポジトリへは上げないでください。"
+                    : "貼るとすぐ使えます。ファイルはワールドには入りません。",
+                EditorStyles.wordWrappedMiniLabel);
+
+            EditorGUILayout.EndVertical();
         }
 
         /// <summary>

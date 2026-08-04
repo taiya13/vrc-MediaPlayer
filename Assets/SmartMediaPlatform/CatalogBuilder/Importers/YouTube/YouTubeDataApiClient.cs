@@ -53,8 +53,13 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         {
             get
             {
-                if (_settings == null) return "設定アセットがまだありません。窓の「設定を作る」を押してください。";
-                if (!_settings.HasKey) return "API キーが空です。YouTubeApiSettings に入れてください。";
+                // Phase7: 「窓の『設定を作る』」と書いていたが、その窓は Phase6-5 で
+                // 消えている。いま実際に押せる場所だけを書く。
+                if (_settings == null || !_settings.HasKey)
+                {
+                    return "YouTube の API キーがまだ入っていません。\n"
+                           + "下の「YouTube の API キー」欄に貼ると使えるようになります。";
+                }
                 return "";
             }
         }

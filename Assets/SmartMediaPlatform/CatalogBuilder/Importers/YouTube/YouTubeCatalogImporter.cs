@@ -17,7 +17,8 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
     /// <see cref="LastVideos"/> にそのまま残るので、
     /// プレビュー窓がそれを見ます(反映は Phase6-3)。
     /// </summary>
-    public sealed class YouTubeCatalogImporter : ICatalogImporter, IIncrementalCatalogImporter
+    public sealed class YouTubeCatalogImporter
+        : ICatalogImporter, IIncrementalCatalogImporter, ICatalogImporterSetup
     {
         private readonly IYouTubeClient _client;
 
@@ -90,6 +91,91 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         public CatalogImportResult Import(string input)
         {
             return Run(input, null);
+        }
+
+        // ───────── 使う前の設定(Phase7)─────────
+
+        public bool IsConfigured { get { return IsAvailable; } }
+
+        public string SetupTitle { get { return "YouTube の API キー"; } }
+
+        public string[] SetupSteps
+        {
+            get
+            {
+                return new[]
+                {
+                    "ブラウザで Google Cloud Console を開く (console.cloud.google.com)",
+                    "プロジェクトを 1 つ作る (名前は何でも構いません)",
+                    "「API とサービス」→「ライブラリ」で YouTube Data API v3 を有効にする",
+                    "「API とサービス」→「認証情報」→「認証情報を作成」→「API キー」",
+                    "出てきたキーをコピーして、下の欄に貼る",
+                };
+            }
+        }
+
+        public string SecretLabel { get { return "API キー"; } }
+
+        public string SecretValue
+        {
+#if UNITY_EDITOR
+            get
+            {
+                YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+                return settings != null ? settings.ApiKey : "";
+            }
+            set
+            {
+                YouTubeApiSettings settings = YouTubeApiSettings.LoadOrCreate();
+                if (settings == null) return;
+
+                settings.ApiKey = value != null ? value.Trim() : "";
+
+                UnityEditor.EditorUtility.SetDirty(settings);
+                UnityEditor.AssetDatabase.SaveAssets();
+            }
+#else
+            get { return ""; }
+            set { }
+#endif
+        }
+
+        public bool HasStorage
+        {
+#if UNITY_EDITOR
+            get { return YouTubeApiSettings.LoadIfPresent() != null; }
+#else
+            get { return false; }
+#endif
+        }
+
+        public string StorageLocation
+        {
+#if UNITY_EDITOR
+            get { return HasStorage ? YouTubeApiSettings.AssetPath : ""; }
+#else
+            get { return ""; }
+#endif
+        }
+
+        public bool CreateStorage()
+        {
+#if UNITY_EDITOR
+            return YouTubeApiSettings.LoadOrCreate() != null;
+#else
+            return false;
+#endif
+        }
+
+        public void RevealStorage()
+        {
+#if UNITY_EDITOR
+            YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+            if (settings == null) return;
+
+            UnityEditor.Selection.activeObject = settings;
+            UnityEditor.EditorGUIUtility.PingObject(settings);
+#endif
         }
 
         // ───────── 新着だけ(Phase6-5)─────────
