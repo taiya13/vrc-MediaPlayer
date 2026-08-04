@@ -27,7 +27,8 @@ namespace SmartMediaPlatform.World.EditorTools
         public static void Open()
         {
             var window = GetWindow<SmartMediaPlatformSetupWindow>("Smart Media Platform");
-            window.minSize = new Vector2(420f, 480f);
+            // Phase6-6: 小さくしても中身はスクロールで全部届く。
+            window.minSize = new Vector2(360f, 240f);
             window.Show();
         }
 

@@ -56,6 +56,10 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
         private Vector2 _listScroll;
         private Vector2 _rightScroll;
+        private Vector2 _outerScroll;
+
+        /// <summary>真ん中の 2 枚をこれ以上は縮めない高さ。</summary>
+        private const float MinimumPaneHeight = 180f;
         private int _selected = -1;
         private int _tab = TabItem;
         private bool _dirty;
@@ -114,29 +118,92 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         public static void Open()
         {
             var window = GetWindow<CatalogBuilderWindow>("Catalog Builder");
-            window.minSize = new Vector2(900f, 600f);
+
+            // 小さくしても下まで届くよう、最小の縛りはゆるくしておく。
+            // 足りないぶんは外側のスクロールが受け持つ。
+            window.minSize = new Vector2(420f, 280f);
             window.Show();
         }
 
+        /// <summary>
+        /// <b>窓を小さくしても下まで届くようにしてあります。</b>Phase6-6。
+        ///
+        /// <b>作り</b>
+        /// <list type="number">
+        /// <item>上のバーと絞り込みは<b>いつも上に固定</b>(いちばんよく使うため)</item>
+        /// <item>真ん中の 2 枚は<b>残った高さいっぱい</b>に伸び縮みする</item>
+        /// <item>③ のボタンは<b>いつも下に固定</b>(押せないと詰むため)</item>
+        /// <item>それでも足りないくらい小さくしたら、<b>外側がスクロール</b>する</item>
+        /// </list>
+        /// Phase6-5 までは真ん中が縮まず、下のボタンが画面の外へ出ていました。
+        /// </summary>
         private void OnGUI()
         {
             DrawToolbar();
 
             if (_asset == null)
             {
+                _outerScroll = EditorGUILayout.BeginScrollView(_outerScroll);
                 DrawNoAsset();
+                EditorGUILayout.EndScrollView();
+                return;
+            }
+
+            // ── 下に置くもののぶんを先に取っておく。
+            //    これをしないと、真ん中が伸びきってボタンが画面外へ出る。
+            float footer = FooterHeight();
+            float middle = position.height - HeaderHeight() - footer;
+
+            bool tooSmall = middle < MinimumPaneHeight;
+            if (tooSmall)
+            {
+                // ここまで小さいと固定では収まらない。全部を 1 本のスクロールに入れる。
+                _outerScroll = EditorGUILayout.BeginScrollView(_outerScroll);
+
+                DrawSyncWarning();
+                DrawFilterBar();
+                DrawPanes(MinimumPaneHeight);
+                DrawFooter();
+
+                EditorGUILayout.EndScrollView();
                 return;
             }
 
             DrawSyncWarning();
             DrawFilterBar();
+            DrawPanes(middle);
 
-            EditorGUILayout.BeginHorizontal();
-            DrawList();
-            DrawRightPane();
-            EditorGUILayout.EndHorizontal();
-
+            GUILayout.FlexibleSpace();
             DrawFooter();
+        }
+
+        /// <summary>真ん中の 2 枚。高さは呼び手が決める。</summary>
+        private void DrawPanes(float height)
+        {
+            EditorGUILayout.BeginHorizontal(GUILayout.Height(height));
+            DrawList(height);
+            DrawRightPane(height);
+            EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>上のバー + 焼き忘れの警告 + 絞り込みのおよその高さ。</summary>
+        private float HeaderHeight()
+        {
+            float height = 22f + 22f;   // ツールバー + 絞り込み
+
+            if (_syncReport != null && _syncReport.Checked && !_syncReport.InSync) height += 56f;
+
+            return height;
+        }
+
+        /// <summary>下に固定するもののおよその高さ。</summary>
+        private float FooterHeight()
+        {
+            float height = 30f + 18f;   // ③ のボタン + 1 行の案内
+
+            if (_draft.FindDuplicateIds().Length > 0) height += 46f;
+
+            return height;
         }
 
         // ───────── 上のバー ─────────
@@ -336,9 +403,12 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
         // ───────── 左:一覧 ─────────
 
-        private void DrawList()
+        private void DrawList(float height)
         {
-            EditorGUILayout.BeginVertical(GUILayout.Width(400f));
+            // 窓を細くしたときに、右のタブが潰れないようにする。
+            float width = Mathf.Clamp(position.width * 0.42f, 200f, 460f);
+
+            EditorGUILayout.BeginVertical(GUILayout.Width(width), GUILayout.Height(height));
 
             // 絞ってから並べる。どちらも「元の位置」を返すので重ねられる。
             _visible = CatalogSortOrder.Apply(
@@ -581,9 +651,9 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
         // ───────── 右:タブ ─────────
 
-        private void DrawRightPane()
+        private void DrawRightPane(float height)
         {
-            EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+            EditorGUILayout.BeginVertical(EditorStyles.helpBox, GUILayout.Height(height));
 
             _tab = GUILayout.Toolbar(_tab, TabLabels);
 
@@ -724,13 +794,11 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 return;
             }
 
-            using (new EditorGUI.DisabledScope(false))
-            {
-                DrawBulkGenre(positions);
-                DrawBulkArtist(positions);
-                DrawBulkTags(positions);
-                DrawBulkRelated(positions);
-            }
+            DrawBulkClassify(positions);
+            DrawBulkGenre(positions);
+            DrawBulkArtist(positions);
+            DrawBulkTags(positions);
+            DrawBulkRelated(positions);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("チェックしたもの", EditorStyles.miniBoldLabel);
@@ -745,6 +813,59 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 EditorGUILayout.LabelField(
                     "  ほか " + (positions.Length - preview) + " 件", EditorStyles.miniLabel);
             }
+        }
+
+        /// <summary>
+        /// <b>ジャンルを言い当てて入れる。</b>Phase6-6。
+        ///
+        /// Phase6-4 まではカタログ全部が「音楽」になっていました。
+        /// ここを 1 回押せば、見出し・タグ・チャンネル名から付け直せます。
+        /// </summary>
+        private void DrawBulkClassify(int[] positions)
+        {
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField("ジャンルを自動で決める", EditorStyles.miniBoldLabel);
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("空いているものだけ"))
+            {
+                Report(CatalogBulkEdit.ClassifyGenres(
+                           _draft.Items, positions, Genres.GenreClassifier.Shared, false),
+                       "ジャンルの判定");
+            }
+
+            if (GUILayout.Button("全部付け直す"))
+            {
+                if (EditorUtility.DisplayDialog(
+                        "Catalog Builder",
+                        "手で直したジャンルも上書きします。よいですか?\n"
+                        + "(判定できなかったものは、いまのジャンルを残します)",
+                        "付け直す", "やめる"))
+                {
+                    Report(CatalogBulkEdit.ClassifyGenres(
+                               _draft.Items, positions, Genres.GenreClassifier.Shared, true),
+                           "ジャンルの判定");
+                }
+            }
+
+            EditorGUILayout.EndHorizontal();
+
+            DrawClassifyPreview(positions);
+        }
+
+        /// <summary>1 件目の判定理由を出す。「なぜこうなったか」が見えないと直しようがない。</summary>
+        private void DrawClassifyPreview(int[] positions)
+        {
+            if (positions.Length == 0) return;
+
+            CatalogDraftItem first = _draft.GetAt(positions[0]);
+            if (first == null) return;
+
+            EditorGUILayout.LabelField(
+                "例: " + first + " → "
+                + Genres.GenreClassifier.Shared.Explain(Genres.GenreSignals.FromDraftItem(first)),
+                EditorStyles.wordWrappedMiniLabel);
         }
 
         private void DrawBulkGenre(int[] positions)

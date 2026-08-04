@@ -114,6 +114,44 @@ namespace SmartMediaPlatform.CatalogBuilder
             return changed;
         }
 
+        /// <summary>
+        /// <b>ジャンルを言い当てて入れる。</b>Phase6-6。
+        ///
+        /// <b>すでに入っているものは触りません</b>(<paramref name="overwrite"/> が false のとき)。
+        /// 手で直したジャンルを、あとから走らせた自動判定に潰されないためです。
+        ///
+        /// <b>判定できなかったものは飛ばします。</b>「その他」で上書きすると、
+        /// せっかく入っていたジャンルが消えてしまいます。
+        /// </summary>
+        /// <returns>実際に変わった件数。</returns>
+        public static int ClassifyGenres(
+            IReadOnlyList<CatalogDraftItem> items, int[] positions,
+            Genres.GenreClassifier classifier, bool overwrite)
+        {
+            if (items == null || classifier == null) return 0;
+
+            int changed = 0;
+            for (int i = 0; i < Length(positions); i++)
+            {
+                CatalogDraftItem item = At(items, positions[i]);
+                if (item == null) continue;
+
+                bool hasGenre = !string.IsNullOrWhiteSpace(item.Genre);
+                if (hasGenre && !overwrite) continue;
+
+                string genre = classifier.Classify(Genres.GenreSignals.FromDraftItem(item));
+
+                // 分からなかったものに「その他」を書き込んで、
+                // もとのジャンルを消してしまわない。
+                if (genre == Genres.GenreClassifier.Unknown && hasGenre) continue;
+                if (item.Genre == genre) continue;
+
+                item.Genre = genre;
+                changed++;
+            }
+            return changed;
+        }
+
         /// <summary>種別をまとめて変える。</summary>
         public static int SetType(
             IReadOnlyList<CatalogDraftItem> items, int[] positions, Catalog.MediaType type)

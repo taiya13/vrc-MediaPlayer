@@ -95,13 +95,36 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             item.Source = "YouTube";
 
             // Phase6-4: 関連(RelatedIds)と絞り込みの材料。
-            item.Genre = YouTubeCategoryNames.Of(CategoryId);
             item.Tags = TrimTags(MaxTags);
 
             // Phase6-5: 並べ替えの材料。
             item.PublishedAt = PublishedAt;
 
+            // Phase6-6: ジャンルはこちらで決める。
+            // YouTube のカテゴリは「音楽」しか返さないので、そのまま入れると
+            // 200 本すべてが「音楽」になり、絞り込みにも「おすすめ」にも使えない。
+            // ここは材料を詰めて呼ぶだけで、判定は GenreClassifier の仕事。
+            item.Genre = Genres.GenreClassifier.Shared.Classify(ToGenreSignals());
+
             return item;
+        }
+
+        /// <summary>
+        /// ジャンル判定の材料を渡す形にする。
+        /// <b>カテゴリは番号ではなく言葉で渡します</b> —
+        /// 判定側に YouTube の事情(番号の意味)を持ち込まないためです。
+        /// </summary>
+        public Genres.GenreSignals ToGenreSignals()
+        {
+            var signals = new Genres.GenreSignals();
+
+            signals.Title = Title;
+            signals.ChannelName = ChannelTitle;
+            signals.Description = Description;
+            signals.Tags = Tags != null ? Tags : new string[0];
+            signals.SourceCategory = YouTubeCategoryNames.Of(CategoryId);
+
+            return signals;
         }
 
         /// <summary>

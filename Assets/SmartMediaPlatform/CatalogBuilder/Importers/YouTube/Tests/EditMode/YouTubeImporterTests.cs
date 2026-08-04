@@ -150,26 +150,39 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
         // ───────── 関連と絞り込みの材料(Phase6-4)─────────
 
         [Test]
-        public void TheCategoryBecomesAGenre()
+        public void TheGenreIsDecidedHereNotByTheCategory()
         {
+            // Phase6-6: カテゴリ「音楽」はほぼ全部の曲に付くので、
+            // そのまま入れると 200 本すべてが「音楽」になる。
             var video = new YouTubeVideoInfo();
             video.VideoId = "abc12345678";
-            video.Title = "テスト曲";
+            video.Title = "初音ミク - メルト";
             video.CategoryId = "10";
 
-            Assert.AreEqual("音楽", video.ToDraftItem().Genre,
-                            "ジャンルが空だと「同じジャンル」の関連が 1 件も効かない");
+            Assert.AreEqual(Genres.GenreDictionary.Vocaloid, video.ToDraftItem().Genre,
+                            "見出しから決める");
         }
 
         [Test]
-        public void AnUnknownCategoryLeavesTheGenreEmpty()
+        public void AnUnrecognisedVideoFallsBackToOther()
         {
             var video = new YouTubeVideoInfo();
             video.VideoId = "abc12345678";
             video.Title = "テスト曲";
             video.CategoryId = "9999";
 
-            Assert.AreEqual("", video.ToDraftItem().Genre, "知らない番号に勝手な名前を付けない");
+            Assert.AreEqual(Genres.GenreClassifier.Unknown, video.ToDraftItem().Genre,
+                            "「音楽」ではなく「その他」");
+        }
+
+        [Test]
+        public void TheCategoryIsPassedAsAWordNotANumber()
+        {
+            var video = new YouTubeVideoInfo();
+            video.CategoryId = "20";
+
+            Assert.AreEqual("ゲーム", video.ToGenreSignals().SourceCategory,
+                            "判定側に YouTube の番号の意味を持ち込まない");
         }
 
         [Test]
