@@ -184,6 +184,7 @@ namespace SmartMediaPlatform.World.EditorTools
             if (collider != null) UnityEngine.Object.DestroyImmediate(collider);
 
             var renderer = surface.GetComponent<Renderer>();
+            AssignScreenMaterial(renderer, log);
             var speaker = surface.AddComponent<AudioSource>();
             speaker.playOnAwake = false;
             speaker.spatialBlend = 1f;      // ワールドに置く前提なので 3D
@@ -361,6 +362,64 @@ namespace SmartMediaPlatform.World.EditorTools
         private static bool _needsCompile;
         private static int _bakedCount;
         private static int _syncFailures;
+
+        /// <summary>
+        /// <b>映像を映す面のマテリアルを用意する。</b>Phase7-2。
+        ///
+        /// <b>これが無いと動画が映りません。</b>Phase7-1 まで、ここは
+        /// <c>GameObject.CreatePrimitive</c> が付ける <c>Default-Material</c> のままでした。
+        /// 問題が 2 つあります。
+        /// <list type="number">
+        /// <item><b>Standard シェーダーはライトの影響を受けます。</b>
+        ///       置いた場所にライトが当たっていない(ライトベイクをしていない)と、
+        ///       動画は流れているのに<b>面が真っ黒</b>になります。
+        ///       ワールドによって映ったり映らなかったりするのはこれが理由です</item>
+        /// <item><b><c>Default-Material</c> は Unity の組み込みで、全部の Primitive が
+        ///       共有しています。</b>動画プレイヤーがそこへテクスチャを書き込むと、
+        ///       ワールド内のほかの箱や球にも影響しかねません</item>
+        /// </list>
+        ///
+        /// <b>Unlit にします。</b>映像は自分で光っているものなので、
+        /// ライトを当てる必要がそもそもありません。
+        /// </summary>
+        private static void AssignScreenMaterial(Renderer renderer, StringBuilder log)
+        {
+            if (renderer == null) return;
+
+            const string folder = "Assets/SmartMediaPlatform/Generated";
+            const string path = folder + "/SmartMediaScreen.mat";
+
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (existing != null)
+            {
+                renderer.sharedMaterial = existing;
+                log.AppendLine("  画面の材質   : " + path + "(すでにあるものを使いました)");
+                return;
+            }
+
+            Shader shader = Shader.Find("Unlit/Texture");
+            if (shader == null)
+            {
+                log.AppendLine(
+                    "  ※ Unlit/Texture が見つかりません。"
+                    + "Surface のマテリアルを手で Unlit にしてください。");
+                return;
+            }
+
+            var material = new Material(shader);
+            material.name = "SmartMediaScreen";
+
+            // 動画が来るまでは真っ黒。何も映っていないことが分かるように暗い灰色にする。
+            material.color = new Color(0.12f, 0.13f, 0.16f, 1f);
+
+            if (!AssetDatabase.IsValidFolder(folder)) Directory.CreateDirectory(folder);
+
+            AssetDatabase.CreateAsset(material, path);
+            AssetDatabase.SaveAssets();
+
+            renderer.sharedMaterial = material;
+            log.AppendLine("  画面の材質   : " + path + " を作りました(Unlit / ライト不要)");
+        }
 
         private static GameObject Child(GameObject parent, string name)
         {

@@ -146,6 +146,9 @@ namespace SmartMediaPlatform.World.EditorTools
 
             // 5. 同期(Phase5-4)
             InspectSync(panel, sb);
+
+            // 6. 映像が出るか(Phase7-2)
+            InspectScreen(panel, sb);
         }
 
         /// <summary>同期がつながっているかを見る。</summary>
@@ -178,6 +181,61 @@ namespace SmartMediaPlatform.World.EditorTools
             if (sync.Session == null) sb.AppendLine("       ← Sync の Session が未設定");
             if (sync.Backend == null) sb.AppendLine("       ← Sync の Backend が未設定(位置合わせができません)");
             if (sync.Controller == null) sb.AppendLine("       ← Sync の Controller が未設定(受信しても画面が更新されません)");
+        }
+
+        /// <summary>
+        /// <b>映像が出ない原因を探す。</b>Phase7-2。
+        ///
+        /// 実際に踏んだ原因は<b>マテリアル</b>でした。
+        /// <c>CreatePrimitive</c> が付ける <c>Default-Material</c> は
+        /// <b>Standard(ライトの影響を受ける)</b>なので、
+        /// ライトが当たっていない場所に置くと<b>動画は流れているのに面が真っ黒</b>になります。
+        /// ワールドによって映ったり映らなかったりするのはこれが理由です。
+        /// </summary>
+        private static void InspectScreen(UdonMediaPanel panel, StringBuilder sb)
+        {
+            if (panel.Core == null) return;
+
+            UdonMediaScreen screen = panel.Core.Screen;
+            if (screen == null)
+            {
+                sb.AppendLine("     映像            : Screen が未設定 ← 映りません");
+                return;
+            }
+
+            if (screen.Surface == null)
+            {
+                sb.AppendLine("     映像            : Surface が未設定 ← 映りません");
+                return;
+            }
+
+            Material material = screen.Surface.sharedMaterial;
+
+            if (material == null)
+            {
+                sb.AppendLine("     映像            : Surface にマテリアルがありません ← 映りません");
+                return;
+            }
+
+            string shaderName = material.shader != null ? material.shader.name : "(不明)";
+            bool unlit = shaderName.Contains("Unlit") || shaderName.Contains("unlit");
+
+            sb.AppendLine("     映像            : " + shaderName
+                          + (unlit ? "" : "  ← ライトが要るシェーダー。暗い場所では真っ黒になります"));
+
+            if (material.name == "Default-Material")
+            {
+                sb.AppendLine("       ← Unity の組み込みマテリアルのままです。");
+                sb.AppendLine("         Prefab を作り直すと Unlit のものが割り当てられます。");
+            }
+
+            if (!screen.Surface.enabled)
+            {
+                sb.AppendLine("       ← Renderer が切られています");
+            }
+
+            sb.AppendLine("       ヒント: 板は裏から見ると透明です。");
+            sb.AppendLine("               何も映らないときは、反対側に回ってみてください。");
         }
 
         private static string AccessLabel(int policy)

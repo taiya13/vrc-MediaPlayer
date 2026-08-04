@@ -700,12 +700,15 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         /// <summary>
         /// 2 つめのボタンに出す文字。
-        /// <b>「＋」だけでは何をするボタンか分かりません</b>ので、
-        /// 常に言葉を添えます(Phase7)。
+        ///
+        /// <b>記号だけにしてあります</b>(Phase7-2)。Phase7-1 では「予定へ」と
+        /// 書いていましたが、<b>説明的すぎて画面がうるさくなりました</b>。
+        /// 何をするかは、押す前に出る「使う」の案内
+        /// (<c>再生予定に追加</c>)が伝えます。
         /// </summary>
         private string SecondaryLabel()
         {
-            return Source == SourceQueue ? "外す" : "予定へ";
+            return Source == SourceQueue ? "×" : "＋";
         }
 
         /// <summary>絵が無いときに枠へ出す 1 文字。ジャンルの頭を取る。</summary>

@@ -643,11 +643,12 @@ namespace SmartMediaPlatform.World.EditorTools
                 hit.transform, "Index", 12f, artY - 4f, 34f, 30f, 18,
                 TextAnchor.MiddleCenter, UdonWorldUiKit.TrackFill);
 
-            // ── 2 つめのボタン。記号だけでは何をするか分からないので言葉を書く。
+            // ── 2 つめのボタン。記号だけにして、意味は「使う」の案内に任せる
+            //    (Phase7-1 の「予定へ」は説明的すぎて画面がうるさくなった)。
             Text secondaryLabel;
             Button secondaryButton = UdonWorldUiKit.PushButton(
                 content, "Secondary", width - SecondaryWidth, (height - SecondaryWidth) * 0.5f,
-                SecondaryWidth, SecondaryWidth, queue ? "外す" : "予定へ", 18,
+                SecondaryWidth, SecondaryWidth, queue ? "×" : "＋", 34,
                 UdonWorldUiKit.ButtonFace, out secondaryLabel);
 
             row.SecondaryLabel = secondaryLabel;

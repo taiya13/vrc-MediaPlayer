@@ -80,6 +80,40 @@ namespace SmartMediaPlatform.World.Udon.UI
         public string ExhaustedLabel = "次がありません";
         public string LoadingLabel = "読み込み中…";
 
+        /// <summary>
+        /// <b>バーと時間だけを毎フレーム動かす。</b>Phase7-2。
+        ///
+        /// <b>なぜ Refresh と分けたのか</b><br/>
+        /// <see cref="UdonMediaPanel"/> は<b>0.5 秒に 1 回</b>しか書き直しません
+        /// (曲名や一覧を毎フレーム書き直すと重いため)。
+        /// バーもその周期で動いていたので、<b>カクカク跳ねるか、まったく動かない</b>
+        /// ように見えていました。
+        ///
+        /// ここで動かすのは<b>3 つの値だけ</b>です。
+        /// <list type="bullet">
+        /// <item>進捗バーの伸び</item>
+        /// <item>経過時間</item>
+        /// <item>残り時間</item>
+        /// </list>
+        /// 曲名・チャンネル・絵・一覧は今までどおり 0.5 秒周期のままなので、
+        /// <b>重さはほとんど変わりません</b>。
+        /// </summary>
+        void Update()
+        {
+            if (Session == null) return;
+            if (Session.CurrentIndex < 0) return;
+
+            UdonVideoBackend backend = ResolveBackend();
+            if (backend == null) return;
+
+            float elapsed = backend.GetTime();
+            float length = backend.GetDuration();
+
+            SetFill(backend.GetProgress());
+            SetText(TimeText, FormatSeconds(elapsed) + " / " + FormatLength(length, Session.CurrentIndex));
+            SetText(RemainingText, FormatRemaining(elapsed, length));
+        }
+
         /// <summary>画面を書き直す。<see cref="UdonMediaPanel"/> から呼ばれる。</summary>
         public void Refresh()
         {
