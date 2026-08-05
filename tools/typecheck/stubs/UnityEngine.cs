@@ -109,6 +109,7 @@ namespace UnityEngine
         public Quaternion rotation { get; set; }
         public Quaternion localRotation { get; set; }
         public Transform parent { get; set; }
+        public void SetAsFirstSibling() { }
         public Transform root { get { return null; } }
         public int childCount { get { return 0; } }
         public Transform GetChild(int index) { return null; }
@@ -675,6 +676,7 @@ namespace UnityEngine.UI
         public int fillOrigin { get; set; }
         public float fillAmount { get; set; }
         public bool preserveAspect { get; set; }
+        public float pixelsPerUnitMultiplier { get; set; }
     }
     public struct ColorBlock
     {
@@ -724,7 +726,38 @@ namespace UnityEngine.UI
         public UnityEngine.Events.UnityEvent<float> onValueChanged { get; set; }
     }
     public class Toggle : Selectable { public bool isOn { get; set; } }
-    public class ScrollRect : UnityEngine.Behaviour { public UnityEngine.Vector2 normalizedPosition { get; set; } }
+    public class Scrollbar : Selectable
+    {
+        public enum Direction { LeftToRight, RightToLeft, BottomToTop, TopToBottom }
+        public float value { get; set; }
+        public float size { get; set; }
+        public int numberOfSteps { get; set; }
+        public Direction direction { get; set; }
+        public UnityEngine.RectTransform handleRect { get; set; }
+        public UnityEngine.Events.UnityEvent<float> onValueChanged { get; set; }
+    }
+    public class ScrollRect : UnityEngine.Behaviour
+    {
+        public enum MovementType { Unrestricted, Elastic, Clamped }
+        public UnityEngine.Vector2 normalizedPosition { get; set; }
+        public float verticalNormalizedPosition { get; set; }
+        public float horizontalNormalizedPosition { get; set; }
+        public UnityEngine.RectTransform content { get; set; }
+        public UnityEngine.RectTransform viewport { get; set; }
+        public bool horizontal { get; set; }
+        public bool vertical { get; set; }
+        public MovementType movementType { get; set; }
+        public float elasticity { get; set; }
+        public bool inertia { get; set; }
+        public float decelerationRate { get; set; }
+        public float scrollSensitivity { get; set; }
+        public Scrollbar verticalScrollbar { get; set; }
+        public Scrollbar horizontalScrollbar { get; set; }
+        public UnityEngine.Vector2 velocity { get; set; }
+        public UnityEngine.Events.UnityEvent<UnityEngine.Vector2> onValueChanged { get; set; }
+    }
+    public class Mask : UnityEngine.Behaviour { public bool showMaskGraphic { get; set; } }
+    public class RectMask2D : UnityEngine.Behaviour { }
     public class RawImage : Graphic { public UnityEngine.Texture texture { get; set; } }
 }
 

@@ -72,6 +72,15 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("Image Type を Filled にしておくこと")]
         public Image ProgressFill;
 
+        [Tooltip("動かせる再生バー。onValueChanged から OnSeekChanged を呼ぶこと。"
+                 + "空のままでも再生には影響しません")]
+        public Slider SeekSlider;
+
+        [Tooltip("つまみを離してから実際に動かすまでの間(秒)。"
+                 + "つかんでいる最中に毎フレーム seek すると、読み込みが追いつかず固まる")]
+        [Range(0.05f, 1f)]
+        public float SeekApplyDelay = 0.2f;
+
         [Header("文言")]
         public string NothingLabel = "(何も再生していません)";
         public string PlayingLabel = "▶ 再生中";
@@ -106,12 +115,92 @@ namespace SmartMediaPlatform.World.Udon.UI
             UdonVideoBackend backend = ResolveBackend();
             if (backend == null) return;
 
-            float elapsed = backend.GetTime();
             float length = backend.GetDuration();
 
+            // ── つまみをつかんでいる間は、こちらから書き戻さない。
+            //    書き戻すと、動かした先から毎フレーム引き戻されて操作できません。
+            if (_seekPending)
+            {
+                float wanted = _seekValue * length;
+
+                SetFill(_seekValue);
+                SetText(TimeText,
+                        FormatSeconds(wanted) + " / " + FormatLength(length, Session.CurrentIndex));
+                SetText(RemainingText, FormatRemaining(wanted, length));
+
+                // 手が止まったら実際に動かす。
+                // つかんでいる最中に毎フレーム seek すると、読み込みが追いつきません。
+                if (Time.time - _lastSeekInput >= SeekApplyDelay) ApplySeek(backend, length);
+                return;
+            }
+
+            float elapsed = backend.GetTime();
+
             SetFill(backend.GetProgress());
+            SetSeekSlider(backend.GetProgress());
             SetText(TimeText, FormatSeconds(elapsed) + " / " + FormatLength(length, Session.CurrentIndex));
             SetText(RemainingText, FormatRemaining(elapsed, length));
+        }
+
+        // ───────── 動かせる再生バー(Phase7-3)─────────
+
+        // つまみを動かしている最中か。動かしている間は書き戻さない。
+        private bool _seekPending;
+        private float _seekValue;
+        private float _lastSeekInput;
+
+        // 自分で書き込んだぶんを「人が動かした」と取り違えないための札。
+        private bool _writingSeek;
+
+        /// <summary>
+        /// <b><c>Slider.onValueChanged</c> から呼ぶ。</b>引数は取らず、つまみを読みます。
+        ///
+        /// <b>ここでは動かしません。</b>覚えておいて、手が止まってから動かします
+        /// (つかんでいる最中に毎フレーム seek すると、読み込みが追いつかず固まるため)。
+        /// </summary>
+        public void OnSeekChanged()
+        {
+            if (_writingSeek) return;
+            if (SeekSlider == null || Session == null) return;
+            if (Session.CurrentIndex < 0) return;
+
+            _seekValue = Mathf.Clamp01(SeekSlider.value);
+            _seekPending = true;
+            _lastSeekInput = Time.time;
+        }
+
+        /// <summary>覚えていた位置へ実際に動かす。</summary>
+        private void ApplySeek(UdonVideoBackend backend, float length)
+        {
+            _seekPending = false;
+
+            if (backend == null || length <= 0f) return;
+
+            // 同期しているときは、まず持ち主になる。
+            // 持ち主でないまま動かすと、次の見回りで元の位置へ戻されます。
+            UdonSyncCoordinator sync = ResolveSync();
+            if (sync != null && sync.Enabled)
+            {
+                if (!sync.IsOwner() && !sync.TakeControl()) return;
+            }
+
+            float seconds = _seekValue * length;
+            if (!backend.SetTime(seconds)) return;
+
+            // 同期の基準もここへ置き直す(置き直さないと引き戻される)。
+            if (sync != null && sync.Enabled) sync.NotifySeeked(seconds);
+        }
+
+        private void SetSeekSlider(float value)
+        {
+            if (SeekSlider == null) return;
+
+            float clamped = Mathf.Clamp01(value);
+            if (Mathf.Abs(SeekSlider.value - clamped) < 0.0005f) return;
+
+            _writingSeek = true;
+            SeekSlider.value = clamped;
+            _writingSeek = false;
         }
 
         /// <summary>画面を書き直す。<see cref="UdonMediaPanel"/> から呼ばれる。</summary>
@@ -154,12 +243,17 @@ namespace SmartMediaPlatform.World.Udon.UI
                 return;
             }
 
-            // 再生中のはずなのにまだ動いていないなら「読み込み中」。
-            // 何も出ない時間に「壊れた?」と思わせないための 1 行。
+            // ── 状態は「伝えることがあるときだけ」出す。
+            //
+            //    ふつうに鳴っているとき「▶ 再生中」と書いても、
+            //    <b>バーが動いていることと、ボタンの見た目で既に分かっています</b>。
+            //    3 つ並んだ文字のうち 1 つが常に無意味だと、
+            //    残りの 2 つ(経過・残り)も読まれなくなります。
+            //    読み込み中と一時停止のときだけ出します。
             bool loading = Session.IsPlaying && !backend.IsPlaying;
             SetText(StateText, loading
                 ? LoadingLabel
-                : (Session.IsPlaying ? PlayingLabel : PausedLabel));
+                : (Session.IsPlaying ? "" : PausedLabel));
 
             float elapsed = backend.GetTime();
             float length = backend.GetDuration();
@@ -284,6 +378,11 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Backend != null) return Backend;
             if (Session == null) return null;
             return Session.Backend;
+        }
+
+        private UdonSyncCoordinator ResolveSync()
+        {
+            return Sync;
         }
 
         private string Duration(int catalogIndex)

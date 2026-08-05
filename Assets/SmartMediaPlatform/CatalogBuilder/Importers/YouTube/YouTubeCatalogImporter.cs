@@ -35,8 +35,14 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         /// </summary>
         public bool ExcludeShorts = true;
 
+        /// <summary>直近の取り込みで<b>見た</b>動画の総数。</summary>
+        public int LastFetchedTotal { get; private set; }
+
         /// <summary>直近の取り込みでショートとして外した件数。</summary>
         public int LastShortsExcluded { get; private set; }
+
+        /// <summary>直近の取り込みで実際に取り込んだ通常動画の件数。</summary>
+        public int LastImported { get; private set; }
 
         /// <summary>
         /// 直近に取れた生の一覧。<b>プレビューはこれを見ます。</b>
@@ -282,81 +288,256 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 limit = boundary.MaxNewItems > 0 ? boundary.MaxNewItems : NewItemsPageSize;
             }
 
-            YouTubeFetchResult fetched = Fetch(client, LastTarget, limit);
-
-            if (fetched == null) return CatalogImportResult.Failure("取得の係が結果を返しませんでした。");
-            if (!fetched.Ok) return CatalogImportResult.Failure(fetched.Message);
-
-            LastVideos = fetched.Videos;
-
-            var items = new List<CatalogDraftItem>();
-            int skipped = 0;
-            int shorts = 0;
+            // 0 は「上限を決めていない」。ページを繰り返す仕組みでは
+            // 「そろったら止まる」の目標が要るので、既定の上限を当てる。
+            if (limit <= 0) limit = DefaultMaxItems;
 
             // 名指しで 1 本だけ貼られたときは、ショートでも外さない。
             // 人が自分で選んだものを黙って消すと「勝手に消えた」になる。
             bool dropShorts = ResolveExcludeShorts()
                               && LastTarget.Kind != YouTubeUrlParser.TargetVideo;
 
-            for (int i = 0; i < fetched.Videos.Count; i++)
-            {
-                YouTubeVideoInfo video = fetched.Videos[i];
-                if (video == null) continue;
+            var harvest = Harvest(client, limit, boundary, dropShorts);
+            if (harvest.Error.Length > 0) return CatalogImportResult.Failure(harvest.Error);
 
-                // 再生できないものは Builder へ渡さない。
-                // LastVideos には「使えません」として残る。
-                if (video.IsUnavailable) continue;
+            LastVideos = harvest.Seen;
+            LastFetchedTotal = harvest.Seen.Count;
+            LastShortsExcluded = harvest.Shorts;
+            LastImported = harvest.Items.Count;
 
-                // ショートは取り込みの時点で外す(Phase7-3)。
-                // 大画面では左右が黒いままですぐ次へ飛ぶため、
-                // あとから 1 本ずつ消すのは現実的ではない。
-                if (dropShorts && YouTubeShortsFilter.IsShort(video))
-                {
-                    shorts++;
-                    continue;
-                }
-
-                if (boundary != null && boundary.IsKnown(video.VideoId))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                items.Add(video.ToDraftItem());
-            }
-
-            LastShortsExcluded = shorts;
+            string tally = DescribeTally(harvest, dropShorts);
 
             if (boundary == null)
             {
-                return CatalogImportResult.Success(items, WithShortsNote(fetched.Message, shorts))
+                return CatalogImportResult.Success(harvest.Items, tally)
                                           .From(DescribeSource(), KindOf(LastTarget));
             }
 
-            // 上限まで見て 1 件も知っているものが無かった = まだ先にあるかもしれない。
-            bool mayHaveMore = skipped == 0 && fetched.Count >= limit;
+            // まだ先がある、または上限ぴったりで打ち切った = 続きが残っているかもしれない。
+            // 上限で切ったときは「これで全部か」を確かめていないので、
+            // 黙って終わると「入れたはずの曲が無い」になる。
+            bool mayHaveMore = harvest.HasMore || harvest.Items.Count >= limit;
 
             CatalogImportResult result = CatalogImportResult
-                .Success(items,
-                         WithShortsNote(DescribeNew(items.Count, skipped, mayHaveMore), shorts))
+                .Success(harvest.Items,
+                         DescribeNew(harvest.Items.Count, harvest.Known, mayHaveMore)
+                         + "\n" + tally)
                 .From(DescribeSource(), KindOf(LastTarget));
 
             result.MayHaveMore = mayHaveMore;
             return result;
         }
 
+        // ───────── 目標の件数までそろえる(Phase7-3)─────────
+
         /// <summary>
-        /// 外したショートの件数を結果に書き添える。
-        /// <b>黙って消さない</b>ためのもので、0 件なら何も足しません。
+        /// <b>1 回の取り込みで集めたもの。</b>
+        /// 数を 3 つとも持つのは、<b>取りこぼしを人が確かめられるようにする</b>ためです。
+        /// 「100 件のはずが 12 件しか入らない」が起きたとき、
+        /// 見た総数・外したショート・入った件数が並んでいれば理由がすぐ分かります。
         /// </summary>
-        private static string WithShortsNote(string message, int shorts)
+        private sealed class HarvestResult
         {
-            if (shorts <= 0) return message;
+            public readonly List<CatalogDraftItem> Items = new List<CatalogDraftItem>();
+            public readonly List<YouTubeVideoInfo> Seen = new List<YouTubeVideoInfo>();
 
-            string note = "ショート動画 " + shorts + " 件は取り込みませんでした"
-                          + "(大画面では左右が黒いまますぐ終わるため)。";
+            /// <summary>ショートとして外した数。</summary>
+            public int Shorts;
 
-            return string.IsNullOrEmpty(message) ? note : message + "\n" + note;
+            /// <summary>再生できない(非公開・削除済み)として外した数。</summary>
+            public int Unavailable;
+
+            /// <summary>すでに取り込み済みとして飛ばした数。</summary>
+            public int Known;
+
+            /// <summary>まだ先のページが残っているか。</summary>
+            public bool HasMore;
+
+            /// <summary>見に行ったページ数。</summary>
+            public int Pages;
+
+            public string Error = "";
+        }
+
+        /// <summary>
+        /// <b>「通常動画を <paramref name="limit"/> 件そろえる」まで、ページを繰り返し取る。</b>
+        ///
+        /// <b>なぜ要るのか</b><br/>
+        /// ショートを外すようにしたら取れる件数が激減しました。
+        /// これまでは<b>「100 件見る」</b>だったので、
+        /// ショートばかりのチャンネルでは 100 件見て 10 件しか残りませんでした。
+        /// 欲しいのは<b>「通常動画を 100 件そろえる」</b>ほうです。
+        ///
+        /// <b>止まる条件は 3 つ</b>です。どれか 1 つでも当たれば終わります。
+        /// <list type="number">
+        /// <item>目標の件数に届いた</item>
+        /// <item>続きが無い(最後まで見た)</item>
+        /// <item><see cref="MaxPages"/> 枚見た …… <b>歯止め</b>。
+        ///       ショートしか無いチャンネルで延々と API を叩き続けないため</item>
+        /// </list>
+        ///
+        /// <b>続きから取れない取得係のときは 1 回で終わります</b>
+        /// (<see cref="IPagedYouTubeClient"/> を実装していない場合)。
+        /// </summary>
+        private HarvestResult Harvest(
+            IYouTubeClient client, int limit, CatalogImportBoundary boundary, bool dropShorts)
+        {
+            var harvest = new HarvestResult();
+
+            // 動画 1 本にページは無いので、続きを取る仕組みは使わない。
+            var paged = LastTarget.Kind == YouTubeUrlParser.TargetVideo
+                ? null
+                : client as IPagedYouTubeClient;
+
+            int pageSize = paged != null && paged.PageSize > 0 ? paged.PageSize : limit;
+
+            string pageToken = "";
+
+            for (int page = 0; page < MaxPages; page++)
+            {
+                YouTubeFetchResult fetched = paged != null
+                    ? FetchPage(paged, LastTarget, pageSize, pageToken)
+                    : Fetch(client, LastTarget, limit);
+
+                if (fetched == null)
+                {
+                    harvest.Error = "取得の係が結果を返しませんでした。";
+                    return harvest;
+                }
+
+                if (!fetched.Ok)
+                {
+                    // 1 枚目で失敗したら失敗。2 枚目以降なら、
+                    // そこまでに集めたものを活かす(全部捨てるほうが困る)。
+                    if (page == 0) harvest.Error = fetched.Message;
+                    return harvest;
+                }
+
+                harvest.Pages = page + 1;
+                Absorb(harvest, fetched, boundary, dropShorts, limit);
+
+                pageToken = fetched.NextPageToken;
+                harvest.HasMore = fetched.HasMore;
+
+                if (harvest.Items.Count >= limit) break;
+                if (paged == null || !fetched.HasMore) break;
+            }
+
+            return harvest;
+        }
+
+        /// <summary>1 ページぶんを仕分けて取り込む。</summary>
+        private static void Absorb(
+            HarvestResult harvest, YouTubeFetchResult fetched,
+            CatalogImportBoundary boundary, bool dropShorts, int limit)
+        {
+            for (int i = 0; i < fetched.Videos.Count; i++)
+            {
+                YouTubeVideoInfo video = fetched.Videos[i];
+                if (video == null) continue;
+
+                harvest.Seen.Add(video);
+
+                // 再生できないものは Builder へ渡さない。
+                // Seen には「使えません」として残る。
+                if (video.IsUnavailable)
+                {
+                    harvest.Unavailable++;
+                    continue;
+                }
+
+                // ショートは取り込みの時点で外す(Phase7-3)。
+                // 大画面では左右が黒いままですぐ次へ飛ぶため、
+                // あとから 1 本ずつ消すのは現実的ではない。
+                if (dropShorts && YouTubeShortsFilter.IsShort(video))
+                {
+                    harvest.Shorts++;
+                    continue;
+                }
+
+                if (boundary != null && boundary.IsKnown(video.VideoId))
+                {
+                    harvest.Known++;
+                    continue;
+                }
+
+                if (harvest.Items.Count >= limit) return;
+
+                harvest.Items.Add(video.ToDraftItem());
+            }
+        }
+
+        private static YouTubeFetchResult FetchPage(
+            IPagedYouTubeClient client, YouTubeUrlParser.Target target,
+            int want, string pageToken)
+        {
+            if (target.Kind == YouTubeUrlParser.TargetPlaylist)
+            {
+                return client.FetchPlaylistPage(target.Id, want, pageToken);
+            }
+            if (target.Kind == YouTubeUrlParser.TargetChannelId)
+            {
+                return client.FetchChannelPage(target.Id, false, want, pageToken);
+            }
+            if (target.Kind == YouTubeUrlParser.TargetChannelName)
+            {
+                return client.FetchChannelPage(target.Id, true, want, pageToken);
+            }
+
+            // 動画 1 本にページは無い。続きも無い。
+            return YouTubeFetchResult.Failure("この指定は 1 ページずつ取れません。");
+        }
+
+        /// <summary>
+        /// <b>見に行くページ数の上限。</b>
+        /// ショートしか投稿していないチャンネルで、目標に届かないまま
+        /// 延々と API を叩き続けないための歯止めです。
+        /// 1 ページ 50 件なので、最大 1000 件まで見ます。
+        /// </summary>
+        public const int MaxPages = 20;
+
+        /// <summary>
+        /// <see cref="MaxCount"/> を決めていないときに目指す件数。
+        /// 「そろったら止まる」ための目標なので、何かしら数が要ります。
+        /// </summary>
+        public const int DefaultMaxItems = 100;
+
+        /// <summary>
+        /// <b>何を見て、何を外して、何が入ったか。</b>
+        /// 取りこぼしが起きていないかを人が確かめられるように、3 つとも出します。
+        /// </summary>
+        private static string DescribeTally(HarvestResult harvest, bool dropShorts)
+        {
+            var sb = new System.Text.StringBuilder();
+
+            sb.Append("見た動画 ").Append(harvest.Seen.Count).Append(" 件");
+            if (harvest.Pages > 1) sb.Append("(").Append(harvest.Pages).Append(" ページ)");
+
+            if (dropShorts)
+            {
+                sb.Append(" / ショート除外 ").Append(harvest.Shorts).Append(" 件");
+            }
+            if (harvest.Unavailable > 0)
+            {
+                sb.Append(" / 再生不可 ").Append(harvest.Unavailable).Append(" 件");
+            }
+            if (harvest.Known > 0)
+            {
+                sb.Append(" / 取り込み済み ").Append(harvest.Known).Append(" 件");
+            }
+
+            sb.Append(" → 取り込み ").Append(harvest.Items.Count).Append(" 件");
+
+            if (harvest.HasMore)
+            {
+                sb.Append("\nまだ先があります。もう一度押すと続きから取れます。");
+            }
+            else
+            {
+                sb.Append("\n最後まで見ました。");
+            }
+
+            return sb.ToString();
         }
 
         private static string DescribeNew(int fresh, int skipped, bool mayHaveMore)

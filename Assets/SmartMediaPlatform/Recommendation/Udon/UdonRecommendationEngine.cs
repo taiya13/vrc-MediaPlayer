@@ -34,9 +34,45 @@ namespace SmartMediaPlatform.Recommendation.Udon
         private float[] _resultScores;
         private int _resultCount;
 
+        // ───────── おすすめの理由(Phase7-3)─────────
+
+        /// <summary>理由なし(ただの候補)。</summary>
+        public const int ReasonNone = 0;
+
+        /// <summary>同じチャンネル / アーティスト。</summary>
+        public const int ReasonSameArtist = 1;
+
+        /// <summary>同じジャンル。</summary>
+        public const int ReasonSameGenre = 2;
+
+        /// <summary>似たタグが付いている。</summary>
+        public const int ReasonSharedTag = 3;
+
+        /// <summary>カタログ側で関連付けられている。</summary>
+        public const int ReasonRelated = 4;
+
+        private int[] _resultReasons;
+
         public int ResultCount { get { return _resultCount; } }
         public int GetResultIndex(int i) { return _resultIndices[i]; }
         public float GetResultScore(int i) { return _resultScores[i]; }
+
+        /// <summary>なぜこれを勧めたか(<c>Reason…</c> のどれか)。</summary>
+        public int GetResultReason(int i)
+        {
+            if (_resultReasons == null || i < 0 || i >= _resultReasons.Length) return ReasonNone;
+            return _resultReasons[i];
+        }
+
+        /// <summary>理由を人が読む言葉にする。</summary>
+        public string DescribeReason(int reason)
+        {
+            if (reason == ReasonRelated) return "この曲と一緒によく聴かれます";
+            if (reason == ReasonSameArtist) return "同じチャンネル";
+            if (reason == ReasonSameGenre) return "同じジャンル";
+            if (reason == ReasonSharedTag) return "似たタグ";
+            return "おすすめ";
+        }
         public string GetResultId(int i) { return Catalog.GetId(_resultIndices[i]); }
 
         /// <summary>
@@ -128,13 +164,58 @@ namespace SmartMediaPlatform.Recommendation.Udon
 
             _resultIndices = new int[take];
             _resultScores = new float[take];
+            _resultReasons = new int[take];
             for (int i = 0; i < take; i++)
             {
                 _resultIndices[i] = candidates[i];
                 _resultScores[i] = scores[i];
+                _resultReasons[i] = ReasonFor(
+                    candidates[i], isRelated, seedArtist, seedGenre, seedTags);
             }
             _resultCount = take;
             return take;
+        }
+
+        /// <summary>
+        /// <b>なぜこれを勧めるのか。</b>Phase7-3。
+        ///
+        /// <b>理由が言えないおすすめは押されません。</b>
+        /// 「あなたへのおすすめ」とだけ書かれていても、
+        /// <b>なぜそれなのかが分からないと信用されない</b>ためです。
+        /// 出すのは<b>いちばん強い理由 1 つだけ</b>にします。
+        /// 3 つ並べると、どれが効いたのか分からなくなります。
+        /// </summary>
+        private int ReasonFor(
+            int cand, bool[] isRelated, string seedArtist, string seedGenre, string[] seedTags)
+        {
+            if (WeightRelated > 0f && isRelated[cand]) return ReasonRelated;
+
+            if (WeightSameArtist > 0f && seedArtist.Length > 0
+                && Catalog.GetArtist(cand).ToLower() == seedArtist)
+            {
+                return ReasonSameArtist;
+            }
+
+            if (WeightSameGenre > 0f && seedGenre.Length > 0
+                && Catalog.GetGenre(cand).ToLower() == seedGenre)
+            {
+                return ReasonSameGenre;
+            }
+
+            if (WeightTagMatch > 0f)
+            {
+                int candTagCount = Catalog.GetTagCount(cand);
+                for (int t = 0; t < candTagCount; t++)
+                {
+                    string ct = Catalog.GetTag(cand, t).ToLower();
+                    for (int s = 0; s < seedTags.Length; s++)
+                    {
+                        if (seedTags[s] == ct) return ReasonSharedTag;
+                    }
+                }
+            }
+
+            return ReasonNone;
         }
 
         private float Score(int cand, bool[] isRelated, string seedArtist, string seedGenre, string[] seedTags)

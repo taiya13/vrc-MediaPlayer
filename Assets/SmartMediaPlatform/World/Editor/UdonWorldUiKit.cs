@@ -34,29 +34,36 @@ namespace SmartMediaPlatform.World.EditorTools
     public static class UdonWorldUiKit
     {
         // ───────── 色 ─────────
+        //
+        // Phase7-3 から、実体は <see cref="UdonMediaTheme"/> にあります。
+        // ここに残っているのは<b>今までの名前で呼べるようにするため</b>の別名です。
+        // 新しく書くときは Theme のほうを直接使ってください。
 
-        public static readonly Color Backplate = new Color(0.07f, 0.08f, 0.10f, 0.96f);
-        public static readonly Color Section = new Color(0.13f, 0.14f, 0.17f, 1f);
-        public static readonly Color ButtonFace = new Color(0.20f, 0.22f, 0.27f, 1f);
-        public static readonly Color ButtonAccent = new Color(0.15f, 0.42f, 0.66f, 1f);
-        public static readonly Color RowFace = new Color(0.16f, 0.17f, 0.21f, 1f);
+        public static readonly Color Backplate = UdonMediaTheme.Base;
+        public static readonly Color Section = UdonMediaTheme.Surface;
+        public static readonly Color ButtonFace = UdonMediaTheme.SurfaceRaised;
+        public static readonly Color ButtonAccent = UdonMediaTheme.Accent;
+        public static readonly Color RowFace = UdonMediaTheme.SurfaceRaised;
 
-        // 1 行おきに少しだけ濃さを変える。目が横に滑らないようにするためで、
-        // 色そのものには意味を持たせない。
-        public static readonly Color RowFaceAlt = new Color(0.19f, 0.20f, 0.25f, 1f);
+        // Phase7-3 で「1 行おきに濃さを変える」のをやめました。
+        // 縞模様は、行の中身より先に縞のほうが目に入ります。
+        // 余白で区切るほうが、目が縦に流れて速く読めます。
+        public static readonly Color RowFaceAlt = UdonMediaTheme.SurfaceRaised;
 
-        public static readonly Color RowHighlight = new Color(0.15f, 0.42f, 0.66f, 0.45f);
+        /// <summary>いま鳴っている行に敷く色。強調色をうっすら。</summary>
+        public static readonly Color RowHighlight = UdonMediaTheme.AccentWash;
 
         // 押した直後だけ一瞬出る。「使う」で押したときの手応えになる。
-        public static readonly Color RowPressed = new Color(1f, 1f, 1f, 0.22f);
-        public static readonly Color TrackBack = new Color(0.25f, 0.27f, 0.32f, 1f);
-        public static readonly Color TrackFill = new Color(0.35f, 0.72f, 0.95f, 1f);
+        public static readonly Color RowPressed = UdonMediaTheme.SurfacePressed;
 
-        public static readonly Color TextPrimary = new Color(0.95f, 0.96f, 0.98f, 1f);
-        public static readonly Color TextSecondary = new Color(0.66f, 0.70f, 0.78f, 1f);
+        public static readonly Color TrackBack = new Color(1f, 1f, 1f, 0.16f);
+        public static readonly Color TrackFill = UdonMediaTheme.Accent;
 
-        /// <summary>いま鳴っている行の見出し。ふだんより明るくする。</summary>
-        public static readonly Color TextNowPlaying = new Color(1f, 1f, 1f, 1f);
+        public static readonly Color TextPrimary = UdonMediaTheme.TextPrimary;
+        public static readonly Color TextSecondary = UdonMediaTheme.TextSecondary;
+
+        /// <summary>いま鳴っている行の見出し。強調色そのものにする。</summary>
+        public static readonly Color TextNowPlaying = UdonMediaTheme.Accent;
 
         /// <summary><see cref="Bind(Button, UdonSharpBehaviour, string)"/> が失敗した回数。</summary>
         public static int BindFailures { get; private set; }
@@ -149,6 +156,38 @@ namespace SmartMediaPlatform.World.EditorTools
             return image;
         }
 
+        /// <summary>
+        /// <b>角の丸い板。</b>Phase7-3。
+        ///
+        /// 角丸は 9 分割の絵で描きます(<see cref="UdonMediaTheme.RoundedSprite"/>)。
+        /// 絵が用意できなかったときは<b>四角のまま出します</b> —
+        /// 見た目が少し硬くなるだけで、動きは変わりません。
+        /// </summary>
+        public static Image RoundedPlate(
+            Transform parent, string name, float x, float y, float width, float height,
+            Color color, int radius)
+        {
+            var image = Plate(parent, name, x, y, width, height, color);
+            ApplyRadius(image, radius);
+            return image;
+        }
+
+        /// <summary>板を角丸にする。すでに置いてあるものにも使えます。</summary>
+        public static void ApplyRadius(Image image, int radius)
+        {
+            if (image == null || radius <= 0) return;
+
+            Sprite sprite = UdonMediaTheme.RoundedSprite(radius);
+            if (sprite == null) return;
+
+            image.sprite = sprite;
+            image.type = Image.Type.Sliced;
+
+            // 小さい部品では角丸が枠より大きくなることがある。
+            // これを入れておくと、はみ出さずに詰めて描いてくれる。
+            image.pixelsPerUnitMultiplier = 1f;
+        }
+
         /// <summary>文字。<c>raycastTarget</c> は切ってある(下のボタンが押せなくなるため)。</summary>
         public static Text Label(
             Transform parent, string name, float x, float y, float width, float height,
@@ -167,6 +206,31 @@ namespace SmartMediaPlatform.World.EditorTools
             // 文字が当たり判定を食うと、行そのものが押せなくなる。
             text.raycastTarget = false;
             return text;
+        }
+
+        /// <summary>
+        /// <b>角の丸い押せるボタン。</b>Phase7-3。
+        /// 文字の色は面の色から決めます(強調色の上は暗い文字、灰色の上は明るい文字)。
+        /// </summary>
+        public static Button RoundedButton(
+            Transform parent, string name, float x, float y, float width, float height,
+            string caption, int fontSize, Color face, int radius, out Text label)
+        {
+            Button button = PushButton(
+                parent, name, x, y, width, height, caption, fontSize, face, out label);
+
+            ApplyRadius(button.targetGraphic as Image, radius);
+
+            if (label != null) label.color = OnFace(face);
+            return button;
+        }
+
+        /// <summary>その面の上で読める文字色。明るい面には暗い文字を置く。</summary>
+        public static Color OnFace(Color face)
+        {
+            // 人の目が感じる明るさ。緑がいちばん効くので重みを変えてある。
+            float luminance = face.r * 0.2126f + face.g * 0.7152f + face.b * 0.0722f;
+            return luminance > 0.5f ? UdonMediaTheme.OnAccent : UdonMediaTheme.TextPrimary;
         }
 
         /// <summary>押せるボタン。見出しは子の <see cref="Text"/> に入る。</summary>
@@ -208,12 +272,18 @@ namespace SmartMediaPlatform.World.EditorTools
             button.targetGraphic = image;
             button.transition = Selectable.Transition.ColorTint;
 
+            // ── 触れたときにはっきり明るくする。
+            //    ワールドではカーソルが見えないことがあるので、
+            //    「いまどこを指しているか」は面の明るさでしか分かりません。
+            //    画面用の常識より強めに変えるのが正解です。
             var colors = ColorBlock.defaultColorBlock;
             colors.normalColor = Color.white;
-            colors.highlightedColor = new Color(1.35f, 1.35f, 1.35f, 1f);
-            colors.pressedColor = new Color(0.65f, 0.65f, 0.65f, 1f);
+            // 1.55 は「暗い灰色ではっきり分かり、強調色では白飛びしない」ぎりぎり。
+            // ColorTint は掛け算なので、明るい面ほど効きが弱く見えます。
+            colors.highlightedColor = new Color(1.55f, 1.55f, 1.55f, 1f);
+            colors.pressedColor = new Color(0.6f, 0.6f, 0.6f, 1f);
             colors.selectedColor = Color.white;
-            colors.fadeDuration = 0.05f;
+            colors.fadeDuration = 0.08f;
             button.colors = colors;
 
             CheckTouchSize(button.gameObject, width, height);
@@ -235,6 +305,7 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             var back = Plate(parent, name, x, y, width, height, TrackBack);
             back.raycastTarget = false;
+            ApplyRadius(back, Mathf.RoundToInt(height * 0.5f));
 
             var fill = Plate(back.transform, "Fill", 0f, 0f, width, height, TrackFill);
             fill.raycastTarget = false;
@@ -243,6 +314,89 @@ namespace SmartMediaPlatform.World.EditorTools
             fill.fillOrigin = 0;
             fill.fillAmount = 0f;
             return fill;
+        }
+
+        /// <summary>
+        /// <b>つかんで動かせるバー。</b>Phase7-3(シークバー・音量)。
+        ///
+        /// <b>触れる高さと、見えている高さを分けます。</b>
+        /// 見た目が 10 px でも、レーザーで 10 px を狙うのは無理です。
+        /// 当たり判定だけ <paramref name="touchHeight"/> まで広げ、
+        /// バーそのものはその中で細く描きます。
+        ///
+        /// <b>つまみは大きめの丸</b>にします。つかむ場所が見えていないと、
+        /// 「動かせる」ことに気付いてもらえません。
+        /// </summary>
+        /// <param name="fill">伸び縮みする側(位置を映すのに使う)。</param>
+        public static Slider DragBar(
+            Transform parent, string name, float x, float y, float width,
+            float touchHeight, float barHeight, out Image fill)
+        {
+            RectTransform root = Place(parent, name, x, y, width, touchHeight);
+
+            var slider = root.gameObject.AddComponent<Slider>();
+            slider.transition = Selectable.Transition.None;
+            slider.minValue = 0f;
+            slider.maxValue = 1f;
+            slider.wholeNumbers = false;
+
+            float barY = (touchHeight - barHeight) * 0.5f;
+            int barRadius = Mathf.RoundToInt(barHeight * 0.5f);
+
+            // 触れる面。透明でよいが raycastTarget は入れておく
+            // (これが無いと、線の外側をつかんでも反応しない)。
+            var hit = Plate(root, "Hit", 0f, 0f, width, touchHeight, new Color(0f, 0f, 0f, 0f));
+            hit.raycastTarget = true;
+
+            var back = Plate(root, "Track", 0f, barY, width, barHeight, TrackBack);
+            back.raycastTarget = false;
+            ApplyRadius(back, barRadius);
+
+            // Fill Area / Fill …… Slider が伸ばすのはこの中身。
+            RectTransform fillArea = Place(root, "FillArea", 0f, barY, width, barHeight);
+            fillArea.anchorMin = new Vector2(0f, 1f);
+            fillArea.anchorMax = new Vector2(1f, 1f);
+            fillArea.offsetMin = new Vector2(0f, -barHeight);
+            fillArea.offsetMax = new Vector2(0f, 0f);
+
+            var fillImage = Plate(fillArea, "Fill", 0f, 0f, width, barHeight, TrackFill);
+            fillImage.raycastTarget = false;
+            ApplyRadius(fillImage, barRadius);
+
+            var fillRect = fillImage.GetComponent<RectTransform>();
+            fillRect.anchorMin = new Vector2(0f, 0f);
+            fillRect.anchorMax = new Vector2(1f, 1f);
+            fillRect.offsetMin = Vector2.zero;
+            fillRect.offsetMax = Vector2.zero;
+
+            // つまみ。
+            float knob = touchHeight * 0.72f;
+            RectTransform handleArea = Place(root, "HandleArea", 0f, 0f, width, touchHeight);
+            handleArea.anchorMin = new Vector2(0f, 0f);
+            handleArea.anchorMax = new Vector2(1f, 1f);
+            handleArea.offsetMin = new Vector2(knob * 0.5f, 0f);
+            handleArea.offsetMax = new Vector2(-knob * 0.5f, 0f);
+
+            var handle = Plate(handleArea, "Handle", 0f, 0f, knob, knob, TextPrimary);
+            handle.raycastTarget = true;
+            ApplyRadius(handle, Mathf.RoundToInt(knob * 0.5f));
+
+            var handleRect = handle.GetComponent<RectTransform>();
+            handleRect.anchorMin = new Vector2(0f, 0.5f);
+            handleRect.anchorMax = new Vector2(0f, 0.5f);
+            handleRect.pivot = new Vector2(0.5f, 0.5f);
+            handleRect.sizeDelta = new Vector2(knob, knob);
+
+            slider.fillRect = fillRect;
+            slider.handleRect = handleRect;
+            slider.targetGraphic = handle;
+            slider.direction = Slider.Direction.LeftToRight;
+            slider.value = 0f;
+
+            CheckTouchSize(root.gameObject, width, touchHeight);
+
+            fill = fillImage;
+            return slider;
         }
 
         // ───────── 繋ぐ ─────────
@@ -273,6 +427,19 @@ namespace SmartMediaPlatform.World.EditorTools
         /// Phase7-2。<b>打った文字は渡りません</b>(Udon のイベントは引数を取れないため)。
         /// 受け取る側が <c>InputField.text</c> を読みに行ってください。
         /// </summary>
+        /// <summary>ホイールやドラッグで動いたことを受け取る。</summary>
+        public static bool Bind(ScrollRect scroll, UdonSharpBehaviour target, string eventName)
+        {
+            return Bind(
+                scroll != null ? scroll.onValueChanged : null, target, eventName, "ScrollRect");
+        }
+
+        /// <summary>つまみを動かしたことを受け取る。</summary>
+        public static bool Bind(Scrollbar bar, UdonSharpBehaviour target, string eventName)
+        {
+            return Bind(bar != null ? bar.onValueChanged : null, target, eventName, "Scrollbar");
+        }
+
         public static bool Bind(InputField field, UdonSharpBehaviour target, string eventName)
         {
             if (field == null) return Fail("(InputField が null)", eventName, "InputField が null");
@@ -363,6 +530,20 @@ namespace SmartMediaPlatform.World.EditorTools
             bool interact = AddInteract(button, target, eventName, caption);
 
             return bound || interact;
+        }
+
+        /// <summary>
+        /// つかんで動かすバーを繋ぐ。
+        ///
+        /// <b>「使う」(Interact)は付けません。</b>
+        /// 押した瞬間に 1 回だけ届く仕組みなので、
+        /// <b>つまみを動かす操作とは相性が悪い</b>ためです。
+        /// バーは uGUI のドラッグ(PC のマウス・VR のレーザー)で動かします。
+        /// </summary>
+        public static bool WireSlider(
+            Slider slider, UdonSharpBehaviour target, string eventName, string caption)
+        {
+            return Bind(slider, target, eventName);
         }
 
         /// <summary>

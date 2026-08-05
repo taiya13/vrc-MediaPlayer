@@ -377,6 +377,39 @@ namespace SmartMediaPlatform.World.Udon
         /// 置き直すまでは <see cref="CorrectDrift"/> を止めます。
         /// 止めないと、まだ 0 秒のところへ「3 秒目のはず」と seek してしまいます。
         /// </summary>
+        /// <summary>
+        /// <b>人が再生位置を動かした。</b>Phase7-3(シークバー)。
+        ///
+        /// <b>これが無いと、動かした先から引き戻されます。</b>
+        /// 同期は「この時刻に、この位置だった」を基準に全員を合わせるので、
+        /// 基準を置き直さないまま seek すると、次の見回りで
+        /// <see cref="CorrectDrift"/> が「ずれている」と判断して元の位置へ戻します。
+        ///
+        /// <b>操作できるのは持ち主だけ</b>です。持ち主でないなら、
+        /// まず <see cref="TakeControl"/> で持ち主になってから呼んでください。
+        /// </summary>
+        /// <param name="seconds">動かした先の位置(秒)。</param>
+        public void NotifySeeked(float seconds)
+        {
+            EnsureInitialized();
+            if (!Enabled || Session == null) return;
+            if (!IsOwner()) return;
+
+            _basePositionMs = seconds > 0f ? (int)(seconds * 1000f) : 0;
+            _baseServerTime = Networking.GetServerTimeInMilliseconds();
+            _playing = Session.IsPlaying;
+            _anchored = true;       // ここが新しい基準。置き直しは要らない
+            _revision++;
+
+            RequestSerialization();
+
+            if (LogSync)
+            {
+                Debug.Log("[UdonSyncCoordinator] 再生位置を " + seconds.ToString("0.0")
+                          + " 秒へ動かしました。全員をここに合わせます。", gameObject);
+            }
+        }
+
         private void AnchorWhenPlaybackStarts()
         {
             if (_anchored) return;

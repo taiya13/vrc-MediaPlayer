@@ -103,6 +103,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("先頭に見えている位置(0 から)")]
         public int Offset;
 
+        [Tooltip("ホイールとつまみの担当。空でも ▲▼ ボタンだけで動きます")]
+        public UdonListScroller Scroller;
+
         [Tooltip("▲▼ 1 回で動く行数。0 なら「1 画面 − 1 行」(1 行だけ残して目印にする)")]
         public int ScrollStep;
 
@@ -689,6 +692,26 @@ namespace SmartMediaPlatform.World.Udon.UI
         }
 
         /// <summary>
+        /// <b><paramref name="offset"/> 行目を上端にする。</b>Phase7-3。
+        /// つまみやホイールから呼ばれます(<see cref="UdonListScroller"/>)。
+        ///
+        /// <see cref="ScrollBy"/> と違って<b>つまみへ書き戻しません</b>。
+        /// 書き戻すと、動かしている最中に引っぱり合いになります。
+        /// </summary>
+        public void ScrollTo(int offset)
+        {
+            int before = Offset;
+
+            Offset = offset;
+            ClampOffset(TotalCount(), RowCount());
+
+            if (Offset == before) return;
+
+            ResetAcceleration();
+            Refresh();
+        }
+
+        /// <summary>
         /// <paramref name="lines"/> 行ぶん動かす。
         /// <see cref="SmartMediaPlatform.World.UdonModel.ListScrollModel.ScrollBy"/> の写しです。
         /// </summary>
@@ -699,7 +722,13 @@ namespace SmartMediaPlatform.World.Udon.UI
             Offset += lines;
             ClampOffset(TotalCount(), RowCount());
 
-            if (Offset != before) Refresh();
+            if (Offset == before) return;
+
+            Refresh();
+
+            // ▲▼ で動かしたぶんも、つまみの位置に反映させる。
+            // 片方だけ動くと「壊れている」ように見えます。
+            if (Scroller != null) Scroller.Follow();
         }
 
         /// <summary>いま鳴っているものが見えるところまで動かす。</summary>

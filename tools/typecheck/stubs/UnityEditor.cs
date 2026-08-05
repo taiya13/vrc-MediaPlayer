@@ -300,7 +300,20 @@ namespace UnityEditor
         public UnityEngine.TextureWrapMode wrapMode { get; set; }
         public int maxTextureSize { get; set; }
         public TextureImporterCompression textureCompression { get; set; }
+        public UnityEngine.Vector4 spriteBorder { get; set; }
+        public float spritePixelsPerUnit { get; set; }
+        public SpriteMeshType spriteMeshType { get; set; }
+        public TextureImporterSettings ReadTextureSettings(TextureImporterSettings dest) { return dest; }
+        public void SetTextureSettings(TextureImporterSettings settings) { }
     }
+
+    public class TextureImporterSettings
+    {
+        public UnityEngine.Vector4 spriteBorder { get; set; }
+        public SpriteMeshType spriteMeshType { get; set; }
+    }
+
+    public enum SpriteMeshType { FullRect, Tight }
 
     public enum MessageType { None, Info, Warning, Error }
 

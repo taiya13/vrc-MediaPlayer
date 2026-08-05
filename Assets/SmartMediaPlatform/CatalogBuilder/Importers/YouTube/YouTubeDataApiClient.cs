@@ -19,7 +19,7 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
     ///
     /// <b>例外を投げません。</b>失敗は <see cref="YouTubeFetchResult"/> に入れて返します。
     /// </summary>
-    public sealed class YouTubeDataApiClient : IYouTubeClient
+    public sealed class YouTubeDataApiClient : IYouTubeClient, IPagedYouTubeClient
     {
         private const string Api = "https://www.googleapis.com/youtube/v3/";
 
@@ -84,35 +84,17 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         public YouTubeFetchResult FetchChannel(string channel, bool byName, int maxCount)
         {
             if (!IsAvailable) return YouTubeFetchResult.Failure(UnavailableReason);
-            if (string.IsNullOrWhiteSpace(channel))
-                return YouTubeFetchResult.Failure("チャンネルの指定が空です。");
 
             // チャンネルの投稿は「アップロード用の再生リスト」として取れる。
             // 専用の口が無いので、まず ID を引いてから再生リストとして読む。
-            string query = byName
-                ? "channels?part=contentDetails&forHandle=@" + Escape(channel)
-                : "channels?part=contentDetails&id=" + Escape(channel);
-
-            string json;
+            string uploads;
             string error;
-            if (!Get(query, out json, out error)) return YouTubeFetchResult.Failure(error);
-
-            var channels = Parse<ChannelListResponse>(json);
-            if (channels == null || channels.items == null || channels.items.Length == 0)
+            if (!ResolveUploadsPlaylist(channel, byName, out uploads, out error))
             {
-                return YouTubeFetchResult.Failure(
-                    "チャンネルが見つかりません: " + channel + "\n"
-                    + "@名前 が変わっている場合は channel/UC… の URL を試してください。");
+                return YouTubeFetchResult.Failure(error);
             }
 
-            var details = channels.items[0].contentDetails;
-            if (details == null || details.relatedPlaylists == null
-                || string.IsNullOrEmpty(details.relatedPlaylists.uploads))
-            {
-                return YouTubeFetchResult.Failure("このチャンネルの投稿一覧が取れませんでした。");
-            }
-
-            return FetchPlaylistItems(details.relatedPlaylists.uploads, Clamp(maxCount));
+            return FetchPlaylistItems(uploads, Clamp(maxCount));
         }
 
         public YouTubeFetchResult FetchVideo(string videoId)
@@ -138,13 +120,106 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             return YouTubeFetchResult.Success(list, "1 件を取得しました。");
         }
 
+        // ───────── 1 ページずつ取る(Phase7-3)─────────
+
+        /// <summary>API が 1 回で返せる上限。</summary>
+        public int PageSize { get { return 50; } }
+
+        public YouTubeFetchResult FetchPlaylistPage(string playlistId, int want, string pageToken)
+        {
+            if (!IsAvailable) return YouTubeFetchResult.Failure(UnavailableReason);
+            if (string.IsNullOrWhiteSpace(playlistId))
+                return YouTubeFetchResult.Failure("再生リスト ID が空です。");
+
+            return FetchPlaylistItems(playlistId, Clamp(want), pageToken);
+        }
+
+        public YouTubeFetchResult FetchChannelPage(
+            string channel, bool byName, int want, string pageToken)
+        {
+            if (!IsAvailable) return YouTubeFetchResult.Failure(UnavailableReason);
+
+            string uploads;
+            string error;
+            if (!ResolveUploadsPlaylist(channel, byName, out uploads, out error))
+            {
+                return YouTubeFetchResult.Failure(error);
+            }
+
+            return FetchPlaylistItems(uploads, Clamp(want), pageToken);
+        }
+
+        /// <summary>
+        /// チャンネルの「アップロード用の再生リスト」を引く。
+        /// <b>1 ページずつ取るときは毎回ここを通るので、覚えておきます</b> —
+        /// 同じチャンネルを何度も引くと、そのぶん API の割り当てを食うためです。
+        /// </summary>
+        private bool ResolveUploadsPlaylist(
+            string channel, bool byName, out string uploads, out string error)
+        {
+            uploads = "";
+            error = "";
+
+            if (string.IsNullOrWhiteSpace(channel))
+            {
+                error = "チャンネルの指定が空です。";
+                return false;
+            }
+
+            string cacheKey = (byName ? "@" : "") + channel;
+            if (_uploadsCache.ContainsKey(cacheKey))
+            {
+                uploads = _uploadsCache[cacheKey];
+                return true;
+            }
+
+            string query = byName
+                ? "channels?part=contentDetails&forHandle=@" + Escape(channel)
+                : "channels?part=contentDetails&id=" + Escape(channel);
+
+            string json;
+            if (!Get(query, out json, out error)) return false;
+
+            var channels = Parse<ChannelListResponse>(json);
+            if (channels == null || channels.items == null || channels.items.Length == 0)
+            {
+                error = "チャンネルが見つかりません: " + channel + "\n"
+                        + "@名前 が変わっている場合は channel/UC… の URL を試してください。";
+                return false;
+            }
+
+            var details = channels.items[0].contentDetails;
+            if (details == null || details.relatedPlaylists == null
+                || string.IsNullOrEmpty(details.relatedPlaylists.uploads))
+            {
+                error = "このチャンネルの投稿一覧が取れませんでした。";
+                return false;
+            }
+
+            uploads = details.relatedPlaylists.uploads;
+            _uploadsCache[cacheKey] = uploads;
+            return true;
+        }
+
+        private readonly Dictionary<string, string> _uploadsCache = new Dictionary<string, string>();
+
         // ───────── 再生リストを読む ─────────
 
         private YouTubeFetchResult FetchPlaylistItems(string playlistId, int maxCount)
         {
+            return FetchPlaylistItems(playlistId, maxCount, "");
+        }
+
+        /// <summary>
+        /// 再生リストを読む。<paramref name="startToken"/> が空でなければ<b>その続きから</b>。
+        /// 続きの位置は結果に入れて返します(<see cref="YouTubeFetchResult.NextPageToken"/>)。
+        /// </summary>
+        private YouTubeFetchResult FetchPlaylistItems(
+            string playlistId, int maxCount, string startToken)
+        {
             var order = new List<string>();
             var pending = new List<string>();
-            string pageToken = "";
+            string pageToken = startToken != null ? startToken : "";
 
             while (order.Count < maxCount)
             {
@@ -159,7 +234,11 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 if (!Get(query, out json, out error)) return YouTubeFetchResult.Failure(error);
 
                 var page = Parse<PlaylistItemListResponse>(json);
-                if (page == null || page.items == null || page.items.Length == 0) break;
+                if (page == null || page.items == null || page.items.Length == 0)
+                {
+                    pageToken = "";
+                    break;
+                }
 
                 for (int i = 0; i < page.items.Length; i++)
                 {
@@ -177,6 +256,15 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
             if (order.Count == 0)
             {
+                // 続きを読んでいる途中なら「空のページ」は失敗ではない。
+                // 最後まで来ただけなので、0 件の成功として返す。
+                if (!string.IsNullOrEmpty(startToken))
+                {
+                    return YouTubeFetchResult
+                        .Success(new List<YouTubeVideoInfo>(), "これ以上ありません。")
+                        .WithNextPage("");
+                }
+
                 return YouTubeFetchResult.Failure(
                     "動画が 1 件も取れませんでした。再生リストが空か、非公開の可能性があります。");
             }
@@ -217,7 +305,7 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             string message = videos.Count + " 件を取得しました。";
             if (unavailable > 0) message += "(うち " + unavailable + " 件は再生できません)";
 
-            return YouTubeFetchResult.Success(videos, message);
+            return YouTubeFetchResult.Success(videos, message).WithNextPage(pageToken);
         }
 
         /// <summary>動画の詳細を 50 件ずつ引いて <paramref name="map"/> へ入れる。</summary>

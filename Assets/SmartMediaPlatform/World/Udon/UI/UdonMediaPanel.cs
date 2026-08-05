@@ -77,6 +77,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("一覧の切り替え(Phase7)。空なら全部の一覧を同時に出す")]
         public UdonMediaTabs Tabs;
 
+        [Tooltip("おすすめのカード(Phase7-3)。空でも動く")]
+        public UdonRecommendationCards Cards;
+
         [Tooltip("直近の操作の結果")]
         public Text StatusText;
 
@@ -160,6 +163,29 @@ namespace SmartMediaPlatform.World.Udon.UI
                 }
             }
 
+            if (Cards != null)
+            {
+                if (Cards.Controller == null) Cards.Controller = Controller;
+                if (Cards.Session == null) Cards.Session = Session;
+                if (Cards.Store == null) Cards.Store = Store;
+
+                if (Cards.Recommendation == null && Core != null)
+                {
+                    Cards.Recommendation = Core.Recommendation;
+                }
+
+                // 絵が無いときの色は一覧から借りる(同じ色の決め方を 2 か所に書かない)。
+                if (Cards.PaletteSource == null && Lists != null && Lists.Length > 0)
+                {
+                    for (int i = 0; i < Lists.Length; i++)
+                    {
+                        if (Lists[i] == null) continue;
+                        Cards.PaletteSource = Lists[i];
+                        break;
+                    }
+                }
+            }
+
             if (Tabs != null) Tabs.EnsureInitialized();
 
             if (TitleLabel != null && PanelName.Length > 0) TitleLabel.text = PanelName;
@@ -199,6 +225,9 @@ namespace SmartMediaPlatform.World.Udon.UI
                     list.Refresh();
                 }
             }
+
+            // おすすめのカードも、見えているときだけ書き直す。
+            if (Cards != null && Cards.gameObject.activeInHierarchy) Cards.Refresh();
 
             if (StatusText != null && StatusText.text != _status) StatusText.text = _status;
         }

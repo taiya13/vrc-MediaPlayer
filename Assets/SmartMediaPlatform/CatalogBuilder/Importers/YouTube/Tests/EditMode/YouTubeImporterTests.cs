@@ -598,6 +598,114 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
                             "ショートでなければ理由は無い");
         }
 
+        // ───────── 目標の件数までそろえる(Phase7-3)─────────
+
+        [Test]
+        public void PagesAreFetchedUntilEnoughNormalVideosAreFound()
+        {
+            // 1 ページ 10 件。うち 8 件がショート、2 件が通常動画。
+            // 通常動画を 10 件そろえるには 5 ページ見る必要がある。
+            var client = new FakeClient();
+            client.Page = 10;
+
+            for (int i = 0; i < 100; i++)
+            {
+                client.Videos.Add(i % 5 < 4
+                    ? Short("s" + i, "きりぬき", 30)
+                    : Video("v" + i, "ふつうの曲"));
+            }
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.MaxCount = 10;
+
+            CatalogImportResult result = importer.Import("@channel");
+
+            Assert.AreEqual(10, result.Count, "「10 件見る」ではなく「通常動画を 10 件そろえる」");
+            Assert.AreEqual(5, client.PageRequests, "足りないぶんだけ次のページを見る");
+        }
+
+        [Test]
+        public void FetchingStopsAsSoonAsThereAreEnough()
+        {
+            var client = new FakeClient();
+            client.Page = 10;
+            for (int i = 0; i < 100; i++) client.Videos.Add(Video("v" + i, "ふつうの曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.MaxCount = 10;
+
+            Assert.AreEqual(10, importer.Import("@channel").Count);
+            Assert.AreEqual(1, client.PageRequests, "そろっているのに次を見に行かない");
+        }
+
+        [Test]
+        public void FetchingStopsAtTheEndEvenIfNotEnough()
+        {
+            // 通常動画が 3 件しか無いのに 50 件頼まれた。最後まで見て終わる。
+            var client = new FakeClient();
+            client.Page = 10;
+            for (int i = 0; i < 25; i++) client.Videos.Add(Short("s" + i, "きりぬき", 30));
+            for (int i = 0; i < 3; i++) client.Videos.Add(Video("v" + i, "ふつうの曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.MaxCount = 50;
+
+            Assert.AreEqual(3, importer.Import("@channel").Count);
+            Assert.AreEqual(3, client.PageRequests, "28 件しか無いので 3 ページで終わり");
+        }
+
+        [Test]
+        public void FetchingNeverRunsAwayWhenEverythingIsAShort()
+        {
+            // ショートしか無いチャンネル。歯止めが無いと API を叩き続ける。
+            var client = new FakeClient();
+            client.Page = 10;
+            for (int i = 0; i < 5000; i++) client.Videos.Add(Short("s" + i, "きりぬき", 30));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.MaxCount = 100;
+
+            Assert.AreEqual(0, importer.Import("@channel").Count);
+            Assert.AreEqual(YouTubeCatalogImporter.MaxPages, client.PageRequests,
+                            "決めたページ数で必ず止まる");
+        }
+
+        [Test]
+        public void TheTallyOfWhatWasSeenAndDroppedIsReported()
+        {
+            var client = new FakeClient();
+            client.Page = 10;
+            for (int i = 0; i < 6; i++) client.Videos.Add(Short("s" + i, "きりぬき", 30));
+            for (int i = 0; i < 4; i++) client.Videos.Add(Video("v" + i, "ふつうの曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.MaxCount = 50;
+
+            string message = importer.Import("@channel").Message;
+
+            Assert.AreEqual(10, importer.LastFetchedTotal, "見た総数");
+            Assert.AreEqual(6, importer.LastShortsExcluded, "外したショート");
+            Assert.AreEqual(4, importer.LastImported, "実際に入った件数");
+
+            Assert.IsTrue(message.Contains("10"), "見た総数が出る: " + message);
+            Assert.IsTrue(message.Contains("6"), "外したショートが出る: " + message);
+            Assert.IsTrue(message.Contains("4"), "入った件数が出る: " + message);
+        }
+
+        [Test]
+        public void MoreThanOnePageWorthCanBeImported()
+        {
+            // 「1 ページ分で終わり」になっていないことの確認。
+            var client = new FakeClient();
+            client.Page = 50;
+            for (int i = 0; i < 200; i++) client.Videos.Add(Video("v" + i, "ふつうの曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.MaxCount = 120;
+
+            Assert.AreEqual(120, importer.Import("@channel").Count);
+        }
+
         // ───────── 道具 ─────────
 
         private static YouTubeVideoInfo Short(string id, string title, int seconds)
@@ -619,8 +727,13 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
             return video;
         }
 
-        /// <summary>通信しない取得係。何を頼まれたかだけ覚える。</summary>
-        private sealed class FakeClient : IYouTubeClient
+        /// <summary>
+        /// 通信しない取得係。何を頼まれたかだけ覚える。
+        ///
+        /// <b>1 ページずつも返せます</b>(Phase7-3)。<see cref="PageSize"/> ごとに区切り、
+        /// 続きの位置は「次の開始番号」を文字列にしたものです。
+        /// </summary>
+        private sealed class FakeClient : IYouTubeClient, IPagedYouTubeClient
         {
             public readonly List<YouTubeVideoInfo> Videos = new List<YouTubeVideoInfo>();
 
@@ -629,9 +742,17 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
             public bool Available = true;
             public string Reason = "";
 
+            /// <summary>1 ページの件数。</summary>
+            public int Page = 50;
+
+            /// <summary>何ページ頼まれたか(取りすぎていないかを見る)。</summary>
+            public int PageRequests;
+
             public bool IsAvailable { get { return Available; } }
 
             public string UnavailableReason { get { return Reason; } }
+
+            public int PageSize { get { return Page; } }
 
             public YouTubeFetchResult FetchPlaylist(string playlistId, int maxCount)
             {
@@ -651,10 +772,47 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
                 return Answer();
             }
 
+            public YouTubeFetchResult FetchPlaylistPage(
+                string playlistId, int want, string pageToken)
+            {
+                LastCall = "playlist:" + playlistId;
+                return AnswerPage(pageToken);
+            }
+
+            public YouTubeFetchResult FetchChannelPage(
+                string channel, bool byName, int want, string pageToken)
+            {
+                LastCall = (byName ? "channel-name:" : "channel-id:") + channel;
+                return AnswerPage(pageToken);
+            }
+
             private YouTubeFetchResult Answer()
             {
                 if (FailWith.Length > 0) return YouTubeFetchResult.Failure(FailWith);
                 return YouTubeFetchResult.Success(Videos, Videos.Count + " 件を取得しました。");
+            }
+
+            private YouTubeFetchResult AnswerPage(string pageToken)
+            {
+                if (FailWith.Length > 0) return YouTubeFetchResult.Failure(FailWith);
+
+                PageRequests++;
+
+                int start = 0;
+                if (!string.IsNullOrEmpty(pageToken)) int.TryParse(pageToken, out start);
+
+                var slice = new List<YouTubeVideoInfo>();
+                for (int i = start; i < Videos.Count && slice.Count < Page; i++)
+                {
+                    slice.Add(Videos[i]);
+                }
+
+                int next = start + slice.Count;
+                string token = next < Videos.Count ? next.ToString() : "";
+
+                return YouTubeFetchResult
+                    .Success(slice, slice.Count + " 件を取得しました。")
+                    .WithNextPage(token);
             }
         }
     }

@@ -40,6 +40,10 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("タブの文字。件数を添えて書き換える")]
         public Text[] Labels;
 
+        [Tooltip("一覧を持たないタブの決め打ちの名前(おすすめのカードなど)。"
+                 + "Lists と同じ並びで、要らないところは空のままにする")]
+        public string[] FixedLabels;
+
         [Tooltip("選ばれているタブの文字色")]
         public Color SelectedColor = new Color(1f, 1f, 1f, 1f);
 
@@ -143,7 +147,21 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             for (int i = 0; i < TabCount && i < Labels.Length; i++)
             {
-                if (Labels[i] == null || Lists[i] == null) continue;
+                if (Labels[i] == null) continue;
+
+                // 一覧を持たないタブ(おすすめのカードなど)は、決め打ちの名前を出す。
+                if (Lists[i] == null)
+                {
+                    string fixedLabel = FixedLabels != null && i < FixedLabels.Length
+                        ? FixedLabels[i]
+                        : "";
+
+                    if (fixedLabel.Length > 0 && Labels[i].text != fixedLabel)
+                    {
+                        Labels[i].text = fixedLabel;
+                    }
+                    continue;
+                }
 
                 string label = Lists[i].EffectiveHeader();
 
