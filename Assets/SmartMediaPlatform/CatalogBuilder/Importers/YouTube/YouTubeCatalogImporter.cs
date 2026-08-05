@@ -18,12 +18,25 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
     /// プレビュー窓がそれを見ます(反映は Phase6-3)。
     /// </summary>
     public sealed class YouTubeCatalogImporter
-        : ICatalogImporter, IIncrementalCatalogImporter, ICatalogImporterSetup
+        : ICatalogImporter, IIncrementalCatalogImporter, ICatalogImporterSetup,
+          ICatalogImporterFilter
     {
         private readonly IYouTubeClient _client;
 
         /// <summary>1 回で取る上限。0 なら設定側の上限に任せる。</summary>
         public int MaxCount;
+
+        /// <summary>
+        /// <b>ショート動画を取り込まない。</b>Phase7-3。既定は入(true)。
+        ///
+        /// 見分け方は <see cref="YouTubeShortsFilter"/> に任せます。
+        /// <b>名指しで 1 本だけ貼られたときは外しません</b> —
+        /// 人が自分で選んだものを黙って消すのは「勝手に消えた」でしかないためです。
+        /// </summary>
+        public bool ExcludeShorts = true;
+
+        /// <summary>直近の取り込みでショートとして外した件数。</summary>
+        public int LastShortsExcluded { get; private set; }
 
         /// <summary>
         /// 直近に取れた生の一覧。<b>プレビューはこれを見ます。</b>
@@ -178,6 +191,43 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 #endif
         }
 
+        // ───────── 取り込まないもの(Phase7-3)─────────
+
+        public string FilterLabel { get { return "ショート動画は取り込まない"; } }
+
+        public string FilterHint
+        {
+            get
+            {
+                return YouTubeShortsFilter.MaxShortSeconds
+                       + " 秒以下と、#shorts の印が付いたものを外します。"
+                       + "外した件数は取得のあとに出ます"
+                       + "(ショートの URL を 1 本だけ貼ったときは外しません)。";
+            }
+        }
+
+        /// <summary>
+        /// ショートを外すか。<b>設定アセットがあればそちらに書きます</b>
+        /// (次に開いたときも覚えているように)。
+        /// </summary>
+        public bool FilterEnabled
+        {
+            get { return ResolveExcludeShorts(); }
+            set
+            {
+                ExcludeShorts = value;
+
+#if UNITY_EDITOR
+                YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+                if (settings == null || settings.ExcludeShorts == value) return;
+
+                settings.ExcludeShorts = value;
+                UnityEditor.EditorUtility.SetDirty(settings);
+                UnityEditor.AssetDatabase.SaveAssets();
+#endif
+            }
+        }
+
         // ───────── 新着だけ(Phase6-5)─────────
 
         /// <summary>
@@ -241,6 +291,12 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
             var items = new List<CatalogDraftItem>();
             int skipped = 0;
+            int shorts = 0;
+
+            // 名指しで 1 本だけ貼られたときは、ショートでも外さない。
+            // 人が自分で選んだものを黙って消すと「勝手に消えた」になる。
+            bool dropShorts = ResolveExcludeShorts()
+                              && LastTarget.Kind != YouTubeUrlParser.TargetVideo;
 
             for (int i = 0; i < fetched.Videos.Count; i++)
             {
@@ -251,6 +307,15 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 // LastVideos には「使えません」として残る。
                 if (video.IsUnavailable) continue;
 
+                // ショートは取り込みの時点で外す(Phase7-3)。
+                // 大画面では左右が黒いままですぐ次へ飛ぶため、
+                // あとから 1 本ずつ消すのは現実的ではない。
+                if (dropShorts && YouTubeShortsFilter.IsShort(video))
+                {
+                    shorts++;
+                    continue;
+                }
+
                 if (boundary != null && boundary.IsKnown(video.VideoId))
                 {
                     skipped++;
@@ -260,9 +325,11 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 items.Add(video.ToDraftItem());
             }
 
+            LastShortsExcluded = shorts;
+
             if (boundary == null)
             {
-                return CatalogImportResult.Success(items, fetched.Message)
+                return CatalogImportResult.Success(items, WithShortsNote(fetched.Message, shorts))
                                           .From(DescribeSource(), KindOf(LastTarget));
             }
 
@@ -270,11 +337,26 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             bool mayHaveMore = skipped == 0 && fetched.Count >= limit;
 
             CatalogImportResult result = CatalogImportResult
-                .Success(items, DescribeNew(items.Count, skipped, mayHaveMore))
+                .Success(items,
+                         WithShortsNote(DescribeNew(items.Count, skipped, mayHaveMore), shorts))
                 .From(DescribeSource(), KindOf(LastTarget));
 
             result.MayHaveMore = mayHaveMore;
             return result;
+        }
+
+        /// <summary>
+        /// 外したショートの件数を結果に書き添える。
+        /// <b>黙って消さない</b>ためのもので、0 件なら何も足しません。
+        /// </summary>
+        private static string WithShortsNote(string message, int shorts)
+        {
+            if (shorts <= 0) return message;
+
+            string note = "ショート動画 " + shorts + " 件は取り込みませんでした"
+                          + "(大画面では左右が黒いまますぐ終わるため)。";
+
+            return string.IsNullOrEmpty(message) ? note : message + "\n" + note;
         }
 
         private static string DescribeNew(int fresh, int skipped, bool mayHaveMore)
@@ -354,6 +436,27 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             _resolved = new YouTubeDataApiClient();
 #endif
             return _resolved;
+        }
+
+        /// <summary>
+        /// ショートを外すか。設定アセットがあればそちらが優先。
+        ///
+        /// <b>毎回読み直します。</b>取っておくと、あとから設定を変えても
+        /// 効かない(Phase7 で実際に踏んだ問題)ためです。
+        /// テストでは設定アセットが無いので、このクラスの
+        /// <see cref="ExcludeShorts"/> がそのまま使われます。
+        /// </summary>
+        private bool ResolveExcludeShorts()
+        {
+#if UNITY_EDITOR
+            YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+            if (settings != null)
+            {
+                YouTubeShortsFilter.MaxShortSeconds = settings.MaxShortSeconds;
+                return settings.ExcludeShorts;
+            }
+#endif
+            return ExcludeShorts;
         }
     }
 }

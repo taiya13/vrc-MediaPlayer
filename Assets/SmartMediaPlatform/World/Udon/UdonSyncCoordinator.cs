@@ -39,7 +39,9 @@ namespace SmartMediaPlatform.World.Udon
     /// あとは各自がサーバー時刻から計算できます
     /// (計算の正典は <see cref="SmartMediaPlatform.World.UdonModel.PlaybackClockModel"/>、
     ///  EditMode 検証済み)。
-    /// 同じ理由で「いま鳴っているもの」も別に持ちません — Queue の先頭がそれだからです。
+    /// <b>「いま鳴っているもの」は別に配ります</b>(Phase7-3)。
+    /// Phase7-2 までは Queue の先頭がそれだったので持っていませんでしたが、
+    /// 再生中と再生予定を分けたので、先頭はもう「次に流すもの」です。
     ///
     /// <b>Catalog Builder / サーバー連携が来ても、ここは変わりません。</b>
     /// 配っているのは catalog index だけで、カタログの作り方も URL も知らないためです。
@@ -90,8 +92,15 @@ namespace SmartMediaPlatform.World.Udon
 
         // ───────── 同期する値(これで全部)─────────
 
-        // catalog index の並び。先頭 = いま鳴っているもの。
-        // 「いま何を鳴らしているか」を別に持たないのは、先頭がそれだからです。
+        // いま鳴っているもの(catalog index)。無ければ -1。
+        //
+        // Phase7-2 まではこれを持たず、_queue の先頭を「鳴っているもの」として
+        // 使っていました。Phase7-3 で再生中と再生予定を分けたので、
+        // 先頭はもう「次に流すもの」です。別に配らないと、
+        // 受け取った人が全員 1 曲先を鳴らしてしまいます。
+        [UdonSynced] private int _currentMedia = -1;
+
+        // これから流すものの並び(再生中は含まない)。
         [UdonSynced] private int[] _queue = new int[0];
 
         [UdonSynced] private bool _playing;
@@ -227,6 +236,7 @@ namespace SmartMediaPlatform.World.Udon
             _playing = Session.IsPlaying;
 
             int current = Session.CurrentIndex;
+            _currentMedia = current;
 
             // 鳴らすものが変わったなら頭から。変わっていないなら、いまの位置を基準にする
             // (一時停止・再開はこれで表せる)。
@@ -270,8 +280,8 @@ namespace SmartMediaPlatform.World.Udon
             EnsureInitialized();
             if (!Enabled || Session == null) return;
 
-            // 1. Queue と再生状態をそのまま写す(判断はしない)
-            int current = _queue != null && _queue.Length > 0 ? _queue[0] : -1;
+            // 1. 再生中・再生予定・再生状態をそのまま写す(判断はしない)
+            int current = _currentMedia;
             Session.ApplySyncedState(_queue, _playing, current);
 
             // 2. 鳴らすものが変わったなら読み直す

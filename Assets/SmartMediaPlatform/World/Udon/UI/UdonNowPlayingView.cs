@@ -139,10 +139,9 @@ namespace SmartMediaPlatform.World.Udon.UI
             ShowGenre(Store != null ? Store.GetGenre(current) : "");
             ShowArtwork(current);
 
-            // 「いま鳴っているもの」を含めた件数なので、待ちは 1 引いた数。
-            int upcoming = Session.QueueCount - 1;
-            if (upcoming < 0) upcoming = 0;
-            SetText(QueueCountText, "次 " + upcoming + " 件");
+            // Phase7-3 から QueueCount は「これから流すもの」だけの数。
+            // 鳴っているものは入っていないので、引き算は要らない。
+            SetText(QueueCountText, "次 " + Session.QueueCount + " 件");
 
             UdonVideoBackend backend = ResolveBackend();
 

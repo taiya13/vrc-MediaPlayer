@@ -29,18 +29,61 @@ namespace SmartMediaPlatform.World.UdonModel
     /// 再生してほしいものは <see cref="RequestedIndex"/> に出すだけで、
     /// それを動画プレイヤーへ渡すのは呼び出し側(実機では <c>UdonVideoBackend</c>)の仕事です。
     ///
-    /// <b>Queue の不変条件</b>は Phase3 から変わりません —
-    /// <b>先頭がいま鳴っているもの</b>です。
+    /// ───────────────────────────────────────────────
+    /// <b>Phase7-3:「再生中」と「再生予定」を分けました。</b>
+    ///
+    /// Phase3 から Phase7-2 まで、Queue の不変条件は
+    /// <b>「先頭がいま鳴っているもの」</b>でした。これが実機で起きた 3 つの不具合の
+    /// <b>共通の原因</b>です。
+    /// <list type="number">
+    /// <item><b>選んだ曲が必ず「再生予定」に出る。</b>再生中が Queue の中にいるので、
+    ///       一覧から 1 曲選ぶだけで再生予定に並びます。
+    ///       「勝手に追加される」の正体はこれでした</item>
+    /// <item><b>再生中を再生予定から消せない。</b>先頭を外すと不変条件が壊れるので、
+    ///       <c>RemoveFromQueue</c> は先頭を拒んでいました。
+    ///       消しても消えないものが残り続けます</item>
+    /// <item><b>補充が再生予定を勝手に埋める。</b>Queue が短くなるたびに
+    ///       おすすめを Queue へ積んでいました。しかも種はいつも再生中なので、
+    ///       <b>毎回同じ顔ぶれ</b>が入ります。「同じ動画ばかり追加され続ける」の正体です</item>
+    /// </list>
+    ///
+    /// <b>いまの決まりごと</b>:
+    /// <list type="bullet">
+    /// <item><see cref="CurrentIndex"/>(再生中)は Queue の<b>外</b>にいる</item>
+    /// <item>Queue は<b>これから流すものだけ</b>。人が入れたものしか入らない</item>
+    /// <item><b>おすすめは Queue に入れない。</b>次の曲として直接使うだけなので、
+    ///       人が作った再生予定を汚しません</item>
+    /// <item>曲が終わったら<b>必ず Queue の先頭</b>へ進み、その 1 件を Queue から外す</item>
+    /// <item>Queue が空のときだけ <see cref="EndBehaviour"/> に従う
+    ///       (既定は<b>停止</b>。リピートは既定にしない)</item>
+    /// </list>
     /// </summary>
     public sealed class PlaybackModel
     {
+        // ───────── Queue が空になったときの動き ─────────
+
+        /// <summary>止まる。<b>既定</b>。</summary>
+        public const int EndBehaviourStop = 0;
+
+        /// <summary>いまの 1 曲を繰り返す。</summary>
+        public const int EndBehaviourRepeatOne = 1;
+
+        /// <summary>おすすめで流し続ける。</summary>
+        public const int EndBehaviourRecommend = 2;
+
         // ───────── 設定 ─────────
 
-        /// <summary>この数を下回ったら Queue を補充する。</summary>
-        public int MinimumQueueCount = 2;
-
-        /// <summary>補充後に目指す Queue の長さ。</summary>
-        public int TargetQueueCount = 5;
+        /// <summary>
+        /// <b>Queue が空になったあとどうするか。</b>既定は <see cref="EndBehaviourStop"/>。
+        ///
+        /// <b>リピートを既定にしません。</b>「何もしていないのに同じ曲が延々流れる」は
+        /// ワールドでは事故です。流し続けたい人だけが
+        /// <see cref="EndBehaviourRecommend"/> を選びます。
+        ///
+        /// <b>Queue に何か入っているときは、この設定は関係ありません。</b>
+        /// 必ず Queue の先頭へ進みます。
+        /// </summary>
+        public int EndBehaviour = EndBehaviourStop;
 
         /// <summary>履歴として保持する上限。</summary>
         public int MaxHistory = 32;
@@ -65,11 +108,17 @@ namespace SmartMediaPlatform.World.UdonModel
 
         private readonly int _catalogCount;
 
+        /// <summary>
+        /// <b>これから流すものだけ。</b>再生中はここに入りません(Phase7-3)。
+        /// </summary>
         private readonly int[] _queue = new int[QueueCapacity];
         private int _queueCount;
 
         private readonly int[] _history = new int[QueueCapacity];
         private int _historyCount;
+
+        /// <summary>いま鳴っている(鳴らそうとしている)もの。無ければ -1。</summary>
+        private int _currentIndex = -1;
 
         private int _selectedIndex = -1;
         private bool _isPlaying;
@@ -89,18 +138,21 @@ namespace SmartMediaPlatform.World.UdonModel
         /// <summary>カタログの件数。</summary>
         public int CatalogCount { get { return _catalogCount; } }
 
-        /// <summary>Queue の長さ。</summary>
+        /// <summary><b>再生予定</b>の件数(再生中は数に入らない)。</summary>
         public int QueueCount { get { return _queueCount; } }
 
-        /// <summary>Queue の <paramref name="position"/> 番目の catalog index。無ければ -1。</summary>
+        /// <summary>再生予定の <paramref name="position"/> 番目の catalog index。無ければ -1。</summary>
         public int GetQueueAt(int position)
         {
             if (position < 0 || position >= _queueCount) return -1;
             return _queue[position];
         }
 
-        /// <summary>いま読み込んでいるもの(= Queue の先頭)。無ければ -1。</summary>
-        public int CurrentIndex { get { return _queueCount > 0 ? _queue[0] : -1; } }
+        /// <summary>
+        /// <b>いま鳴っているもの。</b>無ければ -1。
+        /// Phase7-3 から Queue とは別の場所を指します。
+        /// </summary>
+        public int CurrentIndex { get { return _currentIndex; } }
 
         /// <summary>鳴っているか。</summary>
         public bool IsPlaying { get { return _isPlaying; } }
@@ -135,7 +187,7 @@ namespace SmartMediaPlatform.World.UdonModel
         /// <summary>一覧の <paramref name="catalogIndex"/> 番目を選ぶ(再生はしない)。</summary>
         public bool Select(int catalogIndex)
         {
-            if (catalogIndex < 0 || catalogIndex >= _catalogCount) return false;
+            if (!IsInCatalog(catalogIndex)) return false;
 
             _selectedIndex = catalogIndex;
             return true;
@@ -150,18 +202,25 @@ namespace SmartMediaPlatform.World.UdonModel
         // ───────── 再生 ─────────
 
         /// <summary>
-        /// 再生する。何も読み込んでいなければ Queue の先頭から始める。
-        /// <c>PlayerSession.Play()</c> と同じ意味。
+        /// 再生する。何も読み込んでいなければ再生予定の先頭から始める。
         /// </summary>
         public bool Play()
         {
-            if (_queueCount == 0) return false;
-
             // 人が押したら、失敗の数え直し。
             // 「もう駄目」と諦めたあとでも、もう一度試せるようにするため。
             _consecutiveErrors = 0;
 
-            if (_requestedIndex != _queue[0]) Load(_queue[0]);
+            if (_currentIndex < 0)
+            {
+                // まだ何も鳴っていないなら、再生予定の先頭を取り出して始める。
+                if (_queueCount == 0) return false;
+                if (!TakeFromQueue(0)) return false;
+            }
+            else if (_requestedIndex != _currentIndex)
+            {
+                Load(_currentIndex);
+            }
+
             _isPlaying = true;
             _exhausted = false;
             return true;
@@ -170,7 +229,7 @@ namespace SmartMediaPlatform.World.UdonModel
         /// <summary>止める。読み込んでいるものはそのまま。</summary>
         public bool Stop()
         {
-            if (_queueCount == 0) return false;
+            if (_currentIndex < 0) return false;
 
             _isPlaying = false;
             return true;
@@ -179,7 +238,7 @@ namespace SmartMediaPlatform.World.UdonModel
         /// <summary>鳴っていれば止め、止まっていれば鳴らす。</summary>
         public bool TogglePlayPause()
         {
-            if (_queueCount == 0) return false;
+            if (_currentIndex < 0 && _queueCount == 0) return false;
 
             if (_isPlaying)
             {
@@ -190,29 +249,26 @@ namespace SmartMediaPlatform.World.UdonModel
         }
 
         /// <summary>
-        /// 次へ進む。<c>PlayerSession.Next()</c> と同じで、
-        /// <b>進む前に Queue を補充する</b>ので、曲が尽きていてもおすすめで続けられる。
+        /// <b>次へ進む(人が押したとき)。</b>
+        ///
+        /// 再生予定に何か入っていれば、必ずその先頭へ進み、その 1 件を再生予定から外します。
+        /// 空のときは <paramref name="candidates"/>(おすすめ)を使って構いません。
+        /// <b>人が「次へ」を押したのだから、勝手ではありません。</b>
+        /// おすすめを使っても<b>再生予定には積みません</b>(そのまま次の曲になるだけ)。
         /// </summary>
-        /// <param name="candidates">補充に使ってよい catalog index の候補。無ければ null。</param>
+        /// <param name="candidates">再生予定が空のときに使ってよい catalog index の候補。無ければ null。</param>
         public bool Next(int[] candidates)
         {
-            EnsureQueueFilled(candidates);
+            if (_queueCount > 0) return TakeFromQueue(0);
 
-            if (_queueCount <= 1)
+            int pick = PickCandidate(candidates);
+            if (pick < 0)
             {
                 _exhausted = true;
                 return false;
             }
 
-            PushHistory(_queue[0]);
-            RemoveAt(0);
-
-            Load(_queue[0]);
-            _isPlaying = true;
-            _exhausted = false;
-
-            EnsureQueueFilled(candidates);
-            return true;
+            return MoveTo(pick);
         }
 
         /// <summary>前へ戻る。履歴が無ければ false。</summary>
@@ -223,9 +279,12 @@ namespace SmartMediaPlatform.World.UdonModel
             int previous = _history[_historyCount - 1];
             _historyCount--;
 
-            if (!InsertAt(0, previous)) return false;
+            // いま鳴っていたものは、戻ったあとの「次」になる。
+            if (_currentIndex >= 0) InsertAt(0, _currentIndex);
 
-            Load(_queue[0]);
+            _currentIndex = previous;
+            Load(previous);
+
             _isPlaying = true;
             _exhausted = false;
             return true;
@@ -235,43 +294,31 @@ namespace SmartMediaPlatform.World.UdonModel
 
         /// <summary>
         /// <paramref name="catalogIndex"/> を今すぐ再生する。
-        /// <c>LibraryPlaybackBridge.Play(mediaId)</c> の手順をそのまま写したもの:
-        /// <list type="number">
-        /// <item>いま鳴っているものと同じなら、鳴っていることだけ確かめる</item>
-        /// <item>Queue に無ければ積む</item>
-        /// <item>「先頭の次」へ動かしてから <see cref="Next"/>
-        ///       (先頭 = 再生中 という不変条件を壊さないため)</item>
-        /// </list>
-        /// 何も読み込んでいなければ先頭へ動かして <see cref="Play"/> する。
+        ///
+        /// <b>再生予定には触りません</b>(Phase7-3)。
+        /// 一覧から 1 曲選んだだけで再生予定が増えるのは、
+        /// 人から見れば「勝手に追加された」ようにしか見えないためです。
+        /// ただし<b>選んだものが再生予定に入っていたら、そこからは外します</b> —
+        /// いま流し始めたものが「これから流すもの」に残っていたら二重表示になります。
         /// </summary>
         public bool PlayAt(int catalogIndex, int[] candidates)
         {
-            if (catalogIndex < 0 || catalogIndex >= _catalogCount) return false;
+            if (!IsInCatalog(catalogIndex)) return false;
 
-            if (_queueCount > 0 && _queue[0] == catalogIndex)
+            if (_currentIndex == catalogIndex)
             {
+                // すでにこれが鳴っている。止まっていたら鳴らし直すだけ。
                 return _isPlaying || Play();
             }
 
-            bool somethingIsLoaded = _queueCount > 0;
-
-            if (IndexInQueue(catalogIndex) < 0 && !Enqueue(catalogIndex)) return false;
-
-            int wanted = somethingIsLoaded ? 1 : 0;
-            int position = IndexInQueue(catalogIndex);
-            if (position > wanted) Move(position, wanted);
-
-            if (!somethingIsLoaded) return Play();
-
-            bool started = Next(candidates);
-            if (!_isPlaying) started = Play();
-            return started;
+            _consecutiveErrors = 0;
+            return MoveTo(catalogIndex);
         }
 
-        /// <summary>Queue の末尾に積む。すでにあれば何もしない。</summary>
+        /// <summary>再生予定の末尾に積む。すでにあれば何もしない。</summary>
         public bool Enqueue(int catalogIndex)
         {
-            if (catalogIndex < 0 || catalogIndex >= _catalogCount) return false;
+            if (!IsInCatalog(catalogIndex)) return false;
             if (IndexInQueue(catalogIndex) >= 0) return false;
             if (_queueCount >= QueueCapacity) return false;
 
@@ -281,65 +328,72 @@ namespace SmartMediaPlatform.World.UdonModel
             return true;
         }
 
-        /// <summary>いま鳴っているものの次に割り込ませる(再生はしない)。</summary>
+        /// <summary>再生予定の先頭に割り込ませる(再生はしない)。</summary>
         public bool PlayNext(int catalogIndex)
         {
-            if (catalogIndex < 0 || catalogIndex >= _catalogCount) return false;
-            if (_queueCount > 0 && _queue[0] == catalogIndex) return false;
-
-            int wanted = _queueCount > 0 ? 1 : 0;
+            if (!IsInCatalog(catalogIndex)) return false;
 
             int position = IndexInQueue(catalogIndex);
-            if (position < 0)
+            if (position >= 0)
             {
-                if (!Enqueue(catalogIndex)) return false;
-                position = IndexInQueue(catalogIndex);
+                if (position != 0) Move(position, 0);
+                return true;
             }
 
-            if (position != wanted) Move(position, wanted);
+            if (_queueCount >= QueueCapacity) return false;
+
+            InsertAt(0, catalogIndex);
+            _exhausted = false;
             return true;
         }
 
         // ───────── Queue の操作 ─────────
 
         /// <summary>
-        /// Queue の <paramref name="position"/> 番目へ飛ぶ。
-        /// 先頭(= いま鳴っているもの)は指定できない。
+        /// 再生予定の <paramref name="position"/> 番目へ飛ぶ。
+        /// 飛び越したものは<b>再生予定から外れます</b>(聴かずに飛ばしたので)。
+        ///
+        /// Phase7-3 から<b>先頭(0 番目)も指定できます</b>。
+        /// 再生中は再生予定に入っていないので、先頭を除ける理由がなくなりました。
         /// </summary>
         public bool JumpTo(int position, int[] candidates)
         {
-            if (position <= 0 || position >= _queueCount) return false;
+            if (position < 0 || position >= _queueCount) return false;
 
-            if (position != 1) Move(position, 1);
-            return Next(candidates);
+            return TakeFromQueue(position);
         }
 
         /// <summary>
-        /// Queue から外す。先頭(= いま鳴っているもの)は外せない
-        /// (外すと「先頭 = 再生中」が壊れるため。Phase4-3 の <c>QueueView</c> と同じ)。
+        /// 再生予定から外す。
+        ///
+        /// Phase7-3 から<b>どの位置でも外せます</b>。
+        /// 以前は先頭 = 再生中だったので外せませんでした
+        /// (「消しても消えない」の原因)。
         /// </summary>
         public bool RemoveFromQueue(int position)
         {
-            if (position <= 0 || position >= _queueCount) return false;
+            if (position < 0 || position >= _queueCount) return false;
 
             RemoveAt(position);
             return true;
         }
 
-        /// <summary>いま鳴っているもの以外を Queue から外す。</summary>
+        /// <summary>
+        /// <b>再生予定を空にする。</b>いま鳴っているものはそのまま流れ続けます。
+        /// </summary>
+        /// <returns>外した件数。</returns>
         public int ClearUpcoming()
         {
-            if (_queueCount <= 1) return 0;
-
-            int removed = _queueCount - 1;
-            _queueCount = 1;
+            int removed = _queueCount;
+            _queueCount = 0;
             return removed;
         }
 
-        /// <summary>Queue を空にする。</summary>
+        /// <summary>再生予定を空にして、再生も止める。</summary>
         public void ClearQueue()
         {
             _queueCount = 0;
+            _currentIndex = -1;
             _requestedIndex = -1;
             _isPlaying = false;
         }
@@ -355,10 +409,35 @@ namespace SmartMediaPlatform.World.UdonModel
             _consecutiveErrors = 0;
         }
 
-        /// <summary>最後まで再生された。次へ送る。</summary>
-        public void NotifyEnded(int[] candidates)
+        /// <summary>
+        /// <b>最後まで再生された。</b>
+        ///
+        /// <list type="number">
+        /// <item>再生予定に何かあれば<b>必ず</b>その先頭へ進み、Queue から外す</item>
+        /// <item>空なら <see cref="EndBehaviour"/> に従う(既定は停止)</item>
+        /// </list>
+        /// </summary>
+        public bool NotifyEnded(int[] candidates)
         {
-            if (!Next(candidates)) _isPlaying = false;
+            if (_queueCount > 0) return TakeFromQueue(0);
+
+            if (EndBehaviour == EndBehaviourRepeatOne && _currentIndex >= 0)
+            {
+                Load(_currentIndex);
+                _isPlaying = true;
+                return true;
+            }
+
+            if (EndBehaviour == EndBehaviourRecommend)
+            {
+                int pick = PickCandidate(candidates);
+                if (pick >= 0) return MoveTo(pick);
+            }
+
+            // 既定 = 停止。
+            _isPlaying = false;
+            _exhausted = true;
+            return false;
         }
 
         /// <summary>
@@ -367,6 +446,9 @@ namespace SmartMediaPlatform.World.UdonModel
         /// <b><see cref="MaxConsecutiveErrors"/> 回続けて失敗したら、そこで諦めます。</b>
         /// 諦めないと、失敗するたびに次を読み込み、その読み込みがまた失敗し …… と
         /// 無限に回ります。
+        ///
+        /// <b>失敗のときだけは、止まる設定でもおすすめを使いません。</b>
+        /// 壊れた URL を飛ばすのが目的で、勝手に別の曲を流し始めるためではないからです。
         /// </summary>
         public bool NotifyError(int[] candidates)
         {
@@ -379,12 +461,11 @@ namespace SmartMediaPlatform.World.UdonModel
                 return false;
             }
 
-            if (!Next(candidates))
-            {
-                _isPlaying = false;
-                return false;
-            }
-            return true;
+            if (_queueCount > 0) return TakeFromQueue(0);
+
+            _isPlaying = false;
+            _exhausted = true;
+            return false;
         }
 
         /// <summary>
@@ -400,9 +481,9 @@ namespace SmartMediaPlatform.World.UdonModel
         /// ここで弾くと<b>人によって Queue が違う</b>という一番困る形になります。
         /// 入り切らないぶんだけ捨てます。
         /// </summary>
-        /// <param name="queue">catalog index の並び(先頭 = いま鳴っているもの)。</param>
+        /// <param name="queue">再生予定の並び(再生中は含まない)。</param>
         /// <param name="isPlaying">持ち主が再生中かどうか。</param>
-        /// <param name="loadedIndex">持ち主が読み込ませている catalog index。</param>
+        /// <param name="loadedIndex">持ち主が読み込ませている catalog index(= 再生中)。</param>
         public void ApplySyncedState(int[] queue, bool isPlaying, int loadedIndex)
         {
             int count = queue == null ? 0 : queue.Length;
@@ -411,13 +492,14 @@ namespace SmartMediaPlatform.World.UdonModel
             for (int i = 0; i < count; i++) _queue[i] = queue[i];
             _queueCount = count;
 
+            _currentIndex = loadedIndex;
             _isPlaying = isPlaying;
             if (isPlaying) _exhausted = false;
 
             _requestedIndex = loadedIndex;
         }
 
-        /// <summary>いまの Queue を写し取る。持ち主が配るために使う。</summary>
+        /// <summary>いまの再生予定を写し取る。持ち主が配るために使う。</summary>
         public int[] SnapshotQueue()
         {
             var snapshot = new int[_queueCount];
@@ -425,7 +507,7 @@ namespace SmartMediaPlatform.World.UdonModel
             return snapshot;
         }
 
-        /// <summary>Queue に入っている位置。無ければ -1。</summary>
+        /// <summary>再生予定に入っている位置。無ければ -1。</summary>
         public int IndexInQueue(int catalogIndex)
         {
             for (int i = 0; i < _queueCount; i++)
@@ -435,53 +517,77 @@ namespace SmartMediaPlatform.World.UdonModel
             return -1;
         }
 
+        // ───────── 内部 ─────────
+
         /// <summary>
-        /// 足りなければ候補から補充する。
-        /// <c>PlayerSession.EnsureQueueFilled()</c> と同じ判断
-        /// (下限を割ったときだけ、目標まで積む)。
+        /// 再生予定の <paramref name="position"/> 番目を取り出して再生する。
+        /// <b>そこまでの曲は飛ばしたものとして外します</b>(履歴には積む)。
         /// </summary>
-        /// <returns>積んだ件数。</returns>
-        public int EnsureQueueFilled(int[] candidates)
+        private bool TakeFromQueue(int position)
         {
-            if (candidates == null) return 0;
-            if (_queueCount >= MinimumQueueCount) return 0;
+            if (position < 0 || position >= _queueCount) return false;
 
-            int wanted = TargetQueueCount - _queueCount;
-            if (wanted <= 0) return 0;
+            int next = _queue[position];
 
-            int added = 0;
+            // 履歴は聴いた順に積む。先に終わったのは「いま鳴っていたもの」で、
+            // そのあとに「飛び越した曲」が続く。
+            if (_currentIndex >= 0 && _currentIndex != next) PushHistory(_currentIndex);
+            for (int i = 0; i < position; i++) PushHistory(_queue[i]);
+
+            // 取り出した位置までを再生予定から外す(飛び越したぶんも一緒に消える)。
+            for (int i = position + 1; i < _queueCount; i++) _queue[i - position - 1] = _queue[i];
+            _queueCount -= position + 1;
+
+            _currentIndex = next;
+            Load(next);
+
+            _isPlaying = true;
+            _exhausted = false;
+            return true;
+        }
+
+        /// <summary>いま鳴っているものを履歴へ送り、<paramref name="next"/> へ移る。</summary>
+        private bool MoveTo(int next)
+        {
+            if (!IsInCatalog(next)) return false;
+
+            if (_currentIndex >= 0 && _currentIndex != next) PushHistory(_currentIndex);
+
+            // これから流すものが再生予定にも残っていると二重に見えるので外す。
+            int duplicate = IndexInQueue(next);
+            if (duplicate >= 0) RemoveAt(duplicate);
+
+            _currentIndex = next;
+            Load(next);
+
+            _isPlaying = true;
+            _exhausted = false;
+            return true;
+        }
+
+        /// <summary>
+        /// おすすめの中から、いま鳴っているものでも再生予定でもない 1 件を選ぶ。
+        /// 無ければ -1。
+        /// </summary>
+        private int PickCandidate(int[] candidates)
+        {
+            if (candidates == null) return -1;
+
             for (int i = 0; i < candidates.Length; i++)
             {
-                if (added >= wanted) break;
-                if (Enqueue(candidates[i])) added++;
+                int candidate = candidates[i];
+                if (!IsInCatalog(candidate)) continue;
+                if (candidate == _currentIndex) continue;
+                if (IndexInQueue(candidate) >= 0) continue;
+                return candidate;
             }
-
-            if (added > 0) _exhausted = false;
-            return added;
+            return -1;
         }
 
-        // ───────── 動画プレイヤーからの知らせ ─────────
-
-        /// <summary>
-        /// 最後まで再生された。<c>PlayerSession.OnBackendEvent(Ended)</c> と同じで次へ送る。
-        /// </summary>
-        public bool OnEnded(int[] candidates)
+        private bool IsInCatalog(int catalogIndex)
         {
-            bool advanced = Next(candidates);
-            if (!advanced) _isPlaying = false;
-            return advanced;
+            return catalogIndex >= 0 && catalogIndex < _catalogCount;
         }
-
-        /// <summary>
-        /// 再生に失敗した。壊れているものを飛ばして次へ送る
-        /// (Phase3-4 の復帰と同じ考え方)。
-        /// </summary>
-        public bool OnError(int[] candidates)
-        {
-            return OnEnded(candidates);
-        }
-
-        // ───────── 内部 ─────────
 
         private void Load(int catalogIndex)
         {

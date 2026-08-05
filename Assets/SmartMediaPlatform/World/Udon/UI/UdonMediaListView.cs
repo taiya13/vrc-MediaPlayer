@@ -49,7 +49,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>いま鳴っているものの関連。</summary>
         public const int SourceRelated = 1;
 
-        /// <summary>再生待ち(先頭 = いま鳴っているもの)。</summary>
+        /// <summary>再生予定(これから流すものだけ。再生中は入らない)。</summary>
         public const int SourceQueue = 2;
 
         [Header("何の一覧か")]
@@ -668,7 +668,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <b>▲▲ = 迷子からの復帰。</b>
         /// いま鳴っているものがこの一覧にあればそこへ、無ければ先頭へ。
         ///
-        /// Queue では先頭 = 鳴っているものなので「先頭へ」と同じ動きになり、
+        /// 再生予定には鳴っているものが入らないので、そちらでは先頭へ戻り、
         /// Library では「さっきかけた曲の場所」へ戻ります。
         /// <b>ボタンを 1 つ増やさずに、どちらの一覧でも正しいことをします。</b>
         /// </summary>
@@ -916,7 +916,9 @@ namespace SmartMediaPlatform.World.Udon.UI
                     : "曲を再生すると、似た曲がここに出ます";
             }
 
-            if (Source == SourceQueue) return "再生予定はありません";
+            // Phase7-3 から、再生予定は「人が入れたものだけ」が並びます。
+            // 何もしなければ空なのがふつうなので、入れ方を書いておきます。
+            if (Source == SourceQueue) return "再生予定はありません(一覧の ＋ で追加)";
 
             // 検索で 0 件なのと、そもそも 1 曲も無いのは別のこと。
             // 前者は打ち直せばよく、後者は Catalog Builder で入れる話になる。
@@ -1088,10 +1090,17 @@ namespace SmartMediaPlatform.World.Udon.UI
             return catalogIndex >= 0 && catalogIndex == Session.CurrentIndex;
         }
 
-        /// <summary>Queue の先頭(= いま鳴っているもの)は外せないので 2 つめのボタンを隠す。</summary>
+        /// <summary>
+        /// 2 つめのボタン(Library では「＋」、再生予定では「×」)を出すか。
+        ///
+        /// <b>Phase7-3 からは、どの行にも出します。</b>
+        /// 以前は再生予定の先頭 = 再生中だったので「×」を隠していました。
+        /// そのせいで<b>消せない行が必ず 1 つ残り</b>、
+        /// 「消しても消えない」ように見えていました。
+        /// いま再生中は再生予定に入らないので、隠す理由がありません。
+        /// </summary>
         private bool HasSecondary(int position)
         {
-            if (Source == SourceQueue) return position > 0;
             return true;
         }
 

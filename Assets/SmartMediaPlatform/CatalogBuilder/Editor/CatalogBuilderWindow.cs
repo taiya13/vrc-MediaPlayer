@@ -1030,6 +1030,8 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             EditorGUILayout.EndHorizontal();
 
+            DrawShortsToggle(importer);
+
             using (new EditorGUI.DisabledScope(_selection.IsEmpty))
             {
                 if (GUILayout.Button("取得結果をクリア", EditorStyles.miniButton))
@@ -1143,6 +1145,32 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 EditorStyles.wordWrappedMiniLabel);
 
             EditorGUILayout.EndVertical();
+        }
+
+        /// <summary>
+        /// <b>ショート動画を取り込むかどうか。</b>Phase7-3。
+        ///
+        /// 取り込みの直前に出します。<b>あとから 1 本ずつ消すのは現実的でない</b>ので、
+        /// 押す前に見えていることが大事です。
+        /// 設定アセットに書くので、次に開いたときも覚えています。
+        ///
+        /// この欄はショートという考え方がある取り込み元
+        /// (いまは YouTube だけ)にしか出しません。
+        /// </summary>
+        private void DrawShortsToggle(ICatalogImporter importer)
+        {
+            var filter = importer as ICatalogImporterFilter;
+            if (filter == null) return;
+
+            bool enabled = EditorGUILayout.ToggleLeft(filter.FilterLabel, filter.FilterEnabled);
+            if (enabled != filter.FilterEnabled) filter.FilterEnabled = enabled;
+
+            if (!enabled) return;
+
+            string hint = filter.FilterHint;
+            if (string.IsNullOrEmpty(hint)) return;
+
+            EditorGUILayout.LabelField("　" + hint, EditorStyles.wordWrappedMiniLabel);
         }
 
         /// <summary>

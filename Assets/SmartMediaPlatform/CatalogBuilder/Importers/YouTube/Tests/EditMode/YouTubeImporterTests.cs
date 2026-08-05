@@ -500,7 +500,112 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
                           "Builder はこの口があるかどうかでボタンを出し分ける");
         }
 
+        // ───────── ショート動画を外す(Phase7-3)─────────
+
+        [Test]
+        public void ShortVideosAreLeftOutWhenAWholeChannelIsImported()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("full", "ふつうの曲"));
+            client.Videos.Add(Short("s1", "きりぬき", 45));
+
+            var importer = new YouTubeCatalogImporter(client);
+            CatalogImportResult result = importer.Import("@channel");
+
+            Assert.AreEqual(1, result.Count, "ショートは入らない");
+            Assert.AreEqual("full", result.Items[0].Id);
+            Assert.AreEqual(1, importer.LastShortsExcluded);
+        }
+
+        [Test]
+        public void LeavingOutShortsIsSaidOutLoud()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("full", "ふつうの曲"));
+            client.Videos.Add(Short("s1", "きりぬき", 30));
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            Assert.IsTrue(importer.Import("@channel").Message.Contains("ショート"),
+                          "黙って消さない。何件外したか必ず書く");
+        }
+
+        [Test]
+        public void AShortPastedOnItsOwnIsStillImported()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Short("s1", "きりぬき", 30));
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            Assert.AreEqual(1, importer.Import("https://www.youtube.com/shorts/s1").Count,
+                            "人が名指しで貼ったものを黙って消さない");
+        }
+
+        [Test]
+        public void ShortsCanBeTurnedBackOn()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("full", "ふつうの曲"));
+            client.Videos.Add(Short("s1", "きりぬき", 30));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.ExcludeShorts = false;
+
+            Assert.AreEqual(2, importer.Import("@channel").Count);
+        }
+
+        [Test]
+        public void AShortIsSpottedByItsLength()
+        {
+            Assert.IsTrue(YouTubeShortsFilter.IsShort(Short("a", "きりぬき", 59)));
+            Assert.IsTrue(YouTubeShortsFilter.IsShort(Short("b", "きりぬき", 60)));
+            Assert.IsFalse(YouTubeShortsFilter.IsShort(Short("c", "ふつう", 61)));
+        }
+
+        [Test]
+        public void AVideoOfUnknownLengthIsNeverTreatedAsAShort()
+        {
+            // 長さが取れないことは実際にある。分からないものを消すと
+            // 「入れたはずの曲が無い」という一番困る壊れ方になる。
+            var unknown = Video("x", "長さ不明");
+            unknown.DurationSeconds = 0;
+
+            Assert.IsFalse(YouTubeShortsFilter.IsShort(unknown));
+        }
+
+        [Test]
+        public void ALongVideoMarkedAsShortsIsStillAShort()
+        {
+            // ショートの上限は 3 分まで延びた。長さだけでは足りない。
+            var marked = Video("y", "ダンス #Shorts");
+            marked.DurationSeconds = 170;
+
+            Assert.IsTrue(YouTubeShortsFilter.IsShort(marked), "見出しの印で拾う");
+
+            var tagged = Video("z", "ダンス");
+            tagged.DurationSeconds = 170;
+            tagged.Tags = new[] { "dance", "shorts" };
+
+            Assert.IsTrue(YouTubeShortsFilter.IsShort(tagged), "タグの印でも拾う");
+        }
+
+        [Test]
+        public void TheReasonForLeavingSomethingOutCanBeRead()
+        {
+            Assert.IsTrue(YouTubeShortsFilter.ReasonFor(Short("a", "きりぬき", 30)).Length > 0);
+            Assert.AreEqual("", YouTubeShortsFilter.ReasonFor(Video("b", "ふつうの曲")),
+                            "ショートでなければ理由は無い");
+        }
+
         // ───────── 道具 ─────────
+
+        private static YouTubeVideoInfo Short(string id, string title, int seconds)
+        {
+            var video = Video(id, title);
+            video.DurationSeconds = seconds;
+            return video;
+        }
 
         private static YouTubeVideoInfo Video(string id, string title)
         {

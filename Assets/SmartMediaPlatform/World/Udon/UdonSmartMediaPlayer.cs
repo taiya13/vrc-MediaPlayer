@@ -141,9 +141,11 @@ namespace SmartMediaPlatform.World.Udon
         }
 
         /// <summary>
-        /// 1 本目を鳴らす。何を鳴らすかは決めません —
-        /// <b>Queue を補充させて、その先頭を再生するだけ</b>です
-        /// (何を積むかは <see cref="UdonRecommendationEngine"/> の仕事)。
+        /// 1 本目を鳴らす。何を鳴らすかは決めません — <b>一覧の先頭を再生するだけ</b>です。
+        ///
+        /// <b>再生予定(Queue)には何も積みません</b>(Phase7-3)。
+        /// 以前はここで補充させていたので、ワールドに入った時点で
+        /// 「誰も入れていない曲が再生予定に並んでいる」状態から始まっていました。
         /// </summary>
         public void PlayFirst()
         {
@@ -159,14 +161,15 @@ namespace SmartMediaPlatform.World.Udon
 
             Session.EnsureInitialized();
 
-            // Queue が空なら、一覧の先頭を種にして補充させる。
-            if (Session.QueueCount == 0 && Store != null && Store.Count > 0)
+            // まだ何も鳴っていなければ、一覧の先頭から始める。
+            if (Session.CurrentIndex < 0 && Store != null && Store.Count > 0)
             {
-                Session.Enqueue(Store.GetIndexAt(0));
+                Session.PlayAt(Store.GetIndexAt(0));
             }
-
-            Session.EnsureQueueFilled();
-            Session.Play();
+            else
+            {
+                Session.Play();
+            }
 
             // 置いてあるパネル全部に書き直してもらう(何枚あるかは窓口だけが知っている)。
             if (Controller != null) Controller.NotifyChanged();

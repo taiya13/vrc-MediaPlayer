@@ -44,6 +44,16 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         [Range(5, 120)]
         public int TimeoutSeconds = 20;
 
+        [Header("取り込むもの")]
+        [Tooltip("ショート動画を取り込まない。大画面では左右が黒いまますぐ終わるため、"
+                 + "チャンネルごと取り込むと再生がほぼ成立しません")]
+        public bool ExcludeShorts = true;
+
+        [Tooltip("これ以下の長さはショートとみなす(秒)。"
+                 + "#shorts の印が付いているものは、長さに関係なく外します")]
+        [Range(15, 180)]
+        public int MaxShortSeconds = 60;
+
         public bool HasKey
         {
             get { return !string.IsNullOrWhiteSpace(ApiKey); }

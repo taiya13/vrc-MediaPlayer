@@ -111,6 +111,21 @@ namespace SmartMediaPlatform.Video.EditorTools
                 log.AppendLine($"  プレイヤー   : {UnityPlayerTypeName}");
             }
 
+            // ── ループは必ず切る。
+            //
+            //    プレイヤー側でループが入っていると、動画が終わっても
+            //    <b>OnVideoEnd が来ないまま同じものが鳴り直します</b>。
+            //    上位(UdonPlayerSession)は「終わった」と知らされないので次へ進めず、
+            //    <b>「同じ動画がリピートし続ける」</b>という形になります。
+            //    次に何を流すかを決めるのは再生予定であって、プレイヤーではありません。
+            bool loopOff = TrySetMember(result.Player, false, "Loop", "loop");
+
+            var loopTarget = result.Player.GetComponent<UnityEngine.Video.VideoPlayer>();
+            if (loopTarget != null) loopTarget.isLooping = false;
+
+            log.AppendLine("  繰り返し     : 切りました"
+                           + (loopOff ? "" : "(VRC 側に Loop の欄が無いので VideoPlayer 側のみ)"));
+
             if (result.Kind == VRCVideoPlayerKind.AVPro)
             {
                 WireAVPro(result.Player, screen, speaker, ref result, log);

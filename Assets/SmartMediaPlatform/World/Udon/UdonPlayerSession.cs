@@ -18,11 +18,17 @@ namespace SmartMediaPlatform.World.Udon
     /// <b>責務は今までと同じ</b>です:
     /// <list type="bullet">
     /// <item>次に何を再生するかを決める</item>
-    /// <item>Queue を保つ(先頭 = いま鳴っているもの)</item>
-    /// <item>足りなければ <see cref="UdonRecommendationEngine"/> に候補を出させる</item>
+    /// <item>再生予定(Queue)を保つ</item>
+    /// <item>再生予定が空のとき、<see cref="UdonRecommendationEngine"/> に候補を出させる</item>
     /// </list>
     /// <b>実際の再生も、URL も、画面のことも知りません。</b>
     /// 再生してほしいものは <see cref="UdonVideoBackend"/> に頼むだけです。
+    ///
+    /// <b>Phase7-3:「再生中」と「再生予定」を分けました。</b>
+    /// Phase7-2 まで「Queue の先頭 = 再生中」だったため、
+    /// <b>選ぶだけで再生予定が増える / 再生中を消せない / 補充が勝手に埋める</b>が
+    /// 構造的に起きていました。理由と新しい決まりごとは
+    /// <see cref="SmartMediaPlatform.World.UdonModel.PlaybackModel"/> に書いてあります。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonPlayerSession : UdonSharpBehaviour
@@ -36,18 +42,20 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("実際に鳴らす相手")]
         public UdonVideoBackend Backend;
 
-        [Header("Queue の保ち方(PlayerSession と同じ既定値)")]
-        [Tooltip("この数を下回ったら補充する")]
-        public int MinimumQueueCount = 2;
+        [Header("再生予定が空になったときの動き(Phase7-3)")]
+        [Tooltip("曲が終わって再生予定が空だったときにどうするか。"
+                 + "0 = 止まる(既定) / 1 = いまの 1 曲を繰り返す / 2 = おすすめで流し続ける。"
+                 + "再生予定に何か入っているときは、必ずその先頭へ進みます")]
+        [Range(0, 2)]
+        public int EndBehaviour = 0;
 
-        [Tooltip("補充後に目指す Queue の長さ")]
-        public int TargetQueueCount = 5;
+        [Tooltip("「次へ」を押したのに再生予定が空だったとき、おすすめから選んでよい。"
+                 + "選んでも再生予定には積みません(そのまま次の曲になるだけ)")]
+        public bool AutoQueueEnabled = true;
 
+        [Header("そのほか")]
         [Tooltip("履歴として保持する上限")]
         public int MaxHistory = 32;
-
-        [Tooltip("おすすめによる自動補充を使う")]
-        public bool AutoQueueEnabled = true;
 
         [Tooltip("続けてこの回数だけ再生に失敗したら自動送りをやめる。0 で無制限。"
                  + "これが無いと「失敗 → 次へ → 失敗」が永遠に回る")]
@@ -61,13 +69,26 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>Queue に積める上限(Udon は固定長配列なので上限が要る)。</summary>
         public const int QueueCapacity = 64;
 
+        /// <summary>止まる。<b>既定</b>。</summary>
+        public const int EndBehaviourStop = 0;
+
+        /// <summary>いまの 1 曲を繰り返す。</summary>
+        public const int EndBehaviourRepeatOne = 1;
+
+        /// <summary>おすすめで流し続ける。</summary>
+        public const int EndBehaviourRecommend = 2;
+
         // ───────── 状態 ─────────
 
+        /// <summary>これから流すものだけ。再生中は入らない(Phase7-3)。</summary>
         private int[] _queue;
         private int _queueCount;
 
         private int[] _history;
         private int _historyCount;
+
+        /// <summary>いま鳴っている(鳴らそうとしている)もの。無ければ -1。</summary>
+        private int _currentIndex = -1;
 
         private int _selectedIndex = -1;
         private bool _isPlaying;
@@ -109,10 +130,13 @@ namespace SmartMediaPlatform.World.Udon
             return _queue[position];
         }
 
-        /// <summary>いま読み込んでいるもの(= Queue の先頭)。無ければ -1。</summary>
+        /// <summary>
+        /// <b>いま鳴っているもの。</b>無ければ -1。
+        /// Phase7-3 から Queue とは別の場所を指します。
+        /// </summary>
         public int CurrentIndex
         {
-            get { EnsureInitialized(); return _queueCount > 0 ? _queue[0] : -1; }
+            get { return _currentIndex; }
         }
 
         public bool IsPlaying { get { return _isPlaying; } }
@@ -172,14 +196,25 @@ namespace SmartMediaPlatform.World.Udon
         public bool Play()
         {
             EnsureInitialized();
-            if (_queueCount == 0) return false;
 
             // 人が押したら、失敗の数え直し。
             // 「もう駄目」と諦めたあとでも、もう一度試せるようにするため。
             _consecutiveErrors = 0;
 
-            if (_requestedIndex != _queue[0]) Load(_queue[0]);
-            else if (Backend != null) Backend.Play();
+            if (_currentIndex < 0)
+            {
+                // まだ何も鳴っていないなら、再生予定の先頭を取り出して始める。
+                if (_queueCount == 0) return false;
+                if (!TakeFromQueue(0)) return false;
+            }
+            else if (_requestedIndex != _currentIndex)
+            {
+                Load(_currentIndex);
+            }
+            else if (Backend != null)
+            {
+                Backend.Play();
+            }
 
             _isPlaying = true;
             _exhausted = false;
@@ -189,7 +224,7 @@ namespace SmartMediaPlatform.World.Udon
         public bool Stop()
         {
             EnsureInitialized();
-            if (_queueCount == 0) return false;
+            if (_currentIndex < 0) return false;
 
             _isPlaying = false;
             if (Backend != null) Backend.Stop();
@@ -199,7 +234,7 @@ namespace SmartMediaPlatform.World.Udon
         public bool TogglePlayPause()
         {
             EnsureInitialized();
-            if (_queueCount == 0) return false;
+            if (_currentIndex < 0 && _queueCount == 0) return false;
 
             if (_isPlaying)
             {
@@ -210,27 +245,26 @@ namespace SmartMediaPlatform.World.Udon
             return Play();
         }
 
-        /// <summary>次へ進む。進む前に Queue を補充するので、尽きていても続けられる。</summary>
+        /// <summary>
+        /// <b>次へ進む(人が押したとき)。</b>
+        /// 再生予定に何かあれば必ずその先頭へ。空のときだけ、
+        /// <see cref="AutoQueueEnabled"/> ならおすすめから 1 件選びます
+        /// (選んでも<b>再生予定には積みません</b>)。
+        /// </summary>
         public bool Next()
         {
             EnsureInitialized();
-            EnsureQueueFilled();
 
-            if (_queueCount <= 1)
+            if (_queueCount > 0) return TakeFromQueue(0);
+
+            int pick = AutoQueueEnabled ? PickRecommendation() : -1;
+            if (pick < 0)
             {
                 _exhausted = true;
                 return false;
             }
 
-            PushHistory(_queue[0]);
-            RemoveAt(0);
-
-            Load(_queue[0]);
-            _isPlaying = true;
-            _exhausted = false;
-
-            EnsureQueueFilled();
-            return true;
+            return MoveTo(pick);
         }
 
         /// <summary>前へ戻る。履歴が無ければ false。</summary>
@@ -242,9 +276,12 @@ namespace SmartMediaPlatform.World.Udon
             int previous = _history[_historyCount - 1];
             _historyCount--;
 
-            if (!InsertAt(0, previous)) return false;
+            // いま鳴っていたものは、戻ったあとの「次」になる。
+            if (_currentIndex >= 0) InsertAt(0, _currentIndex);
 
-            Load(_queue[0]);
+            _currentIndex = previous;
+            Load(previous);
+
             _isPlaying = true;
             _exhausted = false;
             return true;
@@ -254,34 +291,27 @@ namespace SmartMediaPlatform.World.Udon
 
         /// <summary>
         /// <paramref name="catalogIndex"/> を今すぐ再生する。
-        /// <c>LibraryPlaybackBridge.Play(mediaId)</c> の手順そのまま:
-        /// Queue に積んでから「先頭の次」へ動かして <see cref="Next"/> する
-        /// (先頭 = 再生中 という不変条件を壊さないため)。
+        ///
+        /// <b>再生予定には触りません</b>(Phase7-3)。
+        /// 一覧から 1 曲選んだだけで再生予定が増えるのは、
+        /// 人から見れば「勝手に追加された」ようにしか見えないためです。
+        /// 選んだものが再生予定に入っていた場合だけ、そこからは外します
+        /// (いま流し始めたものが「これから流すもの」に残っていたら二重表示になる)。
         /// </summary>
         public bool PlayAt(int catalogIndex)
         {
             EnsureInitialized();
             if (!IsInCatalog(catalogIndex)) return false;
 
-            if (_queueCount > 0 && _queue[0] == catalogIndex)
+            if (_currentIndex == catalogIndex)
             {
+                // すでにこれが鳴っている。止まっていたら鳴らし直すだけ。
                 if (_isPlaying) return true;
                 return Play();
             }
 
-            bool somethingIsLoaded = _queueCount > 0;
-
-            if (IndexInQueue(catalogIndex) < 0 && !Enqueue(catalogIndex)) return false;
-
-            int wanted = somethingIsLoaded ? 1 : 0;
-            int position = IndexInQueue(catalogIndex);
-            if (position > wanted) Move(position, wanted);
-
-            if (!somethingIsLoaded) return Play();
-
-            bool started = Next();
-            if (!_isPlaying) started = Play();
-            return started;
+            _consecutiveErrors = 0;
+            return MoveTo(catalogIndex);
         }
 
         /// <summary>一覧の <paramref name="position"/> 番目を再生する。</summary>
@@ -316,23 +346,23 @@ namespace SmartMediaPlatform.World.Udon
             return Enqueue(_selectedIndex);
         }
 
-        /// <summary>いま鳴っているものの次に割り込ませる(再生はしない)。</summary>
+        /// <summary>再生予定の先頭に割り込ませる(再生はしない)。</summary>
         public bool PlayNext(int catalogIndex)
         {
             EnsureInitialized();
             if (!IsInCatalog(catalogIndex)) return false;
-            if (_queueCount > 0 && _queue[0] == catalogIndex) return false;
-
-            int wanted = _queueCount > 0 ? 1 : 0;
 
             int position = IndexInQueue(catalogIndex);
-            if (position < 0)
+            if (position >= 0)
             {
-                if (!Enqueue(catalogIndex)) return false;
-                position = IndexInQueue(catalogIndex);
+                if (position != 0) Move(position, 0);
+                return true;
             }
 
-            if (position != wanted) Move(position, wanted);
+            if (_queueCount >= QueueCapacity) return false;
+
+            InsertAt(0, catalogIndex);
+            _exhausted = false;
             return true;
         }
 
@@ -344,41 +374,50 @@ namespace SmartMediaPlatform.World.Udon
 
         // ───────── Queue の操作 ─────────
 
-        /// <summary>Queue の <paramref name="position"/> 番目へ飛ぶ。先頭は指定できない。</summary>
+        /// <summary>
+        /// 再生予定の <paramref name="position"/> 番目へ飛ぶ。飛び越したものは外れます。
+        /// Phase7-3 から<b>先頭(0 番目)も指定できます</b>
+        /// (再生中は再生予定に入っていないため)。
+        /// </summary>
         public bool JumpTo(int position)
         {
             EnsureInitialized();
-            if (position <= 0 || position >= _queueCount) return false;
+            if (position < 0 || position >= _queueCount) return false;
 
-            if (position != 1) Move(position, 1);
-            return Next();
+            return TakeFromQueue(position);
         }
 
-        /// <summary>Queue から外す。先頭(= いま鳴っているもの)は外せない。</summary>
+        /// <summary>
+        /// 再生予定から外す。Phase7-3 から<b>どの位置でも外せます</b>
+        /// (以前は先頭 = 再生中だったので外せず、「消しても消えない」が起きていました)。
+        /// </summary>
         public bool RemoveFromQueue(int position)
         {
             EnsureInitialized();
-            if (position <= 0 || position >= _queueCount) return false;
+            if (position < 0 || position >= _queueCount) return false;
 
             RemoveAt(position);
             return true;
         }
 
-        /// <summary>いま鳴っているもの以外を Queue から外す。</summary>
+        /// <summary>
+        /// <b>再生予定を空にする。</b>いま鳴っているものはそのまま流れ続けます。
+        /// </summary>
         public int ClearUpcoming()
         {
             EnsureInitialized();
-            if (_queueCount <= 1) return 0;
 
-            int removed = _queueCount - 1;
-            _queueCount = 1;
+            int removed = _queueCount;
+            _queueCount = 0;
             return removed;
         }
 
+        /// <summary>再生予定を空にして、再生も止める。</summary>
         public void ClearQueue()
         {
             EnsureInitialized();
             _queueCount = 0;
+            _currentIndex = -1;
             _requestedIndex = -1;
             _isPlaying = false;
         }
@@ -391,34 +430,6 @@ namespace SmartMediaPlatform.World.Udon
                 if (_queue[i] == catalogIndex) return i;
             }
             return -1;
-        }
-
-        /// <summary>
-        /// 足りなければおすすめで補充する。
-        /// 判断は <c>PlayerSession.EnsureQueueFilled()</c> と同じ
-        /// (下限を割ったときだけ、目標まで積む)。
-        /// </summary>
-        public int EnsureQueueFilled()
-        {
-            EnsureInitialized();
-            if (!AutoQueueEnabled) return 0;
-            if (_queueCount >= MinimumQueueCount) return 0;
-
-            int wanted = TargetQueueCount - _queueCount;
-            if (wanted <= 0) return 0;
-
-            int[] candidates = BuildCandidates(wanted);
-            if (candidates == null) return 0;
-
-            int added = 0;
-            for (int i = 0; i < candidates.Length; i++)
-            {
-                if (added >= wanted) break;
-                if (Enqueue(candidates[i])) added++;
-            }
-
-            if (added > 0) _exhausted = false;
-            return added;
         }
 
         // ───────── 動画プレイヤーからの知らせ ─────────
@@ -435,15 +446,50 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>
         /// 最後まで再生された。<see cref="UdonVideoBackend"/> から呼ばれる。
         ///
+        /// <list type="number">
+        /// <item>再生予定に何かあれば<b>必ず</b>その先頭へ進み、再生予定から外す</item>
+        /// <item>空なら <see cref="EndBehaviour"/> に従う(既定は停止)</item>
+        /// </list>
+        ///
         /// <b><see cref="AutoAdvance"/> が false のときは何もしません。</b>
         /// 動画の終了イベントは<b>全員の手元で別々に起きる</b>ので、
         /// 同期中に全員が次へ進むと、人によって違うものが鳴り始めます。
         /// 進むのは持ち主(Owner)だけにして、残りは同期で追いつきます。
+        ///
+        /// <see cref="SmartMediaPlatform.World.UdonModel.PlaybackModel.NotifyEnded"/> の写しです。
         /// </summary>
         public void NotifyEnded()
         {
             if (!AutoAdvance) return;
-            if (!Next()) _isPlaying = false;
+            EnsureInitialized();
+
+            if (_queueCount > 0)
+            {
+                TakeFromQueue(0);
+                return;
+            }
+
+            if (EndBehaviour == EndBehaviourRepeatOne && _currentIndex >= 0)
+            {
+                Load(_currentIndex);
+                _isPlaying = true;
+                return;
+            }
+
+            if (EndBehaviour == EndBehaviourRecommend)
+            {
+                int pick = PickRecommendation();
+                if (pick >= 0)
+                {
+                    MoveTo(pick);
+                    return;
+                }
+            }
+
+            // 既定 = 停止。
+            _isPlaying = false;
+            _exhausted = true;
+            if (Backend != null) Backend.Stop();
         }
 
         /// <summary>
@@ -455,11 +501,15 @@ namespace SmartMediaPlatform.World.Udon
         /// 読み込みは<b>即座に失敗して返る</b>ので、この輪はフレーム単位で回り、
         /// <b>クライアントごと固まります</b>(Phase5-5 で実際に起きました)。
         ///
+        /// <b>失敗のときだけは、おすすめを使いません。</b>
+        /// 壊れた URL を飛ばすのが目的で、勝手に別の曲を流し始めるためではないからです。
+        ///
         /// <see cref="SmartMediaPlatform.World.UdonModel.PlaybackModel.NotifyError"/> の写しです。
         /// </summary>
         public void NotifyError()
         {
             if (!AutoAdvance) return;
+            EnsureInitialized();
 
             _consecutiveErrors++;
 
@@ -474,7 +524,14 @@ namespace SmartMediaPlatform.World.Udon
                 return;
             }
 
-            if (!Next()) _isPlaying = false;
+            if (_queueCount > 0)
+            {
+                TakeFromQueue(0);
+                return;
+            }
+
+            _isPlaying = false;
+            _exhausted = true;
         }
 
         // ───────── 同期(Phase5-4)─────────
@@ -501,6 +558,9 @@ namespace SmartMediaPlatform.World.Udon
             for (int i = 0; i < count; i++) _queue[i] = queue[i];
             _queueCount = count;
 
+            // 持ち主が読み込ませているものが、そのまま「再生中」になる(Phase7-3)。
+            _currentIndex = loadedIndex;
+
             _isPlaying = isPlaying;
             if (isPlaying) _exhausted = false;
 
@@ -520,31 +580,88 @@ namespace SmartMediaPlatform.World.Udon
         // ───────── 内部 ─────────
 
         /// <summary>
-        /// 補充の候補を作る。種は「再生中 → Queue の末尾 → 直近の履歴 → 一覧の先頭」の順
-        /// (<c>PlayerSession.ResolveSeedId()</c> と同じ)。
+        /// 再生予定の <paramref name="position"/> 番目を取り出して再生する。
+        /// <b>そこまでの曲は飛ばしたものとして外します</b>(履歴には積む)。
+        /// <see cref="SmartMediaPlatform.World.UdonModel.PlaybackModel"/> の同名メソッドの写しです。
         /// </summary>
-        private int[] BuildCandidates(int wanted)
+        private bool TakeFromQueue(int position)
         {
-            if (Recommendation == null || Store == null) return null;
+            if (position < 0 || position >= _queueCount) return false;
+
+            int next = _queue[position];
+
+            // 履歴は聴いた順に積む。先に終わったのは「いま鳴っていたもの」で、
+            // そのあとに「飛び越した曲」が続く。
+            if (_currentIndex >= 0 && _currentIndex != next) PushHistory(_currentIndex);
+            for (int i = 0; i < position; i++) PushHistory(_queue[i]);
+
+            // 取り出した位置までを再生予定から外す(飛び越したぶんも一緒に消える)。
+            for (int i = position + 1; i < _queueCount; i++) _queue[i - position - 1] = _queue[i];
+            _queueCount -= position + 1;
+
+            _currentIndex = next;
+            Load(next);
+
+            _isPlaying = true;
+            _exhausted = false;
+            return true;
+        }
+
+        /// <summary>いま鳴っているものを履歴へ送り、<paramref name="next"/> へ移る。</summary>
+        private bool MoveTo(int next)
+        {
+            if (!IsInCatalog(next)) return false;
+
+            if (_currentIndex >= 0 && _currentIndex != next) PushHistory(_currentIndex);
+
+            // これから流すものが再生予定にも残っていると二重に見えるので外す。
+            int duplicate = IndexInQueue(next);
+            if (duplicate >= 0) RemoveAt(duplicate);
+
+            _currentIndex = next;
+            Load(next);
+
+            _isPlaying = true;
+            _exhausted = false;
+            return true;
+        }
+
+        /// <summary>
+        /// <b>おすすめを 1 件だけ選ぶ。</b>いま鳴っているものと、
+        /// すでに再生予定にあるものは選びません。無ければ -1。
+        ///
+        /// <b>ここで選んだものを再生予定へ積むことはしません</b>(Phase7-3)。
+        /// 積んでいたのが「勝手に追加され続ける」の原因でした。
+        /// 種は「再生中 → 直近の履歴 → 一覧の先頭」の順です。
+        /// </summary>
+        private int PickRecommendation()
+        {
+            if (Recommendation == null || Store == null) return -1;
 
             int seed = ResolveSeedIndex();
-            if (seed < 0) return null;
+            if (seed < 0) return -1;
 
             string seedId = Store.GetId(seed);
-            if (seedId == null || seedId.Length == 0) return null;
+            if (seedId == null || seedId.Length == 0) return -1;
 
-            // 積めない候補(すでに Queue にあるもの)があるので多めに出させる
-            int count = Recommendation.GetNextRecommendations(seedId, wanted + _queueCount + 4);
-            if (count <= 0) return null;
+            // 使えない候補(再生中・再生予定にあるもの)があるので多めに出させる。
+            int count = Recommendation.GetNextRecommendations(seedId, _queueCount + 8);
+            if (count <= 0) return -1;
 
-            int[] result = new int[count];
-            for (int i = 0; i < count; i++) result[i] = Recommendation.GetResultIndex(i);
-            return result;
+            for (int i = 0; i < count; i++)
+            {
+                int candidate = Recommendation.GetResultIndex(i);
+                if (!IsInCatalog(candidate)) continue;
+                if (candidate == _currentIndex) continue;
+                if (IndexInQueue(candidate) >= 0) continue;
+                return candidate;
+            }
+            return -1;
         }
 
         private int ResolveSeedIndex()
         {
-            if (_queueCount > 0) return _queue[0];
+            if (_currentIndex >= 0) return _currentIndex;
             if (_historyCount > 0) return _history[_historyCount - 1];
             if (Store != null && Store.Count > 0) return Store.GetIndexAt(0);
             return -1;
