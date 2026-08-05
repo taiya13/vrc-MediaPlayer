@@ -389,6 +389,21 @@ namespace SmartMediaPlatform.World.Udon
         /// まず <see cref="TakeControl"/> で持ち主になってから呼んでください。
         /// </summary>
         /// <param name="seconds">動かした先の位置(秒)。</param>
+        /// <summary>
+        /// 動画プレイヤーが<b>いま鳴らしているのが、いま選ばれている曲か</b>。
+        ///
+        /// 曲を切り替えてから読み込みが終わるまでの数秒は、
+        /// <b>前の曲が鳴ったまま</b>です。この間に位置を合わせにいくと、
+        /// 前の曲の秒数を新しい曲へ持ち込んでしまいます。
+        /// </summary>
+        private bool IsBackendOnCurrentMedia()
+        {
+            if (Backend == null || Session == null) return false;
+            if (Backend.IsLoading) return false;
+
+            return Backend.LoadedIndex == Session.CurrentIndex;
+        }
+
         public void NotifySeeked(float seconds)
         {
             EnsureInitialized();
@@ -416,6 +431,17 @@ namespace SmartMediaPlatform.World.Udon
             if (Backend == null || Session == null) return;
             if (Session.CurrentIndex < 0) return;
 
+            // ── まだ「前の曲」が鳴っているうちに基準を置かない。
+            //
+            //    曲を切り替えても、次の URL を読み終わるまでの数秒は
+            //    <b>前の曲が鳴り続けます</b>。そこで基準を置くと、
+            //    前の曲の再生位置(たとえば 1 分 40 秒)が新しい基準になり、
+            //    新しい曲が鳴り始めた瞬間に
+            //    <see cref="CorrectDrift"/> が「1 分 40 秒のはず」と判断して
+            //    <b>そこまで飛ばしてしまいます</b>。
+            //    「別の動画にしたら前と同じ秒数から始まる」の正体はこれでした。
+            if (!IsBackendOnCurrentMedia()) return;
+
             // まだ鳴っていないなら待つ(次の見回りでまた見に来る)
             if (!Backend.IsPlaying) return;
 
@@ -442,6 +468,9 @@ namespace SmartMediaPlatform.World.Udon
             if (!_playing) return;
             if (Backend == null || Session == null) return;
             if (Session.CurrentIndex < 0) return;
+
+            // 読み込み中の曲と、いま鳴っている曲が違う間は触らない。
+            if (!IsBackendOnCurrentMedia()) return;
 
             // 読み込み中は GetTime が意味を持たないので触らない。
             // 次の見回りでまた見に来るので、読み込みが終われば自然に揃う。

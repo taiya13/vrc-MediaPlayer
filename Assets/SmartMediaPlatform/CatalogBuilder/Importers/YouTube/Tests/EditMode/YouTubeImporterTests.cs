@@ -706,6 +706,85 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
             Assert.AreEqual(120, importer.Import("@channel").Count);
         }
 
+        // ───────── 見出しを整える(Phase7-3)─────────
+
+        [Test]
+        public void TheChannelNameIsTakenOffTheFrontOfTheTitle()
+        {
+            Assert.AreEqual(
+                "C.U.R.I.O.S.I.T.Y.",
+                YouTubeTitleCleaner.Clean("ONE OK ROCK - C.U.R.I.O.S.I.T.Y.", "ONE OK ROCK"));
+
+            Assert.AreEqual(
+                "Tiny Pieces",
+                YouTubeTitleCleaner.Clean("ONE OK ROCK：Tiny Pieces", "ONE OK ROCK"));
+        }
+
+        [Test]
+        public void ADecorationAtTheEndIsTakenOff()
+        {
+            Assert.AreEqual(
+                "All Mine",
+                YouTubeTitleCleaner.Clean(
+                    "ONE OK ROCK - All Mine [Official Music Video]", "ONE OK ROCK"));
+
+            Assert.AreEqual("Wasted Nights", YouTubeTitleCleaner.Clean("Wasted Nights(MV)", ""));
+        }
+
+        [Test]
+        public void SomethingThatTellsSongsApartIsKept()
+        {
+            // これを消すと、原曲と区別が付かなくなる。
+            Assert.AreEqual(
+                "Stand Out Fit In (Acoustic Version)",
+                YouTubeTitleCleaner.Clean(
+                    "ONE OK ROCK - Stand Out Fit In (Acoustic Version)", "ONE OK ROCK"));
+
+            Assert.AreEqual(
+                "Renegades (feat. Someone)",
+                YouTubeTitleCleaner.Clean("Renegades (feat. Someone) [Official Video]", ""));
+        }
+
+        [Test]
+        public void ATitleIsNeverEmptiedOut()
+        {
+            // 見出しがチャンネル名そのものだった場合。消したら何も残らない。
+            Assert.AreEqual("ONE OK ROCK", YouTubeTitleCleaner.Clean("ONE OK ROCK", "ONE OK ROCK"));
+            Assert.AreEqual("[Official]", YouTubeTitleCleaner.Clean("[Official]", ""));
+        }
+
+        [Test]
+        public void ANameThatOnlyLooksLikeTheChannelIsLeftAlone()
+        {
+            // 頭が似ているだけで、区切りが無いものは触らない。
+            Assert.AreEqual(
+                "ONE OK ROCK Documentary",
+                YouTubeTitleCleaner.Clean("ONE OK ROCK Documentary", "ONE OK ROCK"));
+        }
+
+        [Test]
+        public void TheArtistIsTakenFromTheTitleWhenItIsThere()
+        {
+            Assert.AreEqual("Ado", YouTubeTitleCleaner.ArtistFromTitle("Ado - 唱"));
+            Assert.AreEqual("", YouTubeTitleCleaner.ArtistFromTitle("唱"));
+
+            // 綴りの一部のハイフンは区切りではない。
+            Assert.AreEqual("", YouTubeTitleCleaner.ArtistFromTitle("K-POP Mix"));
+        }
+
+        [Test]
+        public void ImportedItemsCarryTheCleanedTitle()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("a", "ONE OK ROCK - Wasted Nights [Official Music Video]"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            CatalogImportResult result = importer.Import("@channel");
+
+            Assert.AreEqual("Wasted Nights", result.Items[0].Title);
+            Assert.AreEqual("ONE OK ROCK", result.Items[0].Artist);
+        }
+
         // ───────── 道具 ─────────
 
         private static YouTubeVideoInfo Short(string id, string title, int seconds)

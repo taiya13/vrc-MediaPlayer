@@ -106,6 +106,13 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("ホイールとつまみの担当。空でも ▲▼ ボタンだけで動きます")]
         public UdonListScroller Scroller;
 
+        [Header("いま見ているチャンネル(Phase7-3)")]
+        [Tooltip("一覧の上に貼り付いて残るチャンネル名。空でも動く")]
+        public Text StickyChannelText;
+
+        [Tooltip("その帯そのもの。チャンネルまとめでないときは隠す")]
+        public GameObject StickyChannelBand;
+
         [Tooltip("▲▼ 1 回で動く行数。0 なら「1 画面 − 1 行」(1 行だけ残して目印にする)")]
         public int ScrollStep;
 
@@ -486,6 +493,10 @@ namespace SmartMediaPlatform.World.Udon.UI
             }
 
             ClampOffset(total, rows);
+
+            // つまみの長さは件数で決まる。曲が焼き込まれるのは Start より後なので、
+            // 書き直しのたびに取り直さないと「0 件のまま動かない」になる。
+            if (Scroller != null) Scroller.Rebuild();
 
             // 曲が変わったときだけ追いかける。毎回追いかけると、
             // 眺めている最中に画面が飛んで操作できなくなる。
@@ -881,6 +892,49 @@ namespace SmartMediaPlatform.World.Udon.UI
             _touchedAt = Time.time;
         }
 
+        /// <summary>
+        /// <b>いま見ているチャンネル名を、一覧の上に貼り付けておく。</b>Phase7-3。
+        ///
+        /// <b>なぜ要るのか</b><br/>
+        /// チャンネルの見出しは一覧の中に並んでいるので、
+        /// <b>1 行スクロールしただけで画面の外へ消えます</b>。
+        /// そうなると「いま誰の曲を見ているのか」が分からなくなり、
+        /// 別のチャンネルへ移りたいだけなのに<b>いちばん上まで戻る</b>ことになります。
+        ///
+        /// 上端に見えている曲のチャンネル名をここへ写すと、
+        /// スクロールしても<b>必ず 1 つは見出しが見えている</b>状態になります。
+        /// </summary>
+        private void RefreshStickyChannel()
+        {
+            if (StickyChannelBand == null && StickyChannelText == null) return;
+
+            bool grouped = Source == SourceLibrary && UsesView();
+            SetActive(StickyChannelBand, grouped);
+
+            if (!grouped || StickyChannelText == null) return;
+
+            string channel = ChannelAtView(Offset);
+            if (StickyChannelText.text != channel) StickyChannelText.text = channel;
+        }
+
+        /// <summary>
+        /// 並びの <paramref name="position"/> 番目が属するチャンネル。
+        /// その位置が見出しならその名前、曲なら<b>上へさかのぼって</b>探します。
+        /// </summary>
+        private string ChannelAtView(int position)
+        {
+            if (_viewIndex == null || _viewLength == 0) return "";
+
+            if (position < 0) position = 0;
+            if (position >= _viewLength) position = _viewLength - 1;
+
+            for (int i = position; i >= 0; i--)
+            {
+                if (_viewIndex[i] < 0) return _viewName[i];
+            }
+            return "";
+        }
+
         private int[] ResolveRelated()
         {
             if (Session == null || Store == null) return new int[0];
@@ -966,6 +1020,8 @@ namespace SmartMediaPlatform.World.Udon.UI
             {
                 HeaderText.text = header;
             }
+
+            RefreshStickyChannel();
 
             int filled = total - Offset;
             if (filled < 0) filled = 0;

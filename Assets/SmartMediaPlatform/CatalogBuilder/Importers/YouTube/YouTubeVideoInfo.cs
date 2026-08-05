@@ -54,6 +54,24 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             }
         }
 
+        /// <summary>
+        /// 見出しを整えるか。Phase7-3。既定は入。
+        /// 切ると、YouTube の見出しがそのまま入ります。
+        /// </summary>
+        public static bool CleanTitles = true;
+
+        /// <summary>
+        /// アーティスト名を決める。
+        /// 見出しが「歌手 - 曲名」の形ならそちらを、無ければチャンネル名を使います。
+        /// </summary>
+        public string ResolveArtist()
+        {
+            if (!CleanTitles) return ChannelTitle;
+
+            string fromTitle = YouTubeTitleCleaner.ArtistFromTitle(Title);
+            return fromTitle.Length > 0 ? fromTitle : ChannelTitle;
+        }
+
         /// <summary>「3:45」の形。</summary>
         public string FormatDuration()
         {
@@ -87,8 +105,23 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
             // ID は動画 ID をそのまま。もとが一意なので、重複はまず起きない。
             item.Id = VideoId;
-            item.Title = Title;
-            item.Artist = ChannelTitle;
+
+            // ── 見出しから、頭のチャンネル名と末尾の飾りを落とす(Phase7-3)。
+            //
+            //    1 つのチャンネルを丸ごと取り込むと、全部の見出しの頭に
+            //    <b>同じ名前が並びます</b>。一覧はチャンネルでまとめてあるので、
+            //    その名前は見出しにもう出ていて、二重です。
+            //    選ぶときに見たいのは曲名なので、そちらを前へ出します。
+            //    落とす名前は<b>アーティストとして採ったほうの名前</b>です。
+            //    チャンネル名で試すだけだと、レーベルのチャンネル
+            //    (見出しは「歌手 - 曲名」、チャンネル名は別)で落とせません。
+            string artist = ResolveArtist();
+
+            item.Title = CleanTitles ? YouTubeTitleCleaner.Clean(Title, artist) : Title;
+
+            // アーティストは、見出しに「歌手 - 曲名」の形があればそちらを採る。
+            // 音楽レーベルのチャンネルには、いろいろな歌手が入っているためです。
+            item.Artist = artist;
             item.Url = WatchUrl;
             item.DurationSeconds = DurationSeconds;
             item.ThumbnailPath = ThumbnailUrl;

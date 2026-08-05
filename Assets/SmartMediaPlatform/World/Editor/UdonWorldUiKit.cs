@@ -369,23 +369,31 @@ namespace SmartMediaPlatform.World.EditorTools
             fillRect.offsetMin = Vector2.zero;
             fillRect.offsetMax = Vector2.zero;
 
-            // つまみ。
-            float knob = touchHeight * 0.72f;
-            RectTransform handleArea = Place(root, "HandleArea", 0f, 0f, width, touchHeight);
-            handleArea.anchorMin = new Vector2(0f, 0f);
-            handleArea.anchorMax = new Vector2(1f, 1f);
-            handleArea.offsetMin = new Vector2(knob * 0.5f, 0f);
-            handleArea.offsetMax = new Vector2(-knob * 0.5f, 0f);
+            // ── つまみ。<b>小さな丸</b>にする。
+            //
+            //    Unity の Slider は、つまみを<b>置き場所の高さいっぱいに引き伸ばします</b>
+            //    (毎フレーム anchorMin.y = 0 / anchorMax.y = 1 を書き込む)。
+            //    だから置き場所を触れる面と同じ高さにすると、
+            //    <b>縦に長い棒</b>になります(Phase7-3 の最初の版がそれでした)。
+            //    置き場所のほうを<b>丸の直径ちょうど</b>に細めれば、丸のままです。
+            float knob = Mathf.Min(touchHeight * 0.55f, 26f);
+
+            RectTransform handleArea = Place(root, "HandleArea", 0f, 0f, width, knob);
+            handleArea.anchorMin = new Vector2(0f, 0.5f);
+            handleArea.anchorMax = new Vector2(1f, 0.5f);
+            handleArea.pivot = new Vector2(0.5f, 0.5f);
+            handleArea.offsetMin = new Vector2(knob * 0.5f, -knob * 0.5f);
+            handleArea.offsetMax = new Vector2(-knob * 0.5f, knob * 0.5f);
 
             var handle = Plate(handleArea, "Handle", 0f, 0f, knob, knob, TextPrimary);
             handle.raycastTarget = true;
             ApplyRadius(handle, Mathf.RoundToInt(knob * 0.5f));
 
             var handleRect = handle.GetComponent<RectTransform>();
-            handleRect.anchorMin = new Vector2(0f, 0.5f);
-            handleRect.anchorMax = new Vector2(0f, 0.5f);
+            handleRect.anchorMin = new Vector2(0f, 0f);
+            handleRect.anchorMax = new Vector2(0f, 1f);
             handleRect.pivot = new Vector2(0.5f, 0.5f);
-            handleRect.sizeDelta = new Vector2(knob, knob);
+            handleRect.sizeDelta = new Vector2(knob, 0f);
 
             slider.fillRect = fillRect;
             slider.handleRect = handleRect;
@@ -703,6 +711,22 @@ namespace SmartMediaPlatform.World.EditorTools
             var rect = go.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(width, height);
             rect.localScale = new Vector3(metersPerPixel, metersPerPixel, metersPerPixel);
+
+            // ── Canvas に当たり判定を付ける。<b>これが無いと uGUI が一切効きません。</b>
+            //
+            //    VRChat のレーザーは、まず<b>物理の当たり判定</b>を探します。
+            //    そこに何も無ければ、その先にある Canvas は見えていないのと同じで、
+            //    <b>押す・つかむ・ホイールのどれも届きません</b>。
+            //
+            //    Phase7-2 まで、これが無いのに<b>ボタンだけは動いていました</b>。
+            //    ボタンには別途「使う」(Interact)を付けてあるからです。
+            //    そのせいで「uGUI は効いている」と誤解したまま、
+            //    <b>つまみ・スクロール・音量が実機でまったく動かない</b>状態が続いていました
+            //    (押せるものは押せるので、原因が見えにくい)。
+            var collider = go.AddComponent<BoxCollider>();
+            collider.isTrigger = true;
+            collider.size = new Vector3(width, height, 0.01f / metersPerPixel);
+            collider.center = Vector3.zero;
 
             // ここから作るボタンの「実寸」を測れるようにしておく
             CurrentMetersPerPixel = metersPerPixel;

@@ -54,6 +54,10 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         [Range(15, 180)]
         public int MaxShortSeconds = 60;
 
+        [Tooltip("見出しから、頭のチャンネル名と末尾の飾り([Official Music Video] など)を落とす。"
+                 + "1 つのチャンネルを丸ごと取り込むと、全部の見出しの頭に同じ名前が並ぶため")]
+        public bool CleanTitles = true;
+
         public bool HasKey
         {
             get { return !string.IsNullOrWhiteSpace(ApiKey); }

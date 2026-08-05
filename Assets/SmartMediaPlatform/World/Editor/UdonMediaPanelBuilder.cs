@@ -558,7 +558,9 @@ namespace SmartMediaPlatform.World.EditorTools
         private static void BuildRecommendationCards(
             RectTransform page, UdonMediaPanel panel, float width, float height)
         {
-            const int Columns = 2;
+            // 3 × 2 = 6 枚。4 枚だと「選んだ」感じがせず、
+            // 押さなかったときに次の手が無くなる。
+            const int Columns = 3;
             const int Rows = 2;
             const int Count = Columns * Rows;
 
@@ -567,9 +569,16 @@ namespace SmartMediaPlatform.World.EditorTools
 
             float gap = UdonMediaTheme.Space2;
             float cardW = Mathf.Floor((width - gap * (Columns - 1)) / Columns);
-            float cardH = Mathf.Floor((height - gap * (Rows - 1) - 60f) / Rows);
 
+            // 絵は 16:9。カードの高さは<b>中身から決めます</b> ——
+            // 余っている高さで割ると、絵の下に意味のない空白が生まれ、
+            // 「作りかけ」に見えます。
             float artH = Mathf.Round(cardW * 9f / 16f);
+            float cardH = artH + UdonMediaTheme.Space1 + 30f + 26f
+                          + UdonMediaTheme.Space1 + 32f + UdonMediaTheme.Space2;
+
+            float available = Mathf.Floor((height - gap * (Rows - 1) - 60f) / Rows);
+            if (cardH > available) cardH = available;
 
             var cards = new GameObject[Count];
             var artworks = new Image[Count];
@@ -579,7 +588,8 @@ namespace SmartMediaPlatform.World.EditorTools
             var reasons = new Text[Count];
             var pressed = new GameObject[Count];
 
-            string[] events = { "Click0", "Click1", "Click2", "Click3" };
+            string[] events = { "Click0", "Click1", "Click2", "Click3", "Click4", "Click5" };
+            string[] queueEvents = { "Queue0", "Queue1", "Queue2", "Queue3", "Queue4", "Queue5" };
 
             for (int i = 0; i < Count; i++)
             {
@@ -610,11 +620,11 @@ namespace SmartMediaPlatform.World.EditorTools
                 float textW = cardW - UdonMediaTheme.Space2 * 2f;
 
                 titles[i] = UdonWorldUiKit.Label(
-                    card.transform, "Title", UdonMediaTheme.Space2, textY, textW, 32f,
+                    card.transform, "Title", UdonMediaTheme.Space2, textY, textW, 30f,
                     UdonMediaTheme.TextBody, TextAnchor.UpperLeft, UdonMediaTheme.TextPrimary);
 
                 artists[i] = UdonWorldUiKit.Label(
-                    card.transform, "Artist", UdonMediaTheme.Space2, textY + 32f, textW, 26f,
+                    card.transform, "Artist", UdonMediaTheme.Space2, textY + 30f, textW, 26f,
                     UdonMediaTheme.TextCaption, TextAnchor.UpperLeft, UdonMediaTheme.TextSecondary);
 
                 // ── 理由。強調色の札にして、いちばん下に置く。
@@ -629,6 +639,21 @@ namespace SmartMediaPlatform.World.EditorTools
                     chip.transform, "Reason", UdonMediaTheme.Space1, 0f,
                     textW - UdonMediaTheme.Space2, 32f, 15,
                     TextAnchor.MiddleLeft, UdonMediaTheme.Accent);
+
+                // ── 「＋」= 再生予定へ。一覧と同じ形・同じ位置に置く。
+                //    カードを押すとすぐ流れてしまうので、
+                //    「いまは流さず覚えておく」道が要ります。
+                const float PlusSize = 52f;
+
+                Text plusLabel;
+                Button plus = UdonWorldUiKit.RoundedButton(
+                    card.transform, "Queue",
+                    cardW - PlusSize - UdonMediaTheme.Space1,
+                    artH - PlusSize - UdonMediaTheme.Space1,
+                    PlusSize, PlusSize, "＋", 26,
+                    UdonMediaTheme.Base, Mathf.RoundToInt(PlusSize * 0.5f), out plusLabel);
+
+                UdonWorldUiKit.Wire(plus, view, queueEvents[i], "再生予定に追加");
 
                 Image press = UdonWorldUiKit.RoundedPlate(
                     card.transform, "Pressed", 0f, 0f, cardW, cardH,
@@ -682,7 +707,29 @@ namespace SmartMediaPlatform.World.EditorTools
             float listTop = 0f;
             if (source == UdonMediaListView.SourceLibrary)
             {
-                listTop = BuildSearchBar(page, view, width) + 14f;
+                listTop = BuildSearchBar(page, view, width) + UdonMediaTheme.Space2;
+
+                // ── いま見ているチャンネルを上に貼り付けておく。
+                //    見出しは一覧の中にあるので 1 行スクロールで消えてしまい、
+                //    「別のアーティストへ移りたいだけなのに、いちばん上まで戻る」
+                //    ことになっていました。
+                const float StickyHeight = 44f;
+
+                Image sticky = UdonWorldUiKit.RoundedPlate(
+                    page, "StickyChannel", 0f, listTop, width, StickyHeight,
+                    UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusSmall);
+                sticky.raycastTarget = false;
+
+                Text stickyText = UdonWorldUiKit.Label(
+                    sticky.transform, "Text", UdonMediaTheme.Space2, 0f,
+                    width - UdonMediaTheme.Space4, StickyHeight,
+                    UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft,
+                    UdonMediaTheme.TextSecondary);
+
+                view.StickyChannelBand = sticky.gameObject;
+                view.StickyChannelText = stickyText;
+
+                listTop += StickyHeight + UdonMediaTheme.Space1;
             }
 
             // ── 何も無いときの案内。種類ごとに文が変わる。

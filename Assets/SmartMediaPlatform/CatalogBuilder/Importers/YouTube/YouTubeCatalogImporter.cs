@@ -634,6 +634,7 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             if (settings != null)
             {
                 YouTubeShortsFilter.MaxShortSeconds = settings.MaxShortSeconds;
+                YouTubeVideoInfo.CleanTitles = settings.CleanTitles;
                 return settings.ExcludeShorts;
             }
 #endif

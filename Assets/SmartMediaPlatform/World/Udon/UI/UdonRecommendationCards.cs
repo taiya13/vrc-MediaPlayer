@@ -127,28 +127,37 @@ namespace SmartMediaPlatform.World.Udon.UI
                 string seedId = Store.GetId(current);
                 if (seedId != null && seedId.Length > 0)
                 {
-                    found = Recommendation.GetRelatedRecommendations(seedId, count);
+                    // さっき聴いたものを外すぶん、多めに出させる。
+                    found = Recommendation.GetRelatedRecommendations(seedId, count + SkipDepth);
                 }
             }
 
-            for (int i = 0; i < count; i++)
+            int filled = 0;
+
+            for (int i = 0; i < found && filled < count; i++)
             {
-                if (i < found)
-                {
-                    int catalogIndex = Recommendation.GetResultIndex(i);
-                    int reason = Recommendation.GetResultReason(i);
+                int catalogIndex = Recommendation.GetResultIndex(i);
 
-                    _shown[i] = catalogIndex;
-                    ShowCard(i, catalogIndex, reason);
-                }
-                else
-                {
-                    _shown[i] = -1;
-                    if (Cards[i] != null) Cards[i].SetActive(false);
-                }
+                // ── さっき聴いたばかりのものは出さない。
+                //
+                //    おすすめから 1 曲選ぶと、次はその曲が種になります。
+                //    ところが「A に似ている B」は、たいてい「B に似ている A」でもあるので、
+                //    <b>A → B → A → B と往復し続けます</b>。
+                //    直近に聴いたものを外すだけで、この輪は切れます。
+                if (WasPlayedRecently(catalogIndex)) continue;
+
+                _shown[filled] = catalogIndex;
+                ShowCard(filled, catalogIndex, Recommendation.GetResultReason(i));
+                filled++;
             }
 
-            bool empty = found == 0;
+            for (int i = filled; i < count; i++)
+            {
+                _shown[i] = -1;
+                if (Cards[i] != null) Cards[i].SetActive(false);
+            }
+
+            bool empty = filled == 0;
 
             if (EmptyMessage != null) EmptyMessage.SetActive(empty);
             if (EmptyText != null)
@@ -158,6 +167,28 @@ namespace SmartMediaPlatform.World.Udon.UI
                     ? "曲を再生すると、似た曲がここに出ます"
                     : "関連する曲はありません";
             }
+        }
+
+        /// <summary>
+        /// <b>直近この数だけ聴いたものは、おすすめに出さない。</b>
+        /// 大きくしすぎると、曲数の少ないカタログでおすすめが空になります。
+        /// </summary>
+        public int SkipDepth = 6;
+
+        /// <summary>さっき聴いたばかりか(履歴の新しいほうから数えて調べる)。</summary>
+        private bool WasPlayedRecently(int catalogIndex)
+        {
+            if (Session == null || SkipDepth <= 0) return false;
+
+            int count = Session.HistoryCount;
+            int from = count - SkipDepth;
+            if (from < 0) from = 0;
+
+            for (int i = from; i < count; i++)
+            {
+                if (Session.GetHistoryAt(i) == catalogIndex) return true;
+            }
+            return false;
         }
 
         private void ShowCard(int card, int catalogIndex, int reason)
@@ -247,6 +278,34 @@ namespace SmartMediaPlatform.World.Udon.UI
             _touchedAt = Time.time;
 
             if (Controller != null) Controller.PlayCatalogIndex(catalogIndex);
+        }
+
+        // ───────── 「＋」で再生予定へ ─────────
+        //
+        // カードは押すとすぐ流れます。<b>いま流したくないけれど覚えておきたい</b>
+        // ときのために、一覧と同じ「＋」を付けます。
+        // 一覧とカードで操作が違うと、どちらかを覚え直すことになります。
+
+        public void Queue0() { Queue(0); }
+        public void Queue1() { Queue(1); }
+        public void Queue2() { Queue(2); }
+        public void Queue3() { Queue(3); }
+        public void Queue4() { Queue(4); }
+        public void Queue5() { Queue(5); }
+
+        private void Queue(int card)
+        {
+            EnsureInitialized();
+
+            if (_shown == null || card < 0 || card >= _shown.Length) return;
+
+            int catalogIndex = _shown[card];
+            if (catalogIndex < 0) return;
+
+            _touchedCard = card;
+            _touchedAt = Time.time;
+
+            if (Controller != null) Controller.EnqueueCatalogIndex(catalogIndex);
         }
     }
 }

@@ -126,6 +126,11 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (total == _knownTotal) return;
             _knownTotal = total;
 
+            // 動かせる長さが決まるのはここ。
+            // <b>一覧が書き直されるたびに呼ばれます</b> —— 曲が焼き込まれるのは
+            // Start より後なので、最初の 1 回だけでは「0 件」のまま固まります
+            // (Phase7-3 の最初の版がそれで、まったくスクロールできませんでした)。
+
             float height = total * RowPitch;
             float minimum = VisibleRows * RowPitch;
             if (height < minimum) height = minimum;
