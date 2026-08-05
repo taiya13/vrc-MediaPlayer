@@ -310,7 +310,12 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine();
             sb.Append(log);
             sb.AppendLine("  U# プログラム : " + report);
-            sb.AppendLine("  焼き込み      : " + _bakedCount + " 件(URL は VRCUrl として保存済み)");
+            sb.AppendLine("  焼き込み      : " + _bakedCount + " 件(見本のデータ)");
+            sb.AppendLine();
+            sb.AppendLine("  ⚠ 入っているのは見本の URL(example.com)です。実在しません。");
+            sb.AppendLine("    このままでは押しても動画は映りません。");
+            sb.AppendLine("    Catalog Builder で自分のカタログを選び、");
+            sb.AppendLine("    「③ VRCUrl へ焼く」を押してから Build & Test してください。");
 
             // 「繋げたつもり」を報告しないよう、どちらも読み戻した実数を出す。
             sb.AppendLine("  ボタンの配線  : " + UdonWorldUiKit.BindCount + " 件 OK / "
