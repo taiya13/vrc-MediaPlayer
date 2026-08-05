@@ -268,6 +268,17 @@ namespace SmartMediaPlatform.World.EditorTools
             return Bind(slider.onValueChanged, target, eventName, slider.name);
         }
 
+        /// <summary>
+        /// <c>InputField.onValueChanged</c> から <paramref name="eventName"/> を呼べるようにする。
+        /// Phase7-2。<b>打った文字は渡りません</b>(Udon のイベントは引数を取れないため)。
+        /// 受け取る側が <c>InputField.text</c> を読みに行ってください。
+        /// </summary>
+        public static bool Bind(InputField field, UdonSharpBehaviour target, string eventName)
+        {
+            if (field == null) return Fail("(InputField が null)", eventName, "InputField が null");
+            return Bind(field.onValueChanged, target, eventName, field.name);
+        }
+
         private static bool Bind(
             UnityEventBase unityEvent, UdonSharpBehaviour target, string eventName, string where)
         {

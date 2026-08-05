@@ -424,6 +424,13 @@ namespace SmartMediaPlatform.World.EditorTools
                     eventName = "Click";
                     caption = queue ? "この曲へ移動" : "再生";
                 }
+                else if (name == "HeaderHit")
+                {
+                    // Phase7-2: チャンネルの見出しも同じ Click へ送る。
+                    // 見出しか曲かは一覧側が位置から判断する。
+                    eventName = "Click";
+                    caption = "開く / たたむ";
+                }
                 else if (name == "Secondary")
                 {
                     eventName = "ClickSecondary";
@@ -447,6 +454,11 @@ namespace SmartMediaPlatform.World.EditorTools
                 {
                     eventName = "ScrollUp";
                     caption = "上へ(続けて押すと速い)";
+                }
+                else if (name == "SearchClear")
+                {
+                    eventName = "ClearSearch";
+                    caption = "検索をやめる";
                 }
                 else if (name == "ScrollHome" || name == "FirstPage")
                 {

@@ -155,6 +155,38 @@ namespace SmartMediaPlatform.World.Udon
                    + "  (" + FormatDuration(catalogIndex) + ")";
         }
 
+        /// <summary>
+        /// <b>検索に引っかかるか。</b>Phase7-2。
+        /// <paramref name="lowerQuery"/> は<b>小文字にそろえて渡してください</b>
+        /// (行ごとに小文字化すると、100 曲で 100 回無駄が出ます)。
+        ///
+        /// 見るのは<b>見出し・チャンネル・ジャンル・タグ</b>の 4 つです。
+        /// ID は見ません — 人が覚えているものではないためです。
+        /// </summary>
+        public bool Matches(int catalogIndex, string lowerQuery)
+        {
+            if (lowerQuery == null || lowerQuery.Length == 0) return true;
+            if (!IsValid(catalogIndex)) return false;
+
+            if (ContainsLower(GetTitle(catalogIndex), lowerQuery)) return true;
+            if (ContainsLower(GetArtist(catalogIndex), lowerQuery)) return true;
+            if (ContainsLower(GetGenre(catalogIndex), lowerQuery)) return true;
+
+            int tags = Catalog.GetTagCount(catalogIndex);
+            for (int i = 0; i < tags; i++)
+            {
+                if (ContainsLower(Catalog.GetTag(catalogIndex, i), lowerQuery)) return true;
+            }
+
+            return false;
+        }
+
+        private bool ContainsLower(string haystack, string lowerNeedle)
+        {
+            if (haystack == null || haystack.Length == 0) return false;
+            return haystack.ToLower().Contains(lowerNeedle);
+        }
+
         // ───────── 関連 ─────────
 
         /// <summary>

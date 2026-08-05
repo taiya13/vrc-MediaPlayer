@@ -124,6 +124,19 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("加速しても 1 回でこれ以上は動かない")]
         public int MaxScrollStep = 64;
 
+        [Header("検索とまとめ(Phase7-2。すべての曲のときだけ効く)")]
+        [Tooltip("検索欄。空でも動く。押すと VRChat のキーボードが出る")]
+        public InputField SearchField;
+
+        [Tooltip("検索中だけ出す「×」。空でも動く")]
+        public GameObject SearchClearButton;
+
+        [Tooltip("何件当たったかを出す先。空でも動く")]
+        public Text SearchResultText;
+
+        [Tooltip("チャンネルごとにまとめて、折りたためるようにする")]
+        public bool GroupByChannel = true;
+
         [Header("押した感じ")]
         [Tooltip("押した行に印を出す秒数。0 で無効")]
         [Range(0f, 2f)]
@@ -151,6 +164,18 @@ namespace SmartMediaPlatform.World.Udon.UI
         // 追いかけ済みの曲(FollowNowPlaying 用)
         private int _followedIndex = -2;
 
+        // 検索とまとめ(Phase7-2)。
+        // _viewIndex が -1 なら、その位置はチャンネルの見出し。
+        private int[] _viewIndex;
+        private string[] _viewName;
+        private int[] _viewSize;
+        private int _viewLength;
+
+        private string _query = "";
+        private string[] _collapsed;
+        private int _collapsedCount;
+        private int _builtFor = -1;
+
         // 連打の加速(ListScrollModel の写し)
         private float _lastScrollAt = -999f;
         private int _runLength;
@@ -176,12 +201,255 @@ namespace SmartMediaPlatform.World.Udon.UI
             return Rows == null ? 0 : Rows.Length;
         }
 
-        /// <summary>この一覧の総件数。</summary>
+        /// <summary>この一覧の総件数(見出しの行も 1 つと数える)。</summary>
         public int TotalCount()
         {
             if (Source == SourceQueue) return Session != null ? Session.QueueCount : 0;
             if (Source == SourceRelated) return ResolveRelated().Length;
+
+            if (UsesView())
+            {
+                EnsureView();
+                return _viewLength;
+            }
+
             return Store != null ? Store.Count : 0;
+        }
+
+        // ───────── 検索とチャンネルまとめ(Phase7-2)─────────
+
+        /// <summary>
+        /// 「すべての曲」だけが、検索とまとめを通ります。
+        /// <b>再生予定を検索しても意味がありません</b>し、
+        /// おすすめは並びそのものに意味があるためです。
+        /// </summary>
+        public bool UsesView()
+        {
+            return Source == SourceLibrary && Store != null;
+        }
+
+        /// <summary>検索欄が変わったとき。<c>InputField.onValueChanged</c> から呼ぶ。</summary>
+        public void OnSearchChanged()
+        {
+            string typed = SearchField != null ? SearchField.text : "";
+            if (typed == null) typed = "";
+
+            if (typed == _query) return;
+
+            _query = typed;
+
+            // 検索し直したら先頭から見せる。前の位置に留まると
+            // 「打ったのに何も出ない」ように見える。
+            Offset = 0;
+            _builtFor = -1;
+
+            Refresh();
+        }
+
+        /// <summary>検索をやめる。「×」から呼ぶ。</summary>
+        public void ClearSearch()
+        {
+            if (SearchField != null) SearchField.text = "";
+
+            _query = "";
+            Offset = 0;
+            _builtFor = -1;
+
+            Refresh();
+        }
+
+        /// <summary>
+        /// 一覧の中身を組み直す。
+        ///
+        /// <b>毎フレームは作りません。</b>作り直すのは
+        /// <list type="bullet">
+        /// <item>検索の文字が変わったとき</item>
+        /// <item>チャンネルをたたんだ / 開いたとき</item>
+        /// <item>カタログの件数が変わったとき</item>
+        /// </list>
+        /// の 3 つだけです。200 曲を毎フレーム並べ直すと確実に重くなります。
+        /// </summary>
+        private void EnsureView()
+        {
+            int catalogCount = Store != null ? Store.Count : 0;
+            if (_builtFor == catalogCount && _viewIndex != null) return;
+
+            _builtFor = catalogCount;
+            BuildView(catalogCount);
+        }
+
+        private void BuildView(int catalogCount)
+        {
+            // 見出しは多くても曲数と同じ数までしか出ない(1 曲 1 チャンネルの場合)。
+            int capacity = catalogCount * 2 + 2;
+
+            _viewIndex = new int[capacity];
+            _viewName = new string[capacity];
+            _viewSize = new int[capacity];
+            _viewLength = 0;
+
+            string query = _query != null ? _query.Trim().ToLower() : "";
+
+            if (!GroupByChannel)
+            {
+                FillFlat(catalogCount, query);
+                RefreshSearchChrome(query);
+                return;
+            }
+
+            FillGrouped(catalogCount, query);
+            RefreshSearchChrome(query);
+        }
+
+        /// <summary>まとめずに、当たったものを順に並べる。</summary>
+        private void FillFlat(int catalogCount, string query)
+        {
+            for (int i = 0; i < catalogCount; i++)
+            {
+                int catalogIndex = Store.GetIndexAt(i);
+                if (catalogIndex < 0) continue;
+                if (!Store.Matches(catalogIndex, query)) continue;
+
+                _viewIndex[_viewLength] = catalogIndex;
+                _viewLength++;
+            }
+        }
+
+        /// <summary>
+        /// チャンネルごとにまとめる。
+        ///
+        /// <b>並びはカタログのままです。</b>チャンネルは<b>最初に出てきた順</b>に並び、
+        /// その中の曲もカタログの順のままです。名前順に並べ替えないのは、
+        /// <b>取り込んだ順(=新しい順)を保ちたい</b>ためです。
+        /// </summary>
+        private void FillGrouped(int catalogCount, string query)
+        {
+            var done = new bool[catalogCount];
+
+            for (int i = 0; i < catalogCount; i++)
+            {
+                if (done[i]) continue;
+
+                int first = Store.GetIndexAt(i);
+                if (first < 0) { done[i] = true; continue; }
+
+                string channel = ChannelOf(first);
+
+                // このチャンネルで当たったものを数えてから見出しを置く。
+                // 「0 曲」の見出しが出てしまうのを防ぐため。
+                int matched = 0;
+                for (int j = i; j < catalogCount; j++)
+                {
+                    if (done[j]) continue;
+
+                    int candidate = Store.GetIndexAt(j);
+                    if (candidate < 0) continue;
+                    if (ChannelOf(candidate) != channel) continue;
+
+                    if (Store.Matches(candidate, query)) matched++;
+                }
+
+                if (matched == 0)
+                {
+                    // 当たらなかったチャンネルは、見出しごと出さない。
+                    for (int j = i; j < catalogCount; j++)
+                    {
+                        int candidate = Store.GetIndexAt(j);
+                        if (candidate >= 0 && ChannelOf(candidate) == channel) done[j] = true;
+                    }
+                    continue;
+                }
+
+                bool expanded = !IsCollapsed(channel);
+
+                _viewIndex[_viewLength] = -1;
+                _viewName[_viewLength] = channel;
+                _viewSize[_viewLength] = matched;
+                _viewLength++;
+
+                for (int j = i; j < catalogCount; j++)
+                {
+                    if (done[j]) continue;
+
+                    int candidate = Store.GetIndexAt(j);
+                    if (candidate < 0) continue;
+                    if (ChannelOf(candidate) != channel) continue;
+
+                    done[j] = true;
+
+                    if (!expanded) continue;
+                    if (!Store.Matches(candidate, query)) continue;
+
+                    _viewIndex[_viewLength] = candidate;
+                    _viewLength++;
+                }
+            }
+        }
+
+        private string ChannelOf(int catalogIndex)
+        {
+            string channel = Store.GetArtist(catalogIndex);
+            return channel == null || channel.Length == 0 ? "(不明)" : channel;
+        }
+
+        private void RefreshSearchChrome(string query)
+        {
+            bool searching = query.Length > 0;
+
+            SetActive(SearchClearButton, searching);
+
+            if (SearchResultText == null) return;
+
+            string label = searching ? SongCount() + " 曲が見つかりました" : "";
+            if (SearchResultText.text != label) SearchResultText.text = label;
+        }
+
+        /// <summary>見出しを除いた曲の数。</summary>
+        public int SongCount()
+        {
+            int count = 0;
+            for (int i = 0; i < _viewLength; i++)
+            {
+                if (_viewIndex[i] >= 0) count++;
+            }
+            return count;
+        }
+
+        // ───────── 折りたたみ ─────────
+
+        private bool IsCollapsed(string channel)
+        {
+            if (_collapsed == null) return false;
+
+            for (int i = 0; i < _collapsedCount; i++)
+            {
+                if (_collapsed[i] == channel) return true;
+            }
+            return false;
+        }
+
+        private void ToggleCollapsed(string channel)
+        {
+            if (_collapsed == null) _collapsed = new string[64];
+
+            for (int i = 0; i < _collapsedCount; i++)
+            {
+                if (_collapsed[i] != channel) continue;
+
+                // 詰め直す。並びに意味は無いので、最後のものを持ってくれば済む。
+                _collapsed[i] = _collapsed[_collapsedCount - 1];
+                _collapsedCount--;
+
+                _builtFor = -1;
+                return;
+            }
+
+            if (_collapsedCount >= _collapsed.Length) return;
+
+            _collapsed[_collapsedCount] = channel;
+            _collapsedCount++;
+
+            _builtFor = -1;
         }
 
         /// <summary>画面を書き直す。<see cref="UdonMediaPanel"/> から呼ばれる。</summary>
@@ -203,6 +471,11 @@ namespace SmartMediaPlatform.World.Udon.UI
             else if (Source == SourceQueue)
             {
                 total = Session != null ? Session.QueueCount : 0;
+            }
+            else if (UsesView())
+            {
+                EnsureView();
+                total = _viewLength;
             }
             else
             {
@@ -239,6 +512,24 @@ namespace SmartMediaPlatform.World.Udon.UI
                 else if (Source == SourceQueue)
                 {
                     if (Session != null) catalogIndex = Session.GetQueueAt(position);
+                }
+                else if (UsesView())
+                {
+                    if (position >= 0 && position < _viewLength)
+                    {
+                        catalogIndex = _viewIndex[position];
+
+                        // -1 はチャンネルの見出し。曲ではないので別に描く。
+                        if (catalogIndex < 0)
+                        {
+                            _shown[row] = -1;
+
+                            target.ShowHeader(
+                                _viewName[position], _viewSize[position],
+                                !IsCollapsed(_viewName[position]));
+                            continue;
+                        }
+                    }
                 }
                 else
                 {
@@ -289,6 +580,18 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (row < 0 || row >= rows) return;
             if (!Accept(0, row)) return;
 
+            // チャンネルの見出しを押したら、開け閉てするだけ。
+            if (UsesView())
+            {
+                int position = Offset + row;
+                if (position >= 0 && position < _viewLength && _viewIndex[position] < 0)
+                {
+                    ToggleCollapsed(_viewName[position]);
+                    Refresh();
+                    return;
+                }
+            }
+
             // 見出しは「押す前」に控える。
             // 窓口を呼ぶと Refresh が返ってきて _shown が書き換わるので、
             // 後から引くと「1 つずれた曲名」を報告してしまう。
@@ -317,6 +620,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             int rows = RowCount();
             if (row < 0 || row >= rows) return;
             if (!Accept(1, row)) return;
+            if (_shown != null && row < _shown.Length && _shown[row] < 0) return;
 
             string title = TitleAt(row);
 
@@ -423,6 +727,18 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (current < 0) return -1;
 
             if (Source == SourceQueue) return Session.IndexInQueue(current);
+
+            if (Source == SourceLibrary && UsesView())
+            {
+                EnsureView();
+
+                for (int i = 0; i < _viewLength; i++)
+                {
+                    if (_viewIndex[i] == current) return i;
+                }
+                return -1;
+            }
+
             if (Source == SourceLibrary && Store != null) return Store.GetPositionOf(current);
 
             return -1;
@@ -601,6 +917,13 @@ namespace SmartMediaPlatform.World.Udon.UI
             }
 
             if (Source == SourceQueue) return "再生予定はありません";
+
+            // 検索で 0 件なのと、そもそも 1 曲も無いのは別のこと。
+            // 前者は打ち直せばよく、後者は Catalog Builder で入れる話になる。
+            if (_query != null && _query.Trim().Length > 0)
+            {
+                return "「" + _query.Trim() + "」に合う曲はありません";
+            }
 
             return "曲がまだ入っていません";
         }

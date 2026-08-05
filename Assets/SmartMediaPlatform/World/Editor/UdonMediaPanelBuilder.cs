@@ -507,20 +507,30 @@ namespace SmartMediaPlatform.World.EditorTools
             view.HeaderLabel = "";
             view.ScrollStep = 0;
             view.FollowNowPlaying = source == UdonMediaListView.SourceQueue;
+            view.GroupByChannel = source == UdonMediaListView.SourceLibrary;
+
+            // ── 検索バー(「すべての曲」だけ)
+            float listTop = 0f;
+            if (source == UdonMediaListView.SourceLibrary)
+            {
+                listTop = BuildSearchBar(page, view, width) + 14f;
+            }
 
             // ── 何も無いときの案内。種類ごとに文が変わる。
             Text empty = UdonWorldUiKit.Label(
-                page, "Empty", 0f, RowHeight * 0.5f, width, 44f, 22,
+                page, "Empty", 0f, listTop + RowHeight * 0.5f, width, 44f, 22,
                 TextAnchor.MiddleCenter, UdonWorldUiKit.TextSecondary);
 
             view.EmptyMessage = empty.gameObject;
             view.EmptyText = empty;
 
             // ── 行
-            var rows = new UdonMediaListRow[RowCount];
-            for (int i = 0; i < RowCount; i++)
+            int rowCount = source == UdonMediaListView.SourceLibrary ? RowCount - 1 : RowCount;
+
+            var rows = new UdonMediaListRow[rowCount];
+            for (int i = 0; i < rowCount; i++)
             {
-                float rowY = i * (RowHeight + RowGap);
+                float rowY = listTop + i * (RowHeight + RowGap);
 
                 UdonMediaListRow row = BuildRow(page, "Row" + i, rowY, width, RowHeight, source, i);
                 if (row == null) return view;
@@ -567,6 +577,72 @@ namespace SmartMediaPlatform.World.EditorTools
             UdonWorldUiKit.Wire(down, view, "ScrollDown", "下へ(続けて押すと速い)");
 
             return view;
+        }
+
+        /// <summary>
+        /// <b>検索バー。</b>Phase7-2。押すと VRChat のキーボードが出ます。
+        ///
+        /// <b>打つそばから絞り込みます。</b>「検索」ボタンを押させると、
+        /// <b>押し忘れて「効いていない」と思われます</b>。
+        /// </summary>
+        /// <returns>使った高さ。</returns>
+        private static float BuildSearchBar(
+            RectTransform page, UdonMediaListView view, float width)
+        {
+            const float Height = 66f;
+            const float ClearWidth = 66f;
+
+            RectTransform bar = UdonWorldUiKit.Place(page, "Search", 0f, 0f, width, Height);
+
+            Image back = UdonWorldUiKit.Plate(
+                bar, "Back", 0f, 0f, width, Height, UdonWorldUiKit.Section);
+            back.raycastTarget = false;
+
+            Text icon = UdonWorldUiKit.Label(
+                bar, "Icon", 18f, 0f, 40f, Height, 24,
+                TextAnchor.MiddleCenter, UdonWorldUiKit.TextSecondary);
+            icon.text = "🔍";
+
+            float fieldX = 62f;
+            float fieldWidth = width - fieldX - ClearWidth - 12f;
+
+            RectTransform fieldRect = UdonWorldUiKit.Place(
+                bar, "Field", fieldX, 0f, fieldWidth, Height);
+
+            // InputField は自分の当たり判定が要る(押すとキーボードが出る)。
+            Image fieldBack = fieldRect.gameObject.AddComponent<Image>();
+            fieldBack.color = new Color(0f, 0f, 0f, 0.001f);
+
+            var field = fieldRect.gameObject.AddComponent<InputField>();
+
+            Text typed = UdonWorldUiKit.Label(
+                fieldRect, "Text", 6f, 0f, fieldWidth - 12f, Height, 22,
+                TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
+            typed.raycastTarget = false;
+
+            Text placeholder = UdonWorldUiKit.Label(
+                fieldRect, "Placeholder", 6f, 0f, fieldWidth - 12f, Height, 22,
+                TextAnchor.MiddleLeft, new Color(0.45f, 0.49f, 0.57f, 1f));
+            placeholder.text = "曲名・アーティスト・ジャンルで探す";
+            placeholder.raycastTarget = false;
+
+            field.textComponent = typed;
+            field.placeholder = placeholder;
+            field.targetGraphic = fieldBack;
+
+            Text unused;
+            Button clear = UdonWorldUiKit.PushButton(
+                bar, "SearchClear", width - ClearWidth, 0f, ClearWidth, Height, "×", 26,
+                UdonWorldUiKit.ButtonFace, out unused);
+
+            view.SearchField = field;
+            view.SearchClearButton = clear.gameObject;
+
+            UdonWorldUiKit.Bind(field, view, "OnSearchChanged");
+            UdonWorldUiKit.Wire(clear, view, "ClearSearch", "検索をやめる");
+
+            clear.gameObject.SetActive(false);
+            return Height;
         }
 
         /// <summary>
@@ -669,6 +745,13 @@ namespace SmartMediaPlatform.World.EditorTools
             nowPlayingBar.raycastTarget = false;
             nowPlayingBar.gameObject.SetActive(false);
 
+            // ── チャンネルの見出しとして使うときの帯。
+            //    同じ行を曲としても見出しとしても使うので、重ねて置いて出し分ける。
+            if (source == UdonMediaListView.SourceLibrary)
+            {
+                BuildHeaderBand(rowRect, row, hit, width, height);
+            }
+
             row.Content = content.gameObject;
             row.Highlight = highlight.gameObject;
             row.PressedMarker = pressed.gameObject;
@@ -682,6 +765,58 @@ namespace SmartMediaPlatform.World.EditorTools
                                 queue ? "再生予定から外す" : "再生予定に追加");
 
             return row;
+        }
+
+        /// <summary>
+        /// <b>チャンネルの見出しの帯。</b>Phase7-2。
+        ///
+        /// 曲の行に<b>重ねて</b>置いて、出し分けます。見出し専用の行を別に持つと
+        /// <b>「見出しが何個要るか」を先に決めないと行を用意できません</b>が、
+        /// 検索でチャンネルが減れば見出しも減るので、それは決められません。
+        /// </summary>
+        private static void BuildHeaderBand(
+            RectTransform rowRect, UdonMediaListRow row, Button hit, float width, float height)
+        {
+            // 見出しは曲より低くする。曲と同じ高さだと、どちらが親か分からない。
+            const float BandHeight = 64f;
+
+            float top = (height - BandHeight) * 0.5f;
+
+            RectTransform band = UdonWorldUiKit.Place(
+                rowRect, "HeaderBand", 0f, top, width, BandHeight);
+
+            UdonWorldUiKit.Plate(band, "Back", 0f, 0f, width, BandHeight,
+                                 new Color(0.10f, 0.11f, 0.14f, 1f)).raycastTarget = false;
+
+            // 左に細い縦線。曲の左端の青い棒と見分くための、色の付かない目印。
+            UdonWorldUiKit.Plate(band, "Rule", 0f, 0f, 4f, BandHeight,
+                                 UdonWorldUiKit.Section).raycastTarget = false;
+
+            Text arrow = UdonWorldUiKit.Label(
+                band, "Arrow", 18f, 0f, 34f, BandHeight, 20,
+                TextAnchor.MiddleCenter, UdonWorldUiKit.TextSecondary);
+
+            Text channel = UdonWorldUiKit.Label(
+                band, "Channel", 60f, 0f, width - 200f, BandHeight, 25,
+                TextAnchor.MiddleLeft, UdonWorldUiKit.TextPrimary);
+
+            Text count = UdonWorldUiKit.Label(
+                band, "Count", width - 130f, 0f, 112f, BandHeight, 19,
+                TextAnchor.MiddleRight, UdonWorldUiKit.TextSecondary);
+
+            row.HeaderBand = band.gameObject;
+            row.HeaderArrowText = arrow;
+            row.HeaderText = channel;
+            row.HeaderCountText = count;
+
+            band.gameObject.SetActive(false);
+
+            // 見出しも「行を押す」で開け閉てする。当たり判定は曲と同じものを使う。
+            // 帯のほうが幅が広いので、帯側にも当たり判定を足しておく。
+            Button headerHit = UdonWorldUiKit.HitArea(
+                band, "HeaderHit", 0f, 0f, width, BandHeight, new Color(0f, 0f, 0f, 0.001f));
+
+            UdonWorldUiKit.Wire(headerHit, row, "Click", "開く / たたむ");
         }
 
         /// <summary>

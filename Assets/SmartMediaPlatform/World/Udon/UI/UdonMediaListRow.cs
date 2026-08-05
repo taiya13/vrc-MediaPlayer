@@ -75,6 +75,19 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("2 つめのボタンに出す文字。何をするボタンかを常に見せる")]
         public Text SecondaryLabel;
 
+        [Header("チャンネルの見出しとして使うとき(Phase7-2)")]
+        [Tooltip("見出しのときだけ出す帯。空なら見出しにできない")]
+        public GameObject HeaderBand;
+
+        [Tooltip("見出しの文字(チャンネル名)")]
+        public Text HeaderText;
+
+        [Tooltip("見出しの右の件数")]
+        public Text HeaderCountText;
+
+        [Tooltip("たたんでいるかを示す印(▼ / ▶)")]
+        public Text HeaderArrowText;
+
         [Header("鳴っている印(Phase7)")]
         [Tooltip("動く 3 本の棒。いま鳴っている行だけ動かす。空でも動く")]
         public RectTransform[] EqualizerBars;
@@ -117,12 +130,46 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (List != null) List.OnRowSecondary(Row);
         }
 
+        /// <summary>
+        /// <b>チャンネルの見出しにする。</b>Phase7-2。
+        ///
+        /// <b>行を作り分けていません。</b>同じ行を、曲としても見出しとしても使います。
+        /// 見出し専用の行を別に持つと、
+        /// <b>「見出しが何個要るか」を先に知らないと行を用意できません</b>。
+        /// 検索でチャンネルが減れば見出しも減るので、それは決められません。
+        /// </summary>
+        public void ShowHeader(string channel, int count, bool expanded)
+        {
+            _empty = false;
+            _nowPlaying = false;
+            _header = true;
+
+            SetActive(Content, false);
+            SetActive(Highlight, false);
+            SetActive(NowPlayingBar, false);
+            SetActive(PressedMarker, false);
+            SetActive(SecondaryButton, false);
+            ShowEqualizer(false);
+
+            SetActive(HeaderBand, true);
+            SetText(HeaderText, channel);
+            SetText(HeaderCountText, count + " 曲");
+
+            // ▼ は開いている、▶ はたたんでいる。世の中の折りたたみと同じ向き。
+            SetText(HeaderArrowText, expanded ? "▼" : "▶");
+        }
+
+        /// <summary>いま見出しの行か。押されたときの行き先を変えるのに使う。</summary>
+        public bool IsHeader { get { return _header; } }
+
         /// <summary>空行にする。</summary>
         public void ShowEmpty()
         {
             _empty = true;
             _nowPlaying = false;
+            _header = false;
 
+            SetActive(HeaderBand, false);
             SetActive(Content, false);
             SetActive(Highlight, false);
             SetActive(NowPlayingBar, false);
@@ -159,7 +206,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         {
             _empty = false;
             _nowPlaying = highlight;
+            _header = false;
 
+            SetActive(HeaderBand, false);
             SetActive(Content, true);
             SetActive(Highlight, highlight);
             SetActive(NowPlayingBar, highlight);
@@ -230,6 +279,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         // ───────── 内部 ─────────
 
         private bool _nowPlaying;
+        private bool _header;
 
         /// <summary>
         /// 絵を入れる。無ければジャンルの色で塗って頭 1 文字を出す。

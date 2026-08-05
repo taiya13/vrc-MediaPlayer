@@ -692,6 +692,21 @@ namespace UnityEngine.UI
         public Graphic targetGraphic { get; set; }
     }
     public class Button : Selectable { public UnityEngine.Events.UnityEvent onClick { get; set; } }
+    public class InputField : Selectable
+    {
+        public string text { get; set; }
+        public Text textComponent { get; set; }
+        public Text placeholder { get; set; }
+        public int characterLimit { get; set; }
+        public InputFieldSubmitEvent onEndEdit = new InputFieldSubmitEvent();
+        public InputFieldChangeEvent onValueChanged = new InputFieldChangeEvent();
+        public void ActivateInputField() { }
+        public void DeactivateInputField() { }
+    }
+
+    public class InputFieldSubmitEvent : UnityEngine.Events.UnityEvent<string> { }
+    public class InputFieldChangeEvent : UnityEngine.Events.UnityEvent<string> { }
+
     public class Slider : Selectable
     {
         public enum Direction { LeftToRight, RightToLeft, BottomToTop, TopToBottom }
