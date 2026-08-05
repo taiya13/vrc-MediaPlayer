@@ -414,8 +414,13 @@ namespace SmartMediaPlatform.World.EditorTools
             var material = new Material(shader);
             material.name = "SmartMediaScreen";
 
-            // 動画が来るまでは真っ黒。何も映っていないことが分かるように暗い灰色にする。
-            material.color = new Color(0.12f, 0.13f, 0.16f, 1f);
+            // ── 動画が来るまでの絵を入れておく。
+            //
+            //    Unlit/Texture は <b>_MainTex が空だと真っ白</b>になります。
+            //    しかも Unlit/Texture に _Color はないので、色を入れても効きません。
+            //    Phase7-2 の途中版が「音は鳴るのに画面が真っ白」だったのはこれが理由です。
+            //    黒を入れておけば、映る前は黒い画面になります。
+            material.mainTexture = Texture2D.blackTexture;
 
             if (!AssetDatabase.IsValidFolder(folder)) Directory.CreateDirectory(folder);
 

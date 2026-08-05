@@ -195,6 +195,15 @@ namespace SmartMediaPlatform.World.EditorTools
                 return false;
             }
 
+            // Unlit/Texture は _MainTex が空だと「真っ白」になる。
+            // 「真っ黒」ではないので、ライトの問題と見分けがつく。
+            if (material.mainTexture == null)
+            {
+                sb.AppendLine("     ! _MainTex が空です(この状態の面は<b>真っ白</b>に見えます)。");
+                sb.AppendLine("       再生前ならこれで正常です。再生中も白いなら、");
+                sb.AppendLine("       ③ の出力先の設定を見てください。");
+            }
+
             sb.AppendLine("     ✓ Unlit で _MainTex があります");
             return true;
         }
@@ -271,17 +280,49 @@ namespace SmartMediaPlatform.World.EditorTools
         private static bool InspectUnityTarget(
             UdonSmartMediaPlayer player, Component videoPlayer, StringBuilder sb)
         {
-            object target = ReadMember(
-                videoPlayer, "targetMaterialRenderer", "TargetMaterialRenderer");
+            // 出力先を持っているのは VRCUnityVideoPlayer ではなく、
+            // その下にいる UnityEngine.Video.VideoPlayer のほう。
+            var unityPlayer = videoPlayer.GetComponent<UnityEngine.Video.VideoPlayer>();
 
-            if (target == null)
+            if (unityPlayer == null)
+            {
+                sb.AppendLine("     ✗ UnityEngine.Video.VideoPlayer がありません。");
+                return false;
+            }
+
+            sb.AppendLine("     Render Mode: " + unityPlayer.renderMode);
+
+            // ここが Phase7-2 で踏んだ本命。
+            // Material Override 以外だと、出力先を挿しても絵はマテリアルへ行かない。
+            // 音は AudioSource 経由なので鳴り、「音は出るのに画面が真っ白」になる。
+            if (unityPlayer.renderMode != UnityEngine.Video.VideoRenderMode.MaterialOverride)
+            {
+                sb.AppendLine("     ✗ Render Mode が Material Override ではありません。");
+                sb.AppendLine("       この設定だと、出力先を挿しても絵はマテリアルへ行きません。");
+                sb.AppendLine("       (音は鳴るので「音は出るのに画面が真っ白」になります)");
+                sb.AppendLine("       Prefab を作り直すか、Inspector で Material Override にしてください。");
+                return false;
+            }
+
+            if (unityPlayer.targetMaterialRenderer == null)
             {
                 sb.AppendLine("     ✗ Target Material Renderer が空です。");
                 sb.AppendLine("       Inspector で Screen/Surface を挿してください。");
                 return false;
             }
 
-            sb.AppendLine("     ✓ 出力先の Renderer が挿さっています");
+            string property = unityPlayer.targetMaterialProperty;
+            sb.AppendLine("     書き込み先 : "
+                          + unityPlayer.targetMaterialRenderer.name + " の "
+                          + (string.IsNullOrEmpty(property) ? "(空)" : property));
+
+            if (string.IsNullOrEmpty(property))
+            {
+                sb.AppendLine("     ✗ Target Material Property が空です。_MainTex にしてください。");
+                return false;
+            }
+
+            sb.AppendLine("     ✓ Material Override で出力先が挿さっています");
             return true;
         }
 

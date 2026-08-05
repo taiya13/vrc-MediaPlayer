@@ -214,21 +214,48 @@ namespace SmartMediaPlatform.Video.EditorTools
             BaseVRCVideoPlayer player, Renderer screen, AudioSource speaker,
             ref Result result, StringBuilder log)
         {
+            // ── 本体は UnityEngine.Video.VideoPlayer のほう。
+            //
+            //    Phase7-2 まで、VRCUnityVideoPlayer 側に
+            //    targetMaterialRenderer を書き込もうとしていました。
+            //    ところが、その欄を持っているのは <b>下にいる VideoPlayer</b> です。
+            //    しかも renderMode を MaterialOverride にしないと、
+            //    出力先を挿しても<b>絵はマテリアルへ行きません</b>。
+            //    音は AudioSource 経由で鳴るので、
+            //    <b>「音は出るのに画面が真っ白」</b>という形になっていました。
+            var unityPlayer = player != null
+                ? player.GetComponent<UnityEngine.Video.VideoPlayer>()
+                : null;
+
+            if (unityPlayer == null)
+            {
+                log.AppendLine(
+                    "  ※ UnityEngine.Video.VideoPlayer が見つかりません。"
+                    + "映像の出力先は Inspector で設定してください。");
+                return;
+            }
+
             if (screen != null)
             {
-                result.ScreenWired = TrySetMember(
-                    player, screen, "targetMaterialRenderer", "TargetMaterialRenderer");
+                unityPlayer.renderMode = UnityEngine.Video.VideoRenderMode.MaterialOverride;
+                unityPlayer.targetMaterialRenderer = screen;
+                unityPlayer.targetMaterialProperty = "_MainTex";
+
+                result.ScreenWired = unityPlayer.targetMaterialRenderer == screen;
 
                 log.AppendLine(result.ScreenWired
-                    ? $"  映像の出力先 : {screen.name} を割り当てました"
+                    ? $"  映像の出力先 : {screen.name} / _MainTex(MaterialOverride)"
                     : "  映像の出力先 : 自動で割り当てられませんでした"
-                      + "(Inspector の Target Material Renderer を設定してください)");
+                      + "(Inspector の Render Mode を Material Override にしてください)");
             }
 
             if (speaker != null)
             {
-                result.SpeakerWired = TrySetMember(
-                    player, new[] { speaker }, "targetAudioSources", "TargetAudioSources");
+                unityPlayer.audioOutputMode = UnityEngine.Video.VideoAudioOutputMode.AudioSource;
+                unityPlayer.EnableAudioTrack(0, true);
+                unityPlayer.SetTargetAudioSource(0, speaker);
+
+                result.SpeakerWired = unityPlayer.GetTargetAudioSource(0) == speaker;
 
                 log.AppendLine(result.SpeakerWired
                     ? "  音の出力先   : AudioSource を割り当てました"

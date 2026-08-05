@@ -195,6 +195,10 @@ namespace UnityEngine
         public byte[] EncodeToPNG() { return new byte[0]; }
         public byte[] EncodeToJPG() { return new byte[0]; }
         public void Apply() { }
+
+        public static Texture2D blackTexture { get { return null; } }
+        public static Texture2D whiteTexture { get { return null; } }
+        public static Texture2D grayTexture { get { return null; } }
     }
     public class RenderTexture : Texture { public RenderTexture(int w, int h, int depth) { } }
     public class Collider : Component { public bool enabled { get; set; } public bool isTrigger { get; set; } }
@@ -773,7 +777,23 @@ namespace UnityEngine.Video
         public void Pause() { }
         public void Stop() { }
         public void Prepare() { }
+
+        public VideoRenderMode renderMode { get; set; }
+        public UnityEngine.Renderer targetMaterialRenderer { get; set; }
+        public string targetMaterialProperty { get; set; }
+        public VideoAudioOutputMode audioOutputMode { get; set; }
+        public ushort audioTrackCount { get { return 1; } }
+        public void SetTargetAudioSource(ushort track, UnityEngine.AudioSource source) { }
+        public UnityEngine.AudioSource GetTargetAudioSource(ushort track) { return null; }
+        public void EnableAudioTrack(ushort track, bool enabled) { }
     }
+
+    public enum VideoRenderMode
+    {
+        CameraFarPlane, CameraNearPlane, RenderTexture, MaterialOverride, APIOnly
+    }
+
+    public enum VideoAudioOutputMode { None, AudioSource, Direct, APIOnly }
 }
 
 namespace UnityEngine.Serialization
