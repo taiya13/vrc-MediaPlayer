@@ -12,8 +12,8 @@ namespace SmartMediaPlatform.World.EditorTools
     /// <b>なぜ要るのか</b><br/>
     /// メニューが 15 個以上に増えて、
     /// <b>どれを使えばワールドで動くのかが分からなくなりました</b>。
-    /// 実際、Prefabs フォルダに置いてある <c>SmartMediaPlayer_NoSDK.prefab</c>
-    /// (エディタ確認用・音も映像も出ない)を掴んでしまう事故が起きています。
+    /// 以前は「エディタ確認用」の別 Prefab(音も映像も出ない)を
+    /// 掴んでしまう事故も起きていました(その Prefab は Phase7-3 で廃止)。
     ///
     /// この窓は<b>やることを上から順に並べるだけ</b>です。新しい機能はありません。
     /// </summary>
@@ -79,8 +79,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
             EditorGUILayout.HelpBox(
                 "VRChat SDK(Worlds)が見つかりません。\n"
-                + "ワールドで動かすには SDK が必要です。VCC から導入してください。\n"
-                + "(SDK なしでも、下の「エディタで仕組みを見る」だけは使えます)",
+                + "ワールドで動かすには SDK が必要です。VCC から導入してください。",
                 MessageType.Warning);
         }
 
@@ -91,7 +90,7 @@ namespace SmartMediaPlatform.World.EditorTools
             EditorGUILayout.LabelField("1. ワールド用の Prefab を作る", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
                 "制御が Udon なので、アップロードしたワールドでも動きます。\n"
-                + "1 回押すと Prefab が 3 つできます(本体 + パネル 2 種)。",
+                + "できるのは SmartMediaPlayer.prefab の 1 つだけです(壁パネル入り)。",
                 EditorStyles.wordWrappedLabel);
 
             GUI.enabled = HasSdk;
@@ -110,8 +109,8 @@ namespace SmartMediaPlatform.World.EditorTools
             EditorGUILayout.HelpBox(
                 "SmartMediaPlayer.prefab を Hierarchy へドラッグし、\n"
                 + "Screen/Surface と WallPanel を見える位置へ動かしてください。\n"
-                + "※ Prefabs フォルダにある SmartMediaPlayer_NoSDK.prefab は\n"
-                + "   エディタで仕組みを見るためのものです。音も映像も出ません。",
+                + "置き場所は Assets/SmartMediaPlatform_Data/Prefabs です。\n"
+                + "このフォルダは更新(入れ替え)で消えないので、消さないでください。",
                 MessageType.None);
         }
 
@@ -119,15 +118,24 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             EditorGUILayout.LabelField("1-b. 操作 UI を増やす(任意)", EditorStyles.boldLabel);
             EditorGUILayout.LabelField(
-                "壁パネル・リモコンは何枚でも置けます。手順は 2 つだけです。",
+                "本体に壁パネルは 1 枚入っています。2 枚目以降が欲しいときだけ使ってください。",
                 EditorStyles.wordWrappedLabel);
 
+            GUI.enabled = HasSdk;
+            if (GUILayout.Button("追加パネルの Prefab を作る(壁 / リモコン)"))
+            {
+                Invoke("SmartMediaPlatform.World.EditorTools.UdonSmartMediaPlayerPrefabBuilder",
+                       "CreateExtraPanels");
+            }
+            GUI.enabled = true;
+
             EditorGUILayout.HelpBox(
-                "1. MediaWallPanel.prefab か MediaRemotePanel.prefab を Hierarchy へドラッグ\n"
+                "1. できた MediaWallPanel / MediaRemotePanel を Hierarchy へドラッグ\n"
                 + "2. Inspector の Core に、シーンの SmartMediaPlayer を挿す\n"
                 + "\n"
                 + "残りの欄(Controller / Session / Store / Screen)は空のままで構いません。\n"
-                + "実行時に Core から引いてきます。",
+                + "実行時に Core から引いてきます。パネルに再生の中身は入っていないので、\n"
+                + "本体はワールドに 1 つだけ、が正しい形です。",
                 MessageType.None);
 
             if (GUILayout.Button("Prefabs フォルダを開く"))
@@ -175,6 +183,24 @@ namespace SmartMediaPlatform.World.EditorTools
         private void DrawTrouble()
         {
             EditorGUILayout.LabelField("困ったとき", EditorStyles.boldLabel);
+
+            EditorGUILayout.LabelField(
+                "何も動かない / 更新したのに変わらないとき(最初にこれ):",
+                EditorStyles.wordWrappedLabel);
+
+            if (GUILayout.Button("導入チェック(二重コピーが無いか調べる)", GUILayout.Height(24f)))
+            {
+                Invoke("SmartMediaPlatform.World.EditorTools.SmartMediaPlatformInstallCheck",
+                       "RunMenuItem");
+            }
+
+            EditorGUILayout.HelpBox(
+                "SmartMediaPlatform が 2 か所に入っていると、同じ名前の\n"
+                + "アセンブリが衝突してコンパイルが止まり、全部動かなくなります。\n"
+                + "(画面が映らない・音が出ない・ボタンが効かない、が同時に起きます)",
+                MessageType.None);
+
+            EditorGUILayout.Space();
 
             EditorGUILayout.LabelField(
                 "パネルのボタンが 1 つも押せないとき:",
@@ -259,7 +285,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
         private static void SelectPrefabFolder()
         {
-            const string path = "Assets/SmartMediaPlatform/World/Prefabs";
+            const string path = "Assets/SmartMediaPlatform_Data/Prefabs";
 
             var folder = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
             if (folder == null)

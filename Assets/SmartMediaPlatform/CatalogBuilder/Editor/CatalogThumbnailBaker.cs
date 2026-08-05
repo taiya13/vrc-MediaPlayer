@@ -34,8 +34,11 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         /// <summary>板 1 枚の縦の上限。</summary>
         public const int AtlasMaxHeight = 2048;
 
-        /// <summary>焼いた絵の置き場所。</summary>
-        public const string OutputFolder = "Assets/SmartMediaPlatform/Generated/Thumbnails";
+        /// <summary>
+        /// 焼いた絵の置き場所。<b>SmartMediaPlatform の外</b>です(Phase7-3 で移動)。
+        /// 中に置くと、更新(フォルダ入れ替え)のたびに焼いた絵が消えるためです。
+        /// </summary>
+        public const string OutputFolder = "Assets/SmartMediaPlatform_Data/Thumbnails";
 
         // ───────── 大きさの選択肢 ─────────
 

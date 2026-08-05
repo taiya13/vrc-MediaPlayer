@@ -24,6 +24,7 @@ namespace UnityEditor
         public static string[] FindAssets(string filter) { return new string[0]; }
         public static string[] FindAssets(string filter, string[] searchInFolders) { return new string[0]; }
         public static bool DeleteAsset(string path) { return false; }
+        public static string MoveAsset(string oldPath, string newPath) { return ""; }
         public static string CreateFolder(string parent, string newFolderName) { return ""; }
         public static bool IsValidFolder(string path) { return false; }
         public static string GenerateUniqueAssetPath(string path) { return path; }

@@ -17,20 +17,23 @@ using UnityEngine;
 namespace SmartMediaPlatform.World.EditorTools
 {
     /// <summary>
-    /// <b>実機で動く Prefab を作るエディタツール。</b>Phase5-2 → Phase5-3。
+    /// <b>実機で動く Prefab を作るエディタツール。</b>Phase5-2 → Phase5-3 → Phase7-3。
     ///
-    /// <b>Phase5-3 で 3 つに分かれました。</b>
-    /// <list type="bullet">
-    /// <item><c>SmartMediaPlayer.prefab</c> …… 中身 + 壁パネル。<b>まずこれを 1 つ置く</b></item>
-    /// <item><c>MediaWallPanel.prefab</c> …… 壁パネルだけ。2 枚目以降を別の場所に足す用</item>
-    /// <item><c>MediaRemotePanel.prefab</c> …… 手持ちリモコン。最小構成の例</item>
-    /// </list>
-    /// パネル側は <c>Core</c> の欄に置いた <c>SmartMediaPlayer</c> を挿すだけで、
-    /// <b>何枚でも、どこにでも</b>足せます。
+    /// <b>Phase7-3 で「作るものは 1 つ」に戻しました。</b>
+    /// 以前は SmartMediaPlayer / MediaWallPanel / MediaRemotePanel の 3 つを
+    /// 毎回まとめて作っていましたが、<b>本体の中に壁パネルが入っているのに、
+    /// ほぼ同じ壁パネルの Prefab がもう 1 つできる</b>ため、
+    /// 「システムが 2 か所に入っているように見える / 両方置いてしまう」事故が
+    /// 起きていました。いま作るのは <c>SmartMediaPlayer.prefab</c>(中身 + 壁パネル)
+    /// <b>だけ</b>です。2 枚目以降のパネルが欲しいときだけ、
+    /// 別メニュー(<see cref="CreateExtraPanels"/>)で作ります。
     ///
-    /// <b>Screen と操作 UI は分かれています。</b>
-    /// <c>SmartMediaPlayer/Screen</c> はワールドの好きな場所へ動かせますし、
-    /// パネルは Prefab ごと別の部屋に置けます。
+    /// <b>置き場所は <c>Assets/SmartMediaPlatform_Data</c> です。</b>Phase7-3。
+    /// 以前は <c>Assets/SmartMediaPlatform/World/Prefabs</c> に作っていましたが、
+    /// このシステムは更新のたびに <c>Assets/SmartMediaPlatform</c> を
+    /// 丸ごと入れ替えてもらう配布方式なので、<b>その中に作った Prefab や設定は
+    /// 更新のたびに消えていました</b>。作った物・あなたのデータは全部
+    /// <c>SmartMediaPlatform_Data</c> 側に置き、<b>更新で消えない</b>ようにします。
     ///
     /// <b>なぜ Prefab を同梱せずここで作るのか</b>は Phase5-1 と同じ理由です。
     /// UdonSharp のプログラム(.asset)と UdonBehaviour は
@@ -39,7 +42,12 @@ namespace SmartMediaPlatform.World.EditorTools
     /// </summary>
     public static class UdonSmartMediaPlayerPrefabBuilder
     {
-        private const string PrefabFolder = "Assets/SmartMediaPlatform/World/Prefabs";
+        /// <summary>
+        /// 作った Prefab の置き場。<b>SmartMediaPlatform の外</b>です。
+        /// 更新手順が「SmartMediaPlatform を削除して入れ替え」なので、
+        /// 中に置くと更新のたびに消えてしまいます(Phase7-3 で移動)。
+        /// </summary>
+        private const string PrefabFolder = "Assets/SmartMediaPlatform_Data/Prefabs";
 
         private const string PlayerPrefabPath = PrefabFolder + "/SmartMediaPlayer.prefab";
         private const string WallPanelPrefabPath = PrefabFolder + "/MediaWallPanel.prefab";
@@ -50,6 +58,9 @@ namespace SmartMediaPlatform.World.EditorTools
 
         private const string UnityPlayerMenuPath =
             "Tools/Smart Media Platform/SmartMediaPlayer を作る/VRChat 実機 (Unity Video)";
+
+        private const string ExtraPanelMenuPath =
+            "Tools/Smart Media Platform/操作パネルを追加で作る (2 枚目以降・任意)";
 
         /// <summary>この Prefab が使う UdonSharpBehaviour。プログラムを先に作る対象。</summary>
         private static Type[] BehaviourTypes()
@@ -133,24 +144,68 @@ namespace SmartMediaPlatform.World.EditorTools
 
             var player = SavePrefab(root, PlayerPrefabPath);
 
-            // ── 2. 壁パネル単体(2 枚目以降を別の場所に置く用)
-            var wallRoot = new GameObject("MediaWallPanel");
-            UdonMediaPanel standaloneWall = UdonMediaPanelBuilder.BuildWallPanel(wallRoot, "Panel");
-            if (Abort(wallRoot, menuPath)) return;
-            if (standaloneWall != null) standaloneWall.PanelName = "Smart Media Player";
-            SavePrefab(wallRoot, WallPanelPrefabPath);
-
-            // ── 3. 手持ちリモコン(最小構成の例)
-            var remoteRoot = new GameObject("MediaRemotePanel");
-            UdonMediaPanel remote = UdonMediaPanelBuilder.BuildRemotePanel(remoteRoot, "Panel");
-            if (Abort(remoteRoot, menuPath)) return;
-            if (remote != null) remote.PanelName = "リモコン";
-            SavePrefab(remoteRoot, RemotePanelPrefabPath);
-
             Report(log, report, player, menuPath);
 
             Selection.activeObject = player;
             EditorGUIUtility.PingObject(player);
+        }
+
+        // ───────── 追加パネル(任意) ─────────
+
+        /// <summary>
+        /// <b>2 枚目以降の操作パネルが欲しい人だけ</b>が使うメニュー。Phase7-3。
+        ///
+        /// 本体(<c>SmartMediaPlayer.prefab</c>)には壁パネルが 1 枚入っているので、
+        /// ふつうはこれを押す必要はありません。
+        /// ここで作る Prefab は<b>操作 UI だけ</b>で、再生の中身は入っていません。
+        /// シーンに置いたら Inspector の <c>Core</c> に、
+        /// シーンの SmartMediaPlayer を挿してください。
+        /// </summary>
+        [MenuItem(ExtraPanelMenuPath, false, -90)]
+        public static void CreateExtraPanels()
+        {
+            _needsCompile = false;
+
+            var report = UdonSharpProgramAssetFactory.EnsureProgramAssets(
+                UdonMediaPanelBuilder.BehaviourTypes());
+
+            if (report.HasCreated && !UdonSharpProgramAssetFactory.TryCompile())
+            {
+                string notice = UdonSharpSceneUtility.RecompileInstruction(ExtraPanelMenuPath);
+                Debug.LogWarning("[UdonSmartMediaPlayerPrefabBuilder] " + notice);
+                EditorUtility.DisplayDialog("Smart Media Platform", notice, "OK");
+                return;
+            }
+
+            UdonWorldUiKit.ResetCounters();
+            UdonMediaPanelBuilder.ResetNeedsCompile();
+            _syncFailures = 0;
+
+            // ── 壁パネル単体
+            var wallRoot = new GameObject("MediaWallPanel");
+            UdonMediaPanel standaloneWall = UdonMediaPanelBuilder.BuildWallPanel(wallRoot, "Panel");
+            if (Abort(wallRoot, ExtraPanelMenuPath)) return;
+            if (standaloneWall != null) standaloneWall.PanelName = "Smart Media Player";
+            var wallPrefab = SavePrefab(wallRoot, WallPanelPrefabPath);
+
+            // ── 手持ちリモコン(最小構成の例)
+            var remoteRoot = new GameObject("MediaRemotePanel");
+            UdonMediaPanel remote = UdonMediaPanelBuilder.BuildRemotePanel(remoteRoot, "Panel");
+            if (Abort(remoteRoot, ExtraPanelMenuPath)) return;
+            if (remote != null) remote.PanelName = "リモコン";
+            SavePrefab(remoteRoot, RemotePanelPrefabPath);
+
+            Debug.Log(
+                "[UdonSmartMediaPlayerPrefabBuilder] 追加パネルを 2 つ作りました(任意の道具)。\n"
+                + "  " + WallPanelPrefabPath + "\n"
+                + "  " + RemotePanelPrefabPath + "\n"
+                + "  使い方: Hierarchy へドラッグして、Inspector の Core に\n"
+                + "  シーンの SmartMediaPlayer を挿すだけです。\n"
+                + "  ※ 中身(再生の仕組み)は入っていません。本体 1 つ + パネル何枚でも、が正しい形です。",
+                wallPrefab);
+
+            Selection.activeObject = wallPrefab;
+            EditorGUIUtility.PingObject(wallPrefab);
         }
 
         // ───────── 中身 ─────────
@@ -303,10 +358,10 @@ namespace SmartMediaPlatform.World.EditorTools
             GameObject player, string menuPath)
         {
             var sb = new StringBuilder();
-            sb.AppendLine("[UdonSmartMediaPlayerPrefabBuilder] Prefab を 3 つ作成しました。");
-            sb.AppendLine("  " + PlayerPrefabPath + "   ← まずこれを置く(中身 + 壁パネル)");
-            sb.AppendLine("  " + WallPanelPrefabPath + "     ← 2 枚目の壁パネル");
-            sb.AppendLine("  " + RemotePanelPrefabPath + "   ← 手持ちリモコン(最小構成)");
+            sb.AppendLine("[UdonSmartMediaPlayerPrefabBuilder] Prefab を 1 つ作成しました。");
+            sb.AppendLine("  " + PlayerPrefabPath);
+            sb.AppendLine("  (中身 + 壁パネル。ワールドに置くのはこれ 1 つだけです)");
+            sb.AppendLine("  ※ この置き場(SmartMediaPlatform_Data)は更新で消えない場所です。");
             sb.AppendLine();
             sb.Append(log);
             sb.AppendLine("  U# プログラム : " + report);
@@ -341,10 +396,10 @@ namespace SmartMediaPlatform.World.EditorTools
             sb.AppendLine("    2. Screen/Surface と WallPanel を見える位置へ動かす");
             sb.AppendLine("    3. VRChat SDK > Build & Test");
             sb.AppendLine();
-            sb.AppendLine("  操作 UI を増やすとき:");
-            sb.AppendLine("    MediaWallPanel / MediaRemotePanel をドラッグして、");
-            sb.AppendLine("    Inspector の Core に シーンの SmartMediaPlayer を挿すだけです。");
-            sb.AppendLine("    (残りの欄は Core から自動で引いてきます)");
+            sb.AppendLine("  操作 UI を増やしたいとき(任意):");
+            sb.AppendLine("    Tools > Smart Media Platform > 操作パネルを追加で作る を押すと、");
+            sb.AppendLine("    パネルだけの Prefab(壁 / リモコン)ができます。");
+            sb.AppendLine("    ドラッグして Core にシーンの SmartMediaPlayer を挿すだけです。");
             sb.AppendLine();
             sb.AppendLine("  ※ 同梱カタログの URL は架空のアドレスです。実際に映像を出すには");
             sb.AppendLine("     Catalog の UdonMediaCatalog を選び、Inspector の Urls を");
@@ -391,7 +446,8 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             if (renderer == null) return;
 
-            const string folder = "Assets/SmartMediaPlatform/Generated";
+            // 材質も「更新で消えない側」に置く(Phase7-3 で SmartMediaPlatform の外へ移動)。
+            const string folder = "Assets/SmartMediaPlatform_Data";
             const string path = folder + "/SmartMediaScreen.mat";
 
             var existing = AssetDatabase.LoadAssetAtPath<Material>(path);

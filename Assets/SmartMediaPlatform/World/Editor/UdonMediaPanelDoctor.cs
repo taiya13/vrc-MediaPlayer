@@ -58,7 +58,7 @@ namespace SmartMediaPlatform.World.EditorTools
             if (panels.Length == 0)
             {
                 sb.AppendLine("  パネルが 1 枚も見つかりません。");
-                sb.AppendLine("  → SmartMediaPlayer.prefab か MediaWallPanel.prefab を");
+                sb.AppendLine("  → SmartMediaPlayer.prefab(壁パネル入り)を");
                 sb.AppendLine("    Hierarchy へドラッグしてください。");
                 return sb.ToString();
             }

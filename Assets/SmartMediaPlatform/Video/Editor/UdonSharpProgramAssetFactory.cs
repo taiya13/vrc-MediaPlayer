@@ -278,8 +278,24 @@ namespace SmartMediaPlatform.Video.EditorTools
                 return null;
             }
 
-            string scriptPath = AssetDatabase.GetAssetPath(script);
-            string assetPath = Path.ChangeExtension(scriptPath, ".asset");
+            // ── 置き場所は SmartMediaPlatform の外(Phase7-3 で移動)。
+            //
+            //    以前は .cs の隣(SmartMediaPlatform の中)に作っていました。
+            //    このシステムは更新のたびにフォルダを丸ごと入れ替えてもらうので、
+            //    そこに置くと更新のたびにプログラムが消え、シーンや Prefab の
+            //    UdonBehaviour が全部「program asset が null」になっていました。
+            //    外に置けば、.cs への参照は GUID(.meta は毎回同じ)で繋がったまま、
+            //    更新してもシーンが壊れません。
+            //    ※ 既にどこかにあるプログラムは FindProgramAsset が場所を問わず
+            //      見つけて再利用するので、古い置き場のものもそのまま使えます。
+            const string programFolder = "Assets/SmartMediaPlatform_Data/UdonPrograms";
+            string assetPath = programFolder + "/" + behaviourType.Name + ".asset";
+
+            if (!AssetDatabase.IsValidFolder(programFolder))
+            {
+                Directory.CreateDirectory(programFolder);
+                AssetDatabase.Refresh();
+            }
 
             var asset = ScriptableObject.CreateInstance(ProgramAssetType);
             if (asset == null) return null;

@@ -209,58 +209,93 @@ namespace SmartMediaPlatform.Video.EditorTools
         /// <summary>
         /// Unity 版は<b>プレイヤー自身が出力先を持ちます</b>。
         /// フィールド名は SDK の版で変わりうるので、候補を順に試します。
+        ///
+        /// <b>配線は「VRC 側」と「下の VideoPlayer」の両方に書きます。</b>
+        /// <list type="bullet">
+        /// <item><b>VRC 側(VRCUnityVideoPlayer の欄)</b> …… 実機はここが正。
+        ///       VRChat は再生時に、この欄の値で下の VideoPlayer を設定し直します。
+        ///       実際、音はこの欄だけで鳴っていました。
+        ///       Phase7-2 の途中版でここへの書き込みをやめたところ、
+        ///       <b>実機で音が出なくなりました</b>。それを踏まえて戻しています</item>
+        /// <item><b>下の VideoPlayer(UnityEngine.Video.VideoPlayer)</b> ……
+        ///       renderMode が MaterialOverride でないと絵がマテリアルへ行きません。
+        ///       VRC 側の欄が SDK の版で見つからなかったときの保険と、
+        ///       エディタでの見え方のために、直接も設定しておきます</item>
+        /// </list>
         /// </summary>
         private static void WireUnity(
             BaseVRCVideoPlayer player, Renderer screen, AudioSource speaker,
             ref Result result, StringBuilder log)
         {
-            // ── 本体は UnityEngine.Video.VideoPlayer のほう。
-            //
-            //    Phase7-2 まで、VRCUnityVideoPlayer 側に
-            //    targetMaterialRenderer を書き込もうとしていました。
-            //    ところが、その欄を持っているのは <b>下にいる VideoPlayer</b> です。
-            //    しかも renderMode を MaterialOverride にしないと、
-            //    出力先を挿しても<b>絵はマテリアルへ行きません</b>。
-            //    音は AudioSource 経由で鳴るので、
-            //    <b>「音は出るのに画面が真っ白」</b>という形になっていました。
             var unityPlayer = player != null
                 ? player.GetComponent<UnityEngine.Video.VideoPlayer>()
                 : null;
 
-            if (unityPlayer == null)
-            {
-                log.AppendLine(
-                    "  ※ UnityEngine.Video.VideoPlayer が見つかりません。"
-                    + "映像の出力先は Inspector で設定してください。");
-                return;
-            }
-
             if (screen != null)
             {
-                unityPlayer.renderMode = UnityEngine.Video.VideoRenderMode.MaterialOverride;
-                unityPlayer.targetMaterialRenderer = screen;
-                unityPlayer.targetMaterialProperty = "_MainTex";
+                // ── VRC 側(実機が読む欄)
+                bool vrcRenderer = TrySetMember(
+                    player, screen, "targetMaterialRenderer", "TargetMaterialRenderer");
+                TrySetMember(
+                    player, "_MainTex", "targetMaterialProperty", "TargetMaterialProperty");
+                bool vrcRenderMode = TrySetEnumMember(
+                    player, "MaterialOverride", "renderMode", "RenderMode");
 
-                result.ScreenWired = unityPlayer.targetMaterialRenderer == screen;
+                // ── 下の VideoPlayer(保険 + エディタ確認用)
+                bool directRenderer = false;
+                if (unityPlayer != null)
+                {
+                    unityPlayer.renderMode = UnityEngine.Video.VideoRenderMode.MaterialOverride;
+                    unityPlayer.targetMaterialRenderer = screen;
+                    unityPlayer.targetMaterialProperty = "_MainTex";
+                    directRenderer = unityPlayer.targetMaterialRenderer == screen;
+                }
 
-                log.AppendLine(result.ScreenWired
-                    ? $"  映像の出力先 : {screen.name} / _MainTex(MaterialOverride)"
-                    : "  映像の出力先 : 自動で割り当てられませんでした"
-                      + "(Inspector の Render Mode を Material Override にしてください)");
+                result.ScreenWired = vrcRenderer || directRenderer;
+
+                log.AppendLine(
+                    $"  映像の出力先 : {screen.name} / _MainTex"
+                    + $"(VRC 側 {(vrcRenderer ? "OK" : "欄なし")}"
+                    + $"{(vrcRenderer && !vrcRenderMode ? "・RenderMode 欄なし" : "")}"
+                    + $" / VideoPlayer 直接 {(directRenderer ? "OK" : "NG")})");
+
+                if (!result.ScreenWired)
+                {
+                    log.AppendLine(
+                        "  ※ どちらにも配線できませんでした。Inspector で Render Mode を"
+                        + " Material Override にし、Target Material Renderer を設定してください。");
+                }
             }
 
             if (speaker != null)
             {
-                unityPlayer.audioOutputMode = UnityEngine.Video.VideoAudioOutputMode.AudioSource;
-                unityPlayer.EnableAudioTrack(0, true);
-                unityPlayer.SetTargetAudioSource(0, speaker);
+                // ── VRC 側(実機で音が鳴っていた実績のある配線)
+                bool vrcSpeaker = TrySetMember(
+                    player, new[] { speaker }, "targetAudioSources", "TargetAudioSources");
 
-                result.SpeakerWired = unityPlayer.GetTargetAudioSource(0) == speaker;
+                // ── 下の VideoPlayer(保険 + エディタ確認用)
+                bool directSpeaker = false;
+                if (unityPlayer != null)
+                {
+                    unityPlayer.audioOutputMode = UnityEngine.Video.VideoAudioOutputMode.AudioSource;
+                    unityPlayer.EnableAudioTrack(0, true);
+                    unityPlayer.SetTargetAudioSource(0, speaker);
+                    directSpeaker = unityPlayer.GetTargetAudioSource(0) == speaker;
+                }
 
-                log.AppendLine(result.SpeakerWired
-                    ? "  音の出力先   : AudioSource を割り当てました"
-                    : "  音の出力先   : 自動で割り当てられませんでした"
-                      + "(Inspector の Target Audio Sources を設定してください)");
+                result.SpeakerWired = vrcSpeaker || directSpeaker;
+
+                log.AppendLine(
+                    "  音の出力先   : AudioSource"
+                    + $"(VRC 側 {(vrcSpeaker ? "OK" : "欄なし")}"
+                    + $" / VideoPlayer 直接 {(directSpeaker ? "OK" : "NG")})");
+
+                if (!vrcSpeaker)
+                {
+                    log.AppendLine(
+                        "  ※ VRC 側の Target Audio Sources に配線できませんでした。"
+                        + "実機で音が出ないときは Inspector で設定してください。");
+                }
             }
         }
 
@@ -275,6 +310,50 @@ namespace SmartMediaPlatform.Video.EditorTools
             return TrySetMember(
                 component, player,
                 "videoPlayer", "VideoPlayer", "targetVideoPlayer", "Source", "source");
+        }
+
+        /// <summary>
+        /// enum の欄に「値の名前」で書き込む。
+        /// VRC 側の欄が Unity の <c>VideoRenderMode</c> か SDK 独自の enum かは
+        /// 版によって違いうるので、型を決め打ちせず名前で合わせます。
+        /// </summary>
+        private static bool TrySetEnumMember(
+            object target, string valueName, params string[] names)
+        {
+            if (target == null) return false;
+
+            const BindingFlags flags =
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance;
+
+            for (var type = target.GetType(); type != null; type = type.BaseType)
+            {
+                foreach (string name in names)
+                {
+                    var field = type.GetField(name, flags);
+                    if (field != null && field.FieldType.IsEnum)
+                    {
+                        try
+                        {
+                            field.SetValue(target, Enum.Parse(field.FieldType, valueName, true));
+                            return true;
+                        }
+                        catch (ArgumentException) { }
+                    }
+
+                    var property = type.GetProperty(name, flags);
+                    if (property != null && property.CanWrite && property.PropertyType.IsEnum)
+                    {
+                        try
+                        {
+                            property.SetValue(
+                                target, Enum.Parse(property.PropertyType, valueName, true), null);
+                            return true;
+                        }
+                        catch (ArgumentException) { }
+                    }
+                }
+            }
+            return false;
         }
 
         private static bool TrySetMember(object target, object value, params string[] names)

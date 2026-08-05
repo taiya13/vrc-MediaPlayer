@@ -24,7 +24,9 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
     /// </summary>
     public static class CatalogDraftIO
     {
-        private const string DefaultFolder = "Assets/SmartMediaPlatform/Catalog/Assets";
+        // あなたが作るカタログは「更新で消えない側」に置く(Phase7-3 で移動)。
+        // SmartMediaPlatform の中に保存すると、更新(フォルダ入れ替え)のたびに消えます。
+        private const string DefaultFolder = "Assets/SmartMediaPlatform_Data/Catalogs";
         private const string DefaultName = "MediaCatalog.asset";
 
         // ───────── 読む ─────────
