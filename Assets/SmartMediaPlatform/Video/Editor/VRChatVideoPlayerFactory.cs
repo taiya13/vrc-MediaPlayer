@@ -66,6 +66,23 @@ namespace SmartMediaPlatform.Video.EditorTools
         /// <param name="preference">どちらを置くか。既定は AVPro。</param>
         /// <param name="screen">映像の出力先。null なら配線しない。</param>
         /// <param name="speaker">音の出力先。null なら配線しない。</param>
+        /// <summary>
+        /// <b>この呼び出しで使うテクスチャ欄。</b>Phase7-5。
+        ///
+        /// クロスフェードでは、1 枚の画面に 2 系統を別々の欄で書かせます
+        /// (A = <c>_MainTex</c> / B = <c>_SecondTex</c>)。
+        /// 静的にしてあるのは、<see cref="AddPlayer"/> の引数を増やすと
+        /// 既存の呼び出しが全部変わってしまうためです。
+        /// <b>呼ぶ直前に立てて、呼んだあとは既定へ戻してください。</b>
+        /// </summary>
+        public static string TextureProperty = "_MainTex";
+
+        /// <summary>テクスチャ欄を既定(<c>_MainTex</c>)へ戻す。</summary>
+        public static void ResetTextureProperty()
+        {
+            TextureProperty = "_MainTex";
+        }
+
         public static Result AddPlayer(
             GameObject target,
             VideoPlayerPreference preference = VideoPlayerPreference.AVPro,
@@ -184,8 +201,20 @@ namespace SmartMediaPlatform.Video.EditorTools
                     var component = screen.gameObject.AddComponent(screenType);
                     result.ScreenWired = TrySetVideoPlayer(component, player);
 
+                    // ── どのテクスチャ欄へ書くか(Phase7-5)。
+                    //
+                    //    クロスフェードでは 1 枚の画面に 2 系統を書きます。
+                    //    A は _MainTex、B は _SecondTex。
+                    //    欄が分かれていれば、シェーダー側で混ぜられます。
+                    //    <b>板は 1 枚のまま</b>なので、見た目も描画の数も変わりません。
+                    bool propertySet = TrySetMember(
+                        component, TextureProperty,
+                        "TextureProperty", "textureProperty",
+                        "TargetMaterialProperty", "targetMaterialProperty");
+
                     log.AppendLine(result.ScreenWired
-                        ? $"  映像の出力先 : {screen.name} に {AVProScreenTypeName} を配線しました"
+                        ? $"  映像の出力先 : {screen.name} / {TextureProperty}"
+                          + (propertySet ? "" : "(欄の指定に失敗。Inspector で確認してください)")
                         : $"  映像の出力先 : {screen.name} に {AVProScreenTypeName} を付けましたが、"
                           + "参照の設定に失敗しました(Inspector で Video Player を割り当ててください)");
                 }
@@ -252,7 +281,7 @@ namespace SmartMediaPlatform.Video.EditorTools
                 bool vrcRenderer = TrySetMember(
                     player, screen, "targetMaterialRenderer", "TargetMaterialRenderer");
                 TrySetMember(
-                    player, "_MainTex", "targetMaterialProperty", "TargetMaterialProperty");
+                    player, TextureProperty, "targetMaterialProperty", "TargetMaterialProperty");
                 bool vrcRenderMode = TrySetEnumMember(
                     player, "MaterialOverride", "renderMode", "RenderMode");
 
@@ -262,7 +291,7 @@ namespace SmartMediaPlatform.Video.EditorTools
                 {
                     unityPlayer.renderMode = UnityEngine.Video.VideoRenderMode.MaterialOverride;
                     unityPlayer.targetMaterialRenderer = screen;
-                    unityPlayer.targetMaterialProperty = "_MainTex";
+                    unityPlayer.targetMaterialProperty = TextureProperty;
                     directRenderer = unityPlayer.targetMaterialRenderer == screen;
                 }
 

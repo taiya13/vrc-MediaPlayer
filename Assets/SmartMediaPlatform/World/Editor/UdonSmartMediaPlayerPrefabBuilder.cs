@@ -59,6 +59,9 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string UnityPlayerMenuPath =
             "Tools/Smart Media Platform/SmartMediaPlayer を作る/VRChat 実機 (Unity Video)";
 
+        /// <summary>1 枚の画面に 2 系統を混ぜるシェーダー(Phase7-5)。</summary>
+        private const string CrossfadeShaderName = "SmartMediaPlatform/Crossfade";
+
         private const string ExtraPanelMenuPath =
             "Tools/Smart Media Platform/操作パネルを追加で作る (2 枚目以降・任意)";
 
@@ -76,6 +79,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 typeof(UdonMediaController),
                 typeof(UdonMediaControlButton),
                 typeof(UdonSyncCoordinator),
+                typeof(UdonCrossfadeCoordinator),
                 typeof(UdonSmartMediaPlayer),
             };
 
@@ -265,30 +269,37 @@ namespace SmartMediaPlatform.World.EditorTools
             }
             if (_needsCompile) return root;
 
-            // ── Player(動画プレイヤー + バックエンド)
-            //    VRChat の動画イベントは「同じ GameObject の UdonBehaviour」にしか届かないので、
-            //    UdonVideoBackend は必ずプレイヤーと同じ場所に置く。
-            var playerObject = Child(root, "Player");
-
-            var built = VRChatVideoPlayerFactory.AddPlayer(
-                playerObject, preference, renderer, speaker);
-            if (!built.Ok)
-            {
-                Debug.LogError(
-                    "[UdonSmartMediaPlayerPrefabBuilder] 動画プレイヤーを置けませんでした。\n"
-                    + built.Report);
-                UnityEngine.Object.DestroyImmediate(root);
-                return null;
-            }
-            log.Append(built.Report);
-
-            var backend = Add<UdonVideoBackend>(playerObject);
-            if (backend != null)
-            {
-                backend.Player = built.Player;
-                backend.Screen = screen;
-            }
+            // ── Player(動画プレイヤー + バックエンド)を 2 系統(Phase7-5)
+            //
+            //    VRChat の動画イベントは「同じ GameObject の UdonBehaviour」にしか
+            //    届かないので、UdonVideoBackend は必ずプレイヤーと同じ場所に置く。
+            //    A と B で別々の GameObject にしてあるのはそのためです。
+            //
+            //    <b>画面は 1 枚のまま</b>です。A は _MainTex、B は _SecondTex へ
+            //    書かせて、シェーダー側で混ぜます(板も描画も増えません)。
+            //
+            //    <b>音は系統ごとに別の AudioSource</b>が要ります。
+            //    1 つを共有すると、フェード中に片方の音量を動かした瞬間
+            //    もう片方も一緒に動いてしまい、混ざりません。
+            var backend = BuildPlayer(
+                root, "Player", preference, renderer, speaker, screen, "_MainTex", log);
+            if (backend == null) { UnityEngine.Object.DestroyImmediate(root); return null; }
             if (_needsCompile) return root;
+
+            // B 系統の音は、同じ場所に置いた 2 つめの AudioSource から出す。
+            var speakerB = surface.AddComponent<AudioSource>();
+            speakerB.playOnAwake = false;
+            speakerB.spatialBlend = speaker.spatialBlend;
+            speakerB.maxDistance = speaker.maxDistance;
+            speakerB.volume = 0f;   // 裏は黙って始まる
+
+            var backendB = BuildPlayer(
+                root, "PlayerB", preference, renderer, speakerB, screen, "_SecondTex", log);
+            if (_needsCompile) return root;
+
+            // 表(A)の音は、人が決めた音量から始める。
+            if (backend != null) backend.SetFadeVolume(1f);
+            if (backendB != null) backendB.SetFadeVolume(0f);
 
             // ── Catalog(焼き込み済みデータ)+ Store(表示用の窓口)
             var catalogObject = Child(root, "Catalog");
@@ -312,6 +323,18 @@ namespace SmartMediaPlatform.World.EditorTools
             if (recommendation != null) recommendation.Catalog = catalog;
             if (_needsCompile) return root;
 
+            // ── Crossfade(曲と曲を繋ぐ担当。Phase7-5)
+            //    Session も Backend も、混ぜ方のことは知りません。
+            var crossfadeObject = Child(root, "Crossfade");
+            var crossfade = Add<UdonCrossfadeCoordinator>(crossfadeObject);
+            if (crossfade != null)
+            {
+                crossfade.Screen = screen;
+                crossfade.BackendA = backend;
+                crossfade.BackendB = backendB;
+            }
+            if (_needsCompile) return root;
+
             // ── Session(再生の判断)
             var sessionObject = Child(root, "Session");
             var session = Add<UdonPlayerSession>(sessionObject);
@@ -320,8 +343,14 @@ namespace SmartMediaPlatform.World.EditorTools
                 session.Store = store;
                 session.Recommendation = recommendation;
                 session.Backend = backend;
+                session.Crossfade = crossfade;
             }
+
+            // 終わりの合図は、両系統から同じ Session へ届く必要がある。
+            // 混ぜている最中に古いほうから届いたぶんは Session 側で捌く。
             if (backend != null) backend.Session = session;
+            if (backendB != null) backendB.Session = session;
+            if (crossfade != null) crossfade.Session = session;
             if (_needsCompile) return root;
 
             // ── Controller(操作の窓口)
@@ -357,6 +386,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 smartPlayer.Screen = screen;
                 smartPlayer.Controller = controller;
                 smartPlayer.Sync = sync;
+                smartPlayer.Crossfade = crossfade;
             }
 
             return root;
@@ -469,11 +499,24 @@ namespace SmartMediaPlatform.World.EditorTools
                 return;
             }
 
-            Shader shader = Shader.Find("Unlit/Texture");
+            // ── クロスフェード用のシェーダーを優先する(Phase7-5)。
+            //
+            //    1 枚の画面に 2 系統(_MainTex / _SecondTex)を書かせて混ぜます。
+            //    見つからなければ Unlit/Texture に落ちて、
+            //    <b>今までどおり 1 系統だけで動きます</b>(絵は A のまま)。
+            bool crossfadeReady = true;
+            Shader shader = Shader.Find(CrossfadeShaderName);
+
+            if (shader == null)
+            {
+                crossfadeReady = false;
+                shader = Shader.Find("Unlit/Texture");
+            }
+
             if (shader == null)
             {
                 log.AppendLine(
-                    "  ※ Unlit/Texture が見つかりません。"
+                    "  ※ シェーダーが見つかりません。"
                     + "Surface のマテリアルを手で Unlit にしてください。");
                 return;
             }
@@ -483,11 +526,18 @@ namespace SmartMediaPlatform.World.EditorTools
 
             // ── 動画が来るまでの絵を入れておく。
             //
-            //    Unlit/Texture は <b>_MainTex が空だと真っ白</b>になります。
-            //    しかも Unlit/Texture に _Color はないので、色を入れても効きません。
-            //    Phase7-2 の途中版が「音は鳴るのに画面が真っ白」だったのはこれが理由です。
+            //    _MainTex が空だと<b>真っ白</b>になります(Unlit に _Color は無いので、
+            //    色を入れても効きません)。Phase7-2 の途中版が
+            //    「音は鳴るのに画面が真っ白」だったのはこれが理由です。
             //    黒を入れておけば、映る前は黒い画面になります。
             material.mainTexture = Texture2D.blackTexture;
+
+            if (crossfadeReady)
+            {
+                // B 系統の欄も黒で埋めておく(こちらが空でも白くなります)。
+                material.SetTexture("_SecondTex", Texture2D.blackTexture);
+                material.SetFloat("_Blend", 0f);
+            }
 
             if (!AssetDatabase.IsValidFolder(folder)) Directory.CreateDirectory(folder);
 
@@ -495,7 +545,49 @@ namespace SmartMediaPlatform.World.EditorTools
             AssetDatabase.SaveAssets();
 
             renderer.sharedMaterial = material;
-            log.AppendLine("  画面の材質   : " + path + " を作りました(Unlit / ライト不要)");
+
+            log.AppendLine(crossfadeReady
+                ? "  画面の材質   : " + path + " を作りました(クロスフェード対応 / ライト不要)"
+                : "  画面の材質   : " + path + " を作りました(Unlit / ライト不要)"
+                  + "  ※ クロスフェード用シェーダーが見つからないため、混ぜません");
+        }
+
+        /// <summary>
+        /// 動画プレイヤー 1 系統ぶんを組む(Phase7-5)。
+        /// A と B で違うのは<b>名前・音の出口・書き込むテクスチャ欄</b>だけです。
+        /// </summary>
+        private static UdonVideoBackend BuildPlayer(
+            GameObject root, string objectName, VideoPlayerPreference preference,
+            Renderer renderer, AudioSource speaker, UdonMediaScreen screen,
+            string textureProperty, StringBuilder log)
+        {
+            var playerObject = Child(root, objectName);
+
+            log.AppendLine("  [" + objectName + "]");
+
+            VRChatVideoPlayerFactory.TextureProperty = textureProperty;
+            var built = VRChatVideoPlayerFactory.AddPlayer(
+                playerObject, preference, renderer, speaker);
+            VRChatVideoPlayerFactory.ResetTextureProperty();
+
+            if (!built.Ok)
+            {
+                Debug.LogError(
+                    "[UdonSmartMediaPlayerPrefabBuilder] 動画プレイヤーを置けませんでした。\n"
+                    + built.Report);
+                return null;
+            }
+            log.Append(built.Report);
+
+            var backend = Add<UdonVideoBackend>(playerObject);
+            if (backend != null)
+            {
+                backend.Player = built.Player;
+                backend.Screen = screen;
+                backend.Speaker = speaker;
+                backend.TextureProperty = textureProperty;
+            }
+            return backend;
         }
 
         private static GameObject Child(GameObject parent, string name)

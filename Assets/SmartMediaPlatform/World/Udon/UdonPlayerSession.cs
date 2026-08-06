@@ -42,12 +42,16 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("実際に鳴らす相手")]
         public UdonVideoBackend Backend;
 
-        [Header("再生予定が空になったときの動き(Phase7-3)")]
+        [Tooltip("曲と曲をなめらかに繋ぐ担当(Phase7-5)。"
+                 + "空なら今までどおり Backend へ直接読ませます")]
+        public UdonCrossfadeCoordinator Crossfade;
+
+        [Header("再生予定が空になったときの動き(Phase7-3 / 既定は Phase7-5 で変更)")]
         [Tooltip("曲が終わって再生予定が空だったときにどうするか。"
-                 + "0 = 止まる(既定) / 1 = いまの 1 曲を繰り返す / 2 = おすすめで流し続ける。"
+                 + "0 = 止まる / 1 = いまの 1 曲を繰り返す / 2 = おすすめで流し続ける(既定)。"
                  + "再生予定に何か入っているときは、必ずその先頭へ進みます")]
         [Range(0, 2)]
-        public int EndBehaviour = 0;
+        public int EndBehaviour = EndBehaviourRecommend;
 
         [Tooltip("「次へ」を押したのに再生予定が空だったとき、おすすめから選んでよい。"
                  + "選んでも再生予定には積みません(そのまま次の曲になるだけ)")]
@@ -158,6 +162,23 @@ namespace SmartMediaPlatform.World.Udon
 
         public int LoadCount { get { return _loadCount; } }
 
+        /// <summary>
+        /// <b>いま実際に音を出している動画プレイヤー。</b>Phase7-5。
+        ///
+        /// クロスフェードを使う構成では、A と B が入れ替わりながら鳴るので、
+        /// <see cref="Backend"/>(= A 固定)を直接触ると<b>裏側を操作してしまいます</b>。
+        /// 止める・鳴らす・時間を読む —— どれもここを通してください。
+        /// </summary>
+        public UdonVideoBackend ActiveBackend()
+        {
+            if (Crossfade != null)
+            {
+                UdonVideoBackend front = Crossfade.Front;
+                if (front != null) return front;
+            }
+            return Backend;
+        }
+
         /// <summary>いま鳴っているものの見出し。何も無ければ空文字。</summary>
         public string CurrentTitle
         {
@@ -211,9 +232,10 @@ namespace SmartMediaPlatform.World.Udon
             {
                 Load(_currentIndex);
             }
-            else if (Backend != null)
+            else
             {
-                Backend.Play();
+                UdonVideoBackend active = ActiveBackend();
+                if (active != null) active.Play();
             }
 
             _isPlaying = true;
@@ -227,7 +249,12 @@ namespace SmartMediaPlatform.World.Udon
             if (_currentIndex < 0) return false;
 
             _isPlaying = false;
-            if (Backend != null) Backend.Stop();
+
+            // 混ぜている最中に止められたら、混ぜるのもやめる。
+            if (Crossfade != null) Crossfade.CancelFade();
+
+            UdonVideoBackend active = ActiveBackend();
+            if (active != null) active.Stop();
             return true;
         }
 
@@ -239,7 +266,8 @@ namespace SmartMediaPlatform.World.Udon
             if (_isPlaying)
             {
                 _isPlaying = false;
-                if (Backend != null) Backend.Pause();
+                UdonVideoBackend active = ActiveBackend();
+                if (active != null) active.Pause();
                 return true;
             }
             return Play();
@@ -337,6 +365,9 @@ namespace SmartMediaPlatform.World.Udon
             _queue[_queueCount] = catalogIndex;
             _queueCount++;
             _exhausted = false;
+
+            // おすすめを裏で仕込んでいたら、予定のほうを優先し直してもらう(Phase7-5)。
+            if (Crossfade != null) Crossfade.NotifyQueueChanged();
             return true;
         }
 
@@ -363,6 +394,8 @@ namespace SmartMediaPlatform.World.Udon
 
             InsertAt(0, catalogIndex);
             _exhausted = false;
+
+            if (Crossfade != null) Crossfade.NotifyQueueChanged();
             return true;
         }
 
@@ -463,6 +496,17 @@ namespace SmartMediaPlatform.World.Udon
             if (!AutoAdvance) return;
             EnsureInitialized();
 
+            // ── 混ぜている最中に飛んできた「終わりました」は、
+            //    <b>古いほうの曲</b>のものです(Phase7-5)。
+            //    そのまま次へ進めると、裏でもう鳴っている曲を飛ばして
+            //    <b>1 曲抜けます</b>。ここは Coordinator に締めてもらいます。
+            if (Crossfade != null && Crossfade.IsBusy)
+            {
+                if (Crossfade.FinishNow()) return;
+
+                // 裏がまだ鳴っていなかった。今までどおりの道で進む。
+            }
+
             if (_queueCount > 0)
             {
                 TakeFromQueue(0);
@@ -489,7 +533,9 @@ namespace SmartMediaPlatform.World.Udon
             // 既定 = 停止。
             _isPlaying = false;
             _exhausted = true;
-            if (Backend != null) Backend.Stop();
+
+            UdonVideoBackend active = ActiveBackend();
+            if (active != null) active.Stop();
         }
 
         /// <summary>
@@ -644,19 +690,127 @@ namespace SmartMediaPlatform.World.Udon
             string seedId = Store.GetId(seed);
             if (seedId == null || seedId.Length == 0) return -1;
 
-            // 使えない候補(再生中・再生予定にあるもの)があるので多めに出させる。
-            int count = Recommendation.GetNextRecommendations(seedId, _queueCount + 8);
+            // 使えない候補(再生中・再生予定・さっき聴いたもの)があるので多めに出させる。
+            int count = Recommendation.GetNextRecommendations(
+                seedId, _queueCount + RecentSkipDepth + 8);
             if (count <= 0) return -1;
 
+            // ── 1 周目:さっき聴いたばかりのものを避けて選ぶ。
+            //
+            //    <b>これが無いと短い輪を回ります。</b>
+            //    「A に似ている B」は、たいてい「B に似ている A」でもあるので、
+            //    おすすめで流し続けると A → B → A → B と往復します。
+            //    直近に聴いたものを避けるだけで、この輪は切れます。
             for (int i = 0; i < count; i++)
             {
                 int candidate = Recommendation.GetResultIndex(i);
-                if (!IsInCatalog(candidate)) continue;
-                if (candidate == _currentIndex) continue;
-                if (IndexInQueue(candidate) >= 0) continue;
+                if (!IsUsableRecommendation(candidate)) continue;
+                if (WasPlayedRecently(candidate)) continue;
                 return candidate;
             }
+
+            // ── 2 周目:それでも見つからないなら、さっき聴いたものも許す。
+            //
+            //    曲が少ないカタログでは、避けているだけで候補が尽きます。
+            //    <b>止まるより、少し前に聴いた曲でも流れ続けるほうがまし</b>です。
+            for (int i = 0; i < count; i++)
+            {
+                int candidate = Recommendation.GetResultIndex(i);
+                if (!IsUsableRecommendation(candidate)) continue;
+                return candidate;
+            }
+
             return -1;
+        }
+
+        /// <summary>おすすめとして使えるか(カタログにあり、いま鳴っておらず、予定にも無い)。</summary>
+        private bool IsUsableRecommendation(int candidate)
+        {
+            if (!IsInCatalog(candidate)) return false;
+            if (candidate == _currentIndex) return false;
+            if (IndexInQueue(candidate) >= 0) return false;
+            return true;
+        }
+
+        /// <summary>
+        /// <b>直近この数だけ聴いたものは、おすすめで選ばない。</b>Phase7-5。
+        /// 大きくしすぎると、曲が少ないカタログで候補が尽きます
+        /// (尽きたときは 2 周目で拾うので、止まりはしません)。
+        /// </summary>
+        [Tooltip("おすすめで自動再生するとき、直近この曲数は選び直さない")]
+        public int RecentSkipDepth = 8;
+
+        private bool WasPlayedRecently(int catalogIndex)
+        {
+            if (RecentSkipDepth <= 0) return false;
+
+            int from = _historyCount - RecentSkipDepth;
+            if (from < 0) from = 0;
+
+            for (int i = from; i < _historyCount; i++)
+            {
+                if (_history[i] == catalogIndex) return true;
+            }
+            return false;
+        }
+
+        // ───────── クロスフェード用の覗き見(Phase7-5)─────────
+
+        /// <summary>
+        /// <b>次に流れるものを、状態を変えずに教える。</b>
+        ///
+        /// クロスフェードは曲が終わる<b>前</b>に次を読み始める必要があります。
+        /// ところが「次へ進む」(<see cref="Next"/>)を先に呼ぶと、
+        /// まだ前の曲が鳴っているのに履歴も再生予定も動いてしまいます。
+        /// <b>覗くだけ</b>と<b>実際に進む</b>を分けているのはそのためです。
+        ///
+        /// 実際に進むときは <see cref="CommitAdvanceTo"/> を呼びます。
+        /// </summary>
+        /// <returns>次の catalog index。無ければ -1。</returns>
+        public int PeekNextIndex()
+        {
+            EnsureInitialized();
+
+            // 再生予定が最優先。ここは Next() と同じ順番でなければならない。
+            if (_queueCount > 0) return _queue[0];
+
+            if (!AutoQueueEnabled) return -1;
+            if (EndBehaviour != EndBehaviourRecommend) return -1;
+
+            return PickRecommendation();
+        }
+
+        /// <summary>
+        /// <b>覗いておいた次の曲へ、実際に移る。</b>
+        ///
+        /// <b>動画は読み込ませません。</b>クロスフェードでは、
+        /// もう裏で読み終わって鳴っているものへ移るからです
+        /// (ここで読み込ませると、鳴っているものを読み直してしまいます)。
+        /// </summary>
+        /// <returns>移れたら true。</returns>
+        public bool CommitAdvanceTo(int catalogIndex)
+        {
+            EnsureInitialized();
+            if (!IsInCatalog(catalogIndex)) return false;
+
+            if (_currentIndex >= 0 && _currentIndex != catalogIndex)
+            {
+                PushHistory(_currentIndex);
+            }
+
+            // 再生予定に入っていたぶんは、そこから外す。
+            int inQueue = IndexInQueue(catalogIndex);
+            if (inQueue >= 0) RemoveAt(inQueue);
+
+            _currentIndex = catalogIndex;
+
+            // 読み込みは済んでいるので、頼まない。数だけ合わせる。
+            _requestedIndex = catalogIndex;
+            _loadCount++;
+
+            _isPlaying = true;
+            _exhausted = false;
+            return true;
         }
 
         private int ResolveSeedIndex()
@@ -671,6 +825,18 @@ namespace SmartMediaPlatform.World.Udon
         {
             _requestedIndex = catalogIndex;
             _loadCount++;
+
+            // ── クロスフェードを使う構成なら、そちらに任せる(Phase7-5)。
+            //
+            //    ここを通るのは<b>「いますぐ切り替える」道</b>だけです
+            //    (人が曲を選んだ・次へを押した・失敗して飛ばした)。
+            //    混ぜながら移るときは Coordinator が裏で読み込んでから
+            //    CommitAdvanceTo を呼ぶので、ここは通りません。
+            if (Crossfade != null)
+            {
+                Crossfade.PlayImmediate(catalogIndex);
+                return;
+            }
 
             if (Backend != null) Backend.LoadAndPlay(catalogIndex);
         }

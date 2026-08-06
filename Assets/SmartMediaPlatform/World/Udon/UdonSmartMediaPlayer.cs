@@ -78,6 +78,9 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("同期の担当(Phase5-4)。空なら 1 人用として動く")]
         public UdonSyncCoordinator Sync;
 
+        [Tooltip("曲と曲を繋ぐ担当(Phase7-5)。空なら今までどおり即切り替え")]
+        public UdonCrossfadeCoordinator Crossfade;
+
         [Header("困ったとき")]
         [Tooltip("配線の結果を Console に出す。「パネル N 枚」が 0 なら Core の挿し忘れ")]
         public bool LogWiring = true;
@@ -120,6 +123,14 @@ namespace SmartMediaPlatform.World.Udon
                 if (Session.Store == null) Session.Store = Store;
                 if (Session.Recommendation == null) Session.Recommendation = Recommendation;
                 if (Session.Backend == null) Session.Backend = Backend;
+                if (Session.Crossfade == null) Session.Crossfade = Crossfade;
+            }
+
+            if (Crossfade != null)
+            {
+                if (Crossfade.Session == null) Crossfade.Session = Session;
+                if (Crossfade.Screen == null) Crossfade.Screen = Screen;
+                if (Crossfade.BackendA == null) Crossfade.BackendA = Backend;
             }
 
             if (Controller != null)
@@ -196,8 +207,11 @@ namespace SmartMediaPlatform.World.Udon
             string sync = Sync == null ? "同期なし"
                 : (Sync.Enabled ? "同期あり" : "同期オフ");
 
+            string fade = Crossfade == null ? "混ぜない" : Crossfade.Describe();
+
             return "カタログ " + items + " 件 / 一覧 " + visible + " 件 / "
-                   + backend + " / " + screen + " / " + panels + " / " + sync;
+                   + backend + " / " + screen + " / " + panels + " / " + sync
+                   + " / " + fade;
         }
     }
 }

@@ -375,9 +375,17 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         private UdonVideoBackend ResolveBackend()
         {
+            // クロスフェード中は A と B が入れ替わるので、
+            // 「いま鳴っているほう」を Session に教えてもらう(Phase7-5)。
+            // ここを固定にすると、混ざったあとバーが止まって見えます。
+            if (Session != null)
+            {
+                UdonVideoBackend active = Session.ActiveBackend();
+                if (active != null) return active;
+            }
+
             if (Backend != null) return Backend;
-            if (Session == null) return null;
-            return Session.Backend;
+            return null;
         }
 
         private UdonSyncCoordinator ResolveSync()

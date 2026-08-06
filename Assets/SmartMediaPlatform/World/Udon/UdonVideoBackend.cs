@@ -306,6 +306,41 @@ namespace SmartMediaPlatform.World.Udon
             if (Session != null) Session.NotifyError();
         }
 
+        // ───────── クロスフェード用(Phase7-5)─────────
+
+        [Header("クロスフェード(Phase7-5)")]
+        [Tooltip("この動画プレイヤーの音を鳴らす AudioSource。"
+                 + "クロスフェードでは A / B の音量を別々に動かすので、"
+                 + "Screen の Speaker ではなくこちらを直接触ります")]
+        public AudioSource Speaker;
+
+        [Tooltip("この動画プレイヤーが書き込む絵の欄(_MainTex か _SecondTex)。"
+                 + "1 枚の画面に 2 系統を混ぜるために分けてあります")]
+        public string TextureProperty = "_MainTex";
+
+        /// <summary>
+        /// <b>この系統の音量を直接決める。</b>Phase7-5。
+        ///
+        /// <see cref="UdonMediaScreen.SetVolume"/> は<b>人が決めた音量</b>で、
+        /// こちらは<b>混ぜている最中の一時的な倍率</b>です。
+        /// 掛け算にしてあるので、フェード中に人が音量を変えても、
+        /// 両方が正しく効きます。
+        /// </summary>
+        /// <param name="fade">0〜1。混ざり具合から来る倍率。</param>
+        public void SetFadeVolume(float fade)
+        {
+            if (Speaker == null) return;
+
+            float master = Screen != null ? Screen.Volume : 1f;
+            Speaker.volume = Mathf.Clamp01(master) * Mathf.Clamp01(fade);
+        }
+
+        /// <summary>いま読み込んでいるものが鳴り始めたか(クロスフェードの開始判定)。</summary>
+        public bool HasStarted
+        {
+            get { return _started; }
+        }
+
         /// <summary>配線が済んでいるか(診断用)。</summary>
         public bool IsReady
         {
