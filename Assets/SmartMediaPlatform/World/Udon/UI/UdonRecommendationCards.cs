@@ -132,19 +132,35 @@ namespace SmartMediaPlatform.World.Udon.UI
                 }
             }
 
+            // ── 1 周目:さっき聴いたばかりのものを外して詰める。
+            //
+            //    おすすめから 1 曲選ぶと、次はその曲が種になります。
+            //    ところが「A に似ている B」は、たいてい「B に似ている A」でもあるので、
+            //    <b>A → B → A → B と往復し続けます</b>。
+            //    直近に聴いたものを外すだけで、この輪は切れます。
             int filled = 0;
 
             for (int i = 0; i < found && filled < count; i++)
             {
                 int catalogIndex = Recommendation.GetResultIndex(i);
-
-                // ── さっき聴いたばかりのものは出さない。
-                //
-                //    おすすめから 1 曲選ぶと、次はその曲が種になります。
-                //    ところが「A に似ている B」は、たいてい「B に似ている A」でもあるので、
-                //    <b>A → B → A → B と往復し続けます</b>。
-                //    直近に聴いたものを外すだけで、この輪は切れます。
                 if (WasPlayedRecently(catalogIndex)) continue;
+
+                _shown[filled] = catalogIndex;
+                ShowCard(filled, catalogIndex, Recommendation.GetResultReason(i));
+                filled++;
+            }
+
+            // ── 2 周目:枠が余ったら、外したものも入れて埋める。
+            //
+            //    <b>枚数は減らしません。</b>聴くほどに候補が減って、
+            //    しまいにおすすめが 1 枚になる —— では、聴くほど使えなくなります。
+            //    往復を止めたいだけなので、<b>順番を下げれば十分</b>です。
+            //    上に出るのは「まだ聴いていないもの」、余りを下に置きます。
+            for (int i = 0; i < found && filled < count; i++)
+            {
+                int catalogIndex = Recommendation.GetResultIndex(i);
+                if (!WasPlayedRecently(catalogIndex)) continue;
+                if (AlreadyShown(catalogIndex, filled)) continue;
 
                 _shown[filled] = catalogIndex;
                 ShowCard(filled, catalogIndex, Recommendation.GetResultReason(i));
@@ -174,6 +190,16 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// 大きくしすぎると、曲数の少ないカタログでおすすめが空になります。
         /// </summary>
         public int SkipDepth = 6;
+
+        /// <summary>すでにカードに出しているか(2 周目で二重に出さないため)。</summary>
+        private bool AlreadyShown(int catalogIndex, int filled)
+        {
+            for (int i = 0; i < filled; i++)
+            {
+                if (_shown[i] == catalogIndex) return true;
+            }
+            return false;
+        }
 
         /// <summary>さっき聴いたばかりか(履歴の新しいほうから数えて調べる)。</summary>
         private bool WasPlayedRecently(int catalogIndex)

@@ -163,32 +163,18 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             "公式", "ミュージックビデオ", "歌詞", "字幕", "本編",
         };
 
-        // ───────── 見出しからアーティストを拾う ─────────
-
-        /// <summary>
-        /// <c>アーティスト - 曲名</c> の形から、アーティストのほうを拾う。
-        /// 形になっていなければ空文字。
-        ///
-        /// <b>チャンネル名より、こちらのほうが正しいことがあります。</b>
-        /// 音楽レーベルのチャンネルには<b>いろいろな歌手</b>が入っているためです。
-        /// </summary>
-        public static string ArtistFromTitle(string title)
-        {
-            if (string.IsNullOrEmpty(title)) return "";
-
-            for (int i = 0; i < title.Length; i++)
-            {
-                if (!IsSeparator(title[i])) continue;
-
-                // 「A-B」のように前後に空白が無いものは、区切りではなく綴りの一部。
-                if (i == 0 || i + 1 >= title.Length) return "";
-                if (title[i - 1] != ' ' && title[i - 1] != '　') return "";
-
-                string head = title.Substring(0, i).Trim();
-                return head.Length > 0 && head.Length <= 40 ? head : "";
-            }
-            return "";
-        }
+        // ───────── なぜアーティストを見出しから推測しないのか ─────────
+        //
+        // 「歌手 - 曲名」の形からアーティストを拾う、という手もあります。
+        // レーベルのチャンネルではそのほうが正しく見えます。
+        //
+        // <b>やめました。</b>一覧はアーティスト名でチャンネルごとにまとめているので、
+        // 推測が 1 件でも外れると<b>そのぶんグループが増えます</b>。
+        // 「Live at Tokyo」「MV - full ver.」のような見出しは山ほどあり、
+        // 実際に「1 チャンネルを取り込んだだけでグループが山ほどできる」状態になりました。
+        //
+        // 投稿チャンネル名は必ず同じ文字列で返ってくるので、
+        // <b>それだけを使う</b>のが唯一まとまる形です。
 
         /// <summary>Console へ出すときの 1 行(何がどう変わったか)。</summary>
         public static string Describe(string before, string after)

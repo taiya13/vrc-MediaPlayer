@@ -60,6 +60,7 @@ namespace UnityEditor
         public static void PingObject(UnityEngine.Object obj) { }
         public static void PingObject(int instanceID) { }
         public static float singleLineHeight { get { return 18f; } }
+        public static bool isProSkin { get { return true; } }
     }
 
     public static class Selection

@@ -732,6 +732,46 @@ namespace SmartMediaPlatform.World.EditorTools
             CurrentMetersPerPixel = metersPerPixel;
             return rect;
         }
+
+        /// <summary>
+        /// <b>シーンに EventSystem を用意する。</b>Phase7-3。
+        ///
+        /// <b>これが無いと uGUI は一切動きません。</b>
+        /// 押す・つかむ・ホイール —— どれも EventSystem が配っている仕組みなので、
+        /// 1 つも無いシーンでは<b>uGUI 側は完全に沈黙します</b>。
+        ///
+        /// <b>それでもボタンだけは動いていました。</b>ボタンには別途
+        /// Collider +「使う」(Interact)を付けてあるからです。
+        /// そのせいで「uGUI は効いている」と誤解したまま、
+        /// <b>つまみ・スクロール・音量が実機でまったく動かない</b>状態が続いていました。
+        /// 押せるものは押せるので、いちばん原因が見えにくい壊れ方です。
+        ///
+        /// <b>シーンに 1 つだけ</b>置きます。2 つあると、どちらが配るかが
+        /// 決まらず、かえって動かなくなります。
+        /// </summary>
+        /// <returns>新しく作ったら true。すでにあれば false。</returns>
+        public static bool EnsureEventSystem()
+        {
+            var existing = UnityEngine.Object.FindObjectOfType<UnityEngine.EventSystems.EventSystem>();
+            if (existing != null) return false;
+
+            var go = new GameObject("EventSystem");
+            go.AddComponent<UnityEngine.EventSystems.EventSystem>();
+
+            // VRChat は実行時に自前の入力モジュールへ差し替えますが、
+            // 何も付いていないと差し替え先が見つからないことがあるので置いておきます。
+            go.AddComponent<UnityEngine.EventSystems.StandaloneInputModule>();
+
+            UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Smart Media Platform: EventSystem");
+            return true;
+        }
+
+        /// <summary>シーンにある EventSystem の数(診断用)。</summary>
+        public static int CountEventSystems()
+        {
+            var found = UnityEngine.Object.FindObjectsOfType<UnityEngine.EventSystems.EventSystem>();
+            return found == null ? 0 : found.Length;
+        }
     }
 }
 #endif

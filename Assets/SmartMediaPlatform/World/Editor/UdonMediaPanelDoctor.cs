@@ -39,6 +39,45 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string RepairMenu =
             "Tools/Smart Media Platform/操作 UI の配線を繋ぎ直す";
 
+        /// <summary>
+        /// <b>すでに置いてある Canvas に当たり判定を足す。</b>Phase7-3。
+        ///
+        /// VRChat のレーザーは、まず物理の当たり判定を探します。
+        /// そこに何も無ければ Canvas は見えていないのと同じで、
+        /// <b>つまみもスクロールもホイールも届きません</b>。
+        /// Phase7-2 までの Prefab には付いていないので、置き直さずに直せるようにします。
+        /// </summary>
+        private static int AddCanvasColliders()
+        {
+            var canvases = UnityEngine.Object.FindObjectsOfType<Canvas>();
+            if (canvases == null) return 0;
+
+            int added = 0;
+
+            for (int i = 0; i < canvases.Length; i++)
+            {
+                Canvas canvas = canvases[i];
+                if (canvas == null || canvas.renderMode != RenderMode.WorldSpace) continue;
+
+                // このシステムのパネルだけを触る(ワールドの別の UI を壊さない)。
+                if (canvas.GetComponentInParent<UdonMediaPanel>() == null) continue;
+                if (canvas.GetComponent<Collider>() != null) continue;
+
+                var rect = canvas.GetComponent<RectTransform>();
+                if (rect == null) continue;
+
+                var box = Undo.AddComponent<BoxCollider>(canvas.gameObject);
+                if (box == null) continue;
+
+                box.isTrigger = true;
+                box.size = new Vector3(rect.sizeDelta.x, rect.sizeDelta.y, 1f);
+                box.center = Vector3.zero;
+                added++;
+            }
+
+            return added;
+        }
+
         // ───────── 診断 ─────────
 
         [MenuItem(DiagnoseMenu, false, -60)]
@@ -54,6 +93,26 @@ namespace SmartMediaPlatform.World.EditorTools
 
             var sb = new StringBuilder();
             sb.AppendLine("[UdonMediaPanelDoctor] シーンの操作 UI を確認しました。");
+
+            // ── EventSystem。無いと uGUI が一切動きません。
+            //    「ボタンは押せるのに、つまみもスクロールも音量も動かない」は
+            //    ほぼこれです(ボタンだけは別途「使う」で動いているため)。
+            int eventSystems = UdonWorldUiKit.CountEventSystems();
+            if (eventSystems == 0)
+            {
+                sb.AppendLine("  ✗ EventSystem がありません。");
+                sb.AppendLine("    → つまみ・スクロール・音量など、押す以外の操作が全部動きません。");
+                sb.AppendLine("    → 「操作 UI の配線を繋ぎ直す」を押すと作ります。");
+            }
+            else if (eventSystems > 1)
+            {
+                sb.AppendLine("  ✗ EventSystem が " + eventSystems + " 個あります(1 個だけにしてください)。");
+                sb.AppendLine("    → 2 つあると、どちらが操作を配るか決まらず動かなくなります。");
+            }
+            else
+            {
+                sb.AppendLine("  ✓ EventSystem: 1 個");
+            }
 
             if (panels.Length == 0)
             {
@@ -264,13 +323,20 @@ namespace SmartMediaPlatform.World.EditorTools
         [MenuItem(RepairMenu, false, -59)]
         public static void RepairMenuItem()
         {
+            // uGUI が動く前提を先に整える。パネルが無くても、これだけはやる価値がある。
+            bool madeEventSystem = UdonWorldUiKit.EnsureEventSystem();
+
+            // すでに置いてあるパネルには当たり判定が無いことがある(Phase7-2 以前)。
+            int colliders = AddCanvasColliders();
+
             UdonMediaPanel[] panels = FindPanels();
 
             if (panels.Length == 0)
             {
                 EditorUtility.DisplayDialog(
                     "Smart Media Platform",
-                    "シーンにパネルが見つかりません。\n"
+                    (madeEventSystem ? "EventSystem を作りました。\n\n" : "")
+                    + "シーンにパネルが見つかりません。\n"
                     + "SmartMediaPlayer.prefab を Hierarchy へドラッグしてから実行してください。",
                     "OK");
                 return;
@@ -292,7 +358,12 @@ namespace SmartMediaPlatform.World.EditorTools
             EditorSceneManager.MarkAllScenesDirty();
 
             string message =
-                "ボタンを " + rewired + " 個 繋ぎ直しました。\n"
+                (madeEventSystem ? "EventSystem を作りました(uGUI に必須)。\n" : "")
+                + (colliders > 0
+                    ? "Canvas に当たり判定を " + colliders + " 個 足しました"
+                      + "(これが無いとレーザーが届きません)。\n"
+                    : "")
+                + "ボタンを " + rewired + " 個 繋ぎ直しました。\n"
                 + "  uGUI(onClick)   : " + UdonWorldUiKit.BindCount + " 個\n"
                 + "  「使う」(Interact): " + UdonWorldUiKit.InteractCount + " 個\n"
                 + "見出しを " + relabelled + " 個 日本語にしました。\n"

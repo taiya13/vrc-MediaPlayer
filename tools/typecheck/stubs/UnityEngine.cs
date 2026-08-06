@@ -588,6 +588,9 @@ namespace UnityEngine
         public static void Box(Rect r, GUIContent content, GUIStyle style) { }
         public static void Label(Rect r, GUIContent content) { }
         public static bool Button(Rect r, string text) { return false; }
+        public static bool Button(Rect r, GUIContent content) { return false; }
+        public static bool Button(Rect r, GUIContent content, GUIStyle style) { return false; }
+        public static bool Button(Rect r, string text, GUIStyle style) { return false; }
         public static void DrawTexture(Rect r, Texture image) { }
         public static void DrawTexture(Rect r, Texture image, ScaleMode scaleMode) { }
         public static void DrawTexture(Rect r, Texture image, ScaleMode scaleMode, bool alphaBlend) { }
@@ -883,4 +886,10 @@ namespace UnityEngine.Networking
         public Texture2D texture { get { return null; } }
         public static Texture2D GetContent(UnityWebRequest request) { return null; }
     }
+}
+
+namespace UnityEngine.EventSystems
+{
+    public class EventSystem : UnityEngine.Behaviour { }
+    public class StandaloneInputModule : UnityEngine.Behaviour { }
 }

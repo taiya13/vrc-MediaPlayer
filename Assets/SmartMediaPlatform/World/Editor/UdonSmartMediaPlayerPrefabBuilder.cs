@@ -144,6 +144,17 @@ namespace SmartMediaPlatform.World.EditorTools
 
             var player = SavePrefab(root, PlayerPrefabPath);
 
+            // ── シーンに EventSystem が無いと uGUI が一切動かない。
+            //    つまみもスクロールも音量も、押す以外は全部これ頼みです。
+            if (UdonWorldUiKit.EnsureEventSystem())
+            {
+                log.AppendLine("  EventSystem  : シーンに無かったので作りました(uGUI に必須)");
+            }
+            else
+            {
+                log.AppendLine("  EventSystem  : すでにあります");
+            }
+
             Report(log, report, player, menuPath);
 
             Selection.activeObject = player;

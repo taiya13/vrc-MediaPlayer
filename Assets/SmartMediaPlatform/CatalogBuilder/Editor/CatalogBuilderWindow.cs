@@ -36,7 +36,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
     /// <b>MediaPlayer 本体には触りません。</b>書き込み先は
     /// <see cref="MediaCatalogAsset"/> と、その横の覚え書き JSON だけです。
     /// </summary>
-    public sealed class CatalogBuilderWindow : EditorWindow
+    public sealed partial class CatalogBuilderWindow : EditorWindow
     {
         private const string MenuPath = "Tools/Smart Media Platform/Catalog Builder";
 
@@ -141,6 +141,16 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         /// </summary>
         private void OnGUI()
         {
+            DrawModeBar();
+
+            // ── ふだんはこちら。「URL を貼って曲を足す」だけの道。
+            //    表を並べた画面は、慣れた人のための道具として奥に置きます。
+            if (!_expertMode)
+            {
+                DrawSimpleFlow();
+                return;
+            }
+
             DrawToolbar();
 
             if (_asset == null)

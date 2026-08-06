@@ -763,26 +763,52 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
         }
 
         [Test]
-        public void TheArtistIsTakenFromTheTitleWhenItIsThere()
-        {
-            Assert.AreEqual("Ado", YouTubeTitleCleaner.ArtistFromTitle("Ado - 唱"));
-            Assert.AreEqual("", YouTubeTitleCleaner.ArtistFromTitle("唱"));
-
-            // 綴りの一部のハイフンは区切りではない。
-            Assert.AreEqual("", YouTubeTitleCleaner.ArtistFromTitle("K-POP Mix"));
-        }
-
-        [Test]
         public void ImportedItemsCarryTheCleanedTitle()
         {
             var client = new FakeClient();
-            client.Videos.Add(Video("a", "ONE OK ROCK - Wasted Nights [Official Music Video]"));
+
+            var video = Video("a", "ONE OK ROCK - Wasted Nights [Official Music Video]");
+            video.ChannelTitle = "ONE OK ROCK";
+            client.Videos.Add(video);
 
             var importer = new YouTubeCatalogImporter(client);
             CatalogImportResult result = importer.Import("@channel");
 
             Assert.AreEqual("Wasted Nights", result.Items[0].Title);
             Assert.AreEqual("ONE OK ROCK", result.Items[0].Artist);
+        }
+
+        [Test]
+        public void EverythingFromOneChannelGetsTheSameArtist()
+        {
+            // 一覧はこの値でチャンネルごとにまとめる。1 件でも違うと
+            // 「1 チャンネルなのにグループが山ほどできる」になる。
+            var client = new FakeClient();
+
+            string[] titles =
+            {
+                "ONE OK ROCK - Wasted Nights [Official Music Video]",
+                "Live at Nagisaen 2019",
+                "Renegades - Japanese Version",
+                "【MV】Stand Out Fit In",
+            };
+
+            for (int i = 0; i < titles.Length; i++)
+            {
+                var v = Video("v" + i, titles[i]);
+                v.ChannelTitle = "ONE OK ROCK";
+                client.Videos.Add(v);
+            }
+
+            var importer = new YouTubeCatalogImporter(client);
+            CatalogImportResult result = importer.Import("@channel");
+
+            Assert.AreEqual(titles.Length, result.Count);
+            for (int i = 0; i < result.Count; i++)
+            {
+                Assert.AreEqual("ONE OK ROCK", result.Items[i].Artist,
+                                "見出しから推測せず、投稿チャンネル名をそのまま使う");
+            }
         }
 
         // ───────── 道具 ─────────

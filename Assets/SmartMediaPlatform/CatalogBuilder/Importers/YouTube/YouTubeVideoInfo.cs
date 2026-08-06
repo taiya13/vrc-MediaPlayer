@@ -60,18 +60,6 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         /// </summary>
         public static bool CleanTitles = true;
 
-        /// <summary>
-        /// アーティスト名を決める。
-        /// 見出しが「歌手 - 曲名」の形ならそちらを、無ければチャンネル名を使います。
-        /// </summary>
-        public string ResolveArtist()
-        {
-            if (!CleanTitles) return ChannelTitle;
-
-            string fromTitle = YouTubeTitleCleaner.ArtistFromTitle(Title);
-            return fromTitle.Length > 0 ? fromTitle : ChannelTitle;
-        }
-
         /// <summary>「3:45」の形。</summary>
         public string FormatDuration()
         {
@@ -112,16 +100,18 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             //    <b>同じ名前が並びます</b>。一覧はチャンネルでまとめてあるので、
             //    その名前は見出しにもう出ていて、二重です。
             //    選ぶときに見たいのは曲名なので、そちらを前へ出します。
-            //    落とす名前は<b>アーティストとして採ったほうの名前</b>です。
-            //    チャンネル名で試すだけだと、レーベルのチャンネル
-            //    (見出しは「歌手 - 曲名」、チャンネル名は別)で落とせません。
-            string artist = ResolveArtist();
+            item.Title = CleanTitles ? YouTubeTitleCleaner.Clean(Title, ChannelTitle) : Title;
 
-            item.Title = CleanTitles ? YouTubeTitleCleaner.Clean(Title, artist) : Title;
-
-            // アーティストは、見出しに「歌手 - 曲名」の形があればそちらを採る。
-            // 音楽レーベルのチャンネルには、いろいろな歌手が入っているためです。
-            item.Artist = artist;
+            // ── アーティストは<b>投稿チャンネル名そのもの</b>。
+            //
+            //    ここを見出しから推測してはいけません。一覧はこの値で
+            //    チャンネルごとにまとめているので、<b>推測が 1 件でも外れると
+            //    そのぶんグループが増えます</b>。
+            //    「1 チャンネルを取り込んだだけなのにグループが山ほどできる」のは
+            //    それが原因でした(Phase7-3 の途中版で実際に起きました)。
+            //    投稿チャンネル名は必ず同じ文字列で返ってくるので、
+            //    これだけを使えば<b>同じチャンネルは必ず 1 つにまとまります</b>。
+            item.Artist = ChannelTitle;
             item.Url = WatchUrl;
             item.DurationSeconds = DurationSeconds;
             item.ThumbnailPath = ThumbnailUrl;
