@@ -655,6 +655,8 @@ namespace UnityEngine.UI
         public float lineSpacing { get; set; }
         public bool supportRichText { get; set; }
         public bool resizeTextForBestFit { get; set; }
+        public int resizeTextMinSize { get; set; }
+        public int resizeTextMaxSize { get; set; }
         public HorizontalWrapMode horizontalOverflow { get; set; }
         public VerticalWrapMode verticalOverflow { get; set; }
     }

@@ -37,6 +37,31 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         public string CategoryId = "";
 
         /// <summary>
+        /// <c>none</c> / <c>live</c> / <c>upcoming</c> のどれか。Phase7-4。
+        ///
+        /// <b>生配信・配信予定・プレミア公開を見分ける唯一の手掛かり</b>です
+        /// (プレミア公開は開始前 <c>upcoming</c>、配信中 <c>live</c> として返ります)。
+        /// </summary>
+        public string LiveBroadcastContent = "";
+
+        /// <summary>
+        /// <b>いま配信中か、これから配信されるものか。</b>
+        ///
+        /// どちらもワールドでは困ります。配信中のものは<b>終わりが無く</b>、
+        /// 次の曲へ進みません。配信予定のものは<b>まだ中身がありません</b>。
+        /// </summary>
+        public bool IsLiveOrUpcoming
+        {
+            get
+            {
+                if (LiveBroadcastContent == null) return false;
+
+                string value = LiveBroadcastContent.Trim().ToLowerInvariant();
+                return value == "live" || value == "upcoming";
+            }
+        }
+
+        /// <summary>
         /// 非公開・削除済みなど、再生できないもの。
         /// <b>取得結果から黙って消さずに、印を付けて残します</b> —
         /// 「入れたはずの曲が無い」より「これは使えません」と出るほうが分かるためです。

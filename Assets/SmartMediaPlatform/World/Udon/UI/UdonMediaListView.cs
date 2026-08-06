@@ -1096,9 +1096,20 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// 2 行目。<b>チャンネル · ジャンル</b>の形にします。
         /// ジャンルまで出すのは、同じチャンネルの中から選ぶときの手がかりになるためです。
         /// </summary>
+        /// <summary>
+        /// 2 行目に出すもの。
+        ///
+        /// <b>チャンネルでまとめているときは、チャンネル名を出しません</b>(Phase7-4)。
+        /// すぐ上の見出しと、一覧の上に貼り付いた帯に<b>すでに 2 回出ています</b>。
+        /// 3 回目を行にも出すと、そのぶん<b>曲名の幅が減って途中で切れます</b> ——
+        /// いちばん読みたいものが読めなくなるので、ここでは省きます。
+        /// </summary>
         private string SubLabel(int catalogIndex, string genre)
         {
             if (Store == null) return "";
+
+            bool grouped = Source == SourceLibrary && UsesView();
+            if (grouped) return genre != null ? genre : "";
 
             string artist = Store.GetArtist(catalogIndex);
 

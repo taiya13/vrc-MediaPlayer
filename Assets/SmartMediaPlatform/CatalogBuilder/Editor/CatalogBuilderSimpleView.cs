@@ -229,7 +229,9 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             _importerInput = EditorGUILayout.TextField(_importerInput, fieldStyle,
                                                        GUILayout.Height(26f));
 
-            EditorGUILayout.Space(4f);
+            EditorGUILayout.Space(6f);
+            DrawFetchOrder();
+            EditorGUILayout.Space(6f);
 
             bool ready = importer.IsAvailable && importer.CanImport(_importerInput);
 
@@ -255,6 +257,56 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 EditorGUILayout.HelpBox(
                     _importMessage, _lastImportOk ? MessageType.Info : MessageType.Warning);
             }
+        }
+
+        /// <summary>
+        /// <b>取り込み方(新着順 / 人気順)。</b>Phase7-4。
+        ///
+        /// <b>畳まずに出します。</b>ここは<b>押す前に決めておくもの</b>で、
+        /// あとから変えると取り直しになるためです。
+        /// 既定は新着順のままなので、触らなければ今までどおりです。
+        /// </summary>
+        private void DrawFetchOrder()
+        {
+            var modes = CurrentImporter() as ICatalogImporterModes;
+            if (modes == null) return;
+
+            string[] names = modes.ModeNames;
+            if (names == null || names.Length < 2) return;   // 選べないものは見せない
+
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("取り込み方", GUILayout.Width(64f));
+
+            int picked = GUILayout.Toolbar(
+                Mathf.Clamp(modes.Mode, 0, names.Length - 1), names, GUILayout.Height(22f));
+
+            EditorGUILayout.EndHorizontal();
+
+            if (picked != modes.Mode) modes.Mode = picked;
+
+            string[] amounts = modes.AmountLabels;
+            if (amounts != null && amounts.Length > 0)
+            {
+                EditorGUILayout.BeginHorizontal();
+                GUILayout.Label("件数", GUILayout.Width(64f));
+
+                int index = GUILayout.Toolbar(
+                    Mathf.Clamp(modes.AmountIndex, 0, amounts.Length - 1), amounts,
+                    GUILayout.Height(20f));
+
+                EditorGUILayout.EndHorizontal();
+
+                if (index != modes.AmountIndex) modes.AmountIndex = index;
+            }
+
+            string hint = modes.ModeHint;
+            if (string.IsNullOrEmpty(hint)) return;
+
+            var style = new GUIStyle(EditorStyles.miniLabel);
+            style.wordWrap = true;
+            style.normal.textColor = MutedText();
+
+            GUILayout.Label(hint, style);
         }
 
         /// <summary>

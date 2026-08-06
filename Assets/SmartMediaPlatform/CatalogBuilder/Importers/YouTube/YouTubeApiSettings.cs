@@ -44,6 +44,16 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         [Range(5, 120)]
         public int TimeoutSeconds = 20;
 
+        [Header("取り込み方(Phase7-4)")]
+        [Tooltip("0 = 新着順(投稿の新しい順) / 1 = 人気順(再生数の多い順)。"
+                 + "人気順はチャンネル指定のときだけ使えます")]
+        [Range(0, 1)]
+        public int FetchOrder;
+
+        [Tooltip("人気順で取る件数。人気順は API の割り当てを多く使うので、"
+                 + "必要なぶんだけにしてください")]
+        public int PopularMaxItems = 50;
+
         [Header("取り込むもの")]
         [Tooltip("ショート動画を取り込まない。大画面では左右が黒いまますぐ終わるため、"
                  + "チャンネルごと取り込むと再生がほぼ成立しません")]

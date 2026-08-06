@@ -811,6 +811,127 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
             }
         }
 
+        // ───────── 人気順(Phase7-4)─────────
+
+        [Test]
+        public void PopularOrderAsksTheSearchDoorInsteadOfThePlaylistOne()
+        {
+            var client = new FakeClient();
+            for (int i = 0; i < 5; i++) client.Videos.Add(Video("v" + i, "曲" + i));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.FetchOrder = YouTubeFetchOrder.Popular;
+
+            importer.Import("@channel");
+
+            Assert.AreEqual("search:viewCount:channel", client.LastCall,
+                            "人気順は search.list を order=viewCount で叩く");
+        }
+
+        [Test]
+        public void TheDefaultOrderIsStillTheOldOne()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("v0", "曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.Import("@channel");
+
+            Assert.AreEqual("channel-name:channel", client.LastCall,
+                            "何も選ばなければ、今までどおり投稿順で取る");
+        }
+
+        [Test]
+        public void EverythingAfterFetchingIsTheSameForBothOrders()
+        {
+            // 順番が変わっても、ショート除外・重複除去・見出しの整えは同じ道を通る。
+            var client = new FakeClient();
+            client.Videos.Add(Short("s0", "きりぬき", 30));
+
+            var full = Video("v0", "ONE OK ROCK - Wasted Nights [Official Music Video]");
+            full.ChannelTitle = "ONE OK ROCK";
+            client.Videos.Add(full);
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.FetchOrder = YouTubeFetchOrder.Popular;
+
+            CatalogImportResult result = importer.Import("@channel");
+
+            Assert.AreEqual(1, result.Count, "ショートは人気順でも外れる");
+            Assert.AreEqual("Wasted Nights", result.Items[0].Title, "見出しの整えも同じ");
+            Assert.AreEqual(1, importer.LastShortsExcluded);
+        }
+
+        [Test]
+        public void APlaylistCannotBeFetchedByPopularity()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("v0", "曲"));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.FetchOrder = YouTubeFetchOrder.Popular;
+
+            CatalogImportResult result = importer.Import(
+                "https://www.youtube.com/playlist?list=PLabc");
+
+            Assert.IsFalse(result.Ok, "黙って別のものを取らず、理由を返す");
+            StringAssert.Contains("再生リスト", result.Message);
+        }
+
+        [Test]
+        public void PopularOrderStopsAtTheChosenCount()
+        {
+            var client = new FakeClient();
+            client.Page = 50;
+            for (int i = 0; i < 300; i++) client.Videos.Add(Video("v" + i, "曲" + i));
+
+            var importer = new YouTubeCatalogImporter(client);
+            importer.FetchOrder = YouTubeFetchOrder.Popular;
+            importer.PopularMaxItems = 20;
+
+            Assert.AreEqual(20, importer.Import("@channel").Count);
+        }
+
+        // ───────── 生配信・配信予定を外す(Phase7-4)─────────
+
+        [Test]
+        public void LiveAndUpcomingVideosAreLeftOut()
+        {
+            var client = new FakeClient();
+            client.Videos.Add(Video("ok", "ふつうの曲"));
+
+            var live = Video("live", "生配信中");
+            live.LiveBroadcastContent = "live";
+            client.Videos.Add(live);
+
+            var upcoming = Video("soon", "プレミア公開");
+            upcoming.LiveBroadcastContent = "upcoming";
+            client.Videos.Add(upcoming);
+
+            var importer = new YouTubeCatalogImporter(client);
+            CatalogImportResult result = importer.Import("@channel");
+
+            Assert.AreEqual(1, result.Count, "終わりが来ない / 中身がまだ無いものは入れない");
+            Assert.AreEqual("ok", result.Items[0].Id);
+            Assert.AreEqual(2, importer.LastLiveExcluded);
+            StringAssert.Contains("配信中・予定", result.Message);
+        }
+
+        [Test]
+        public void AFinishedLiveArchiveIsStillImported()
+        {
+            // 配信が終わったものは "none" で返る。ふつうの動画として扱う。
+            var client = new FakeClient();
+
+            var archive = Video("done", "ライブ配信アーカイブ");
+            archive.LiveBroadcastContent = "none";
+            client.Videos.Add(archive);
+
+            var importer = new YouTubeCatalogImporter(client);
+
+            Assert.AreEqual(1, importer.Import("@channel").Count);
+        }
+
         // ───────── 道具 ─────────
 
         private static YouTubeVideoInfo Short(string id, string title, int seconds)
@@ -838,7 +959,8 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
         /// <b>1 ページずつも返せます</b>(Phase7-3)。<see cref="PageSize"/> ごとに区切り、
         /// 続きの位置は「次の開始番号」を文字列にしたものです。
         /// </summary>
-        private sealed class FakeClient : IYouTubeClient, IPagedYouTubeClient
+        private sealed class FakeClient
+            : IYouTubeClient, IPagedYouTubeClient, ISearchingYouTubeClient
         {
             public readonly List<YouTubeVideoInfo> Videos = new List<YouTubeVideoInfo>();
 
@@ -888,6 +1010,13 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube.Tests
                 string channel, bool byName, int want, string pageToken)
             {
                 LastCall = (byName ? "channel-name:" : "channel-id:") + channel;
+                return AnswerPage(pageToken);
+            }
+
+            public YouTubeFetchResult SearchChannelPage(
+                string channel, bool byName, string order, int want, string pageToken)
+            {
+                LastCall = "search:" + order + ":" + channel;
                 return AnswerPage(pageToken);
             }
 

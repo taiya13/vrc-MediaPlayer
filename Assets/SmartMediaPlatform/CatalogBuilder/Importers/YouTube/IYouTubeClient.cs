@@ -73,6 +73,31 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             string channel, bool byName, int want, string pageToken);
     }
 
+    /// <summary>
+    /// <b>並べ替えて探せる取得係の口。</b>Phase7-4。<b>付けても付けなくても構いません。</b>
+    ///
+    /// <c>playlistItems</c> は<b>投稿順にしか読めません</b>。
+    /// 「再生数の多い順」で取るには <c>search.list</c> を使う必要があり、
+    /// そちらは呼び方も返るものも違うので、口を分けます。
+    ///
+    /// <b>返すのは今までと同じ形</b>です。ここで動画 ID を並べたあとは、
+    /// <c>videos.list</c> で中身を引く<b>いままでの道</b>に合流します。
+    /// おかげで、見出し・長さ・タグ・ジャンル判定は 1 行も変わりません。
+    /// </summary>
+    public interface ISearchingYouTubeClient
+    {
+        /// <summary>
+        /// チャンネルの動画を、指定の順で 1 ページぶん探す。
+        /// </summary>
+        /// <param name="channel">チャンネル ID(<c>UC…</c>)か <c>@名前</c>。</param>
+        /// <param name="byName">true なら <c>@名前</c> として扱う。</param>
+        /// <param name="order">YouTube Data API の <c>order</c>(<c>viewCount</c> など)。</param>
+        /// <param name="want">この回で欲しい件数。</param>
+        /// <param name="pageToken">続きの位置。空なら先頭から。</param>
+        YouTubeFetchResult SearchChannelPage(
+            string channel, bool byName, string order, int want, string pageToken);
+    }
+
     /// <summary>取得の結果。成功も失敗も同じ形。</summary>
     public sealed class YouTubeFetchResult
     {

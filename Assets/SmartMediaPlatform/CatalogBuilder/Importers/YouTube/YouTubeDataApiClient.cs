@@ -19,7 +19,8 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
     ///
     /// <b>例外を投げません。</b>失敗は <see cref="YouTubeFetchResult"/> に入れて返します。
     /// </summary>
-    public sealed class YouTubeDataApiClient : IYouTubeClient, IPagedYouTubeClient
+    public sealed class YouTubeDataApiClient
+        : IYouTubeClient, IPagedYouTubeClient, ISearchingYouTubeClient
     {
         private const string Api = "https://www.googleapis.com/youtube/v3/";
 
@@ -203,6 +204,163 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
         private readonly Dictionary<string, string> _uploadsCache = new Dictionary<string, string>();
 
+        // ───────── 並べ替えて探す(Phase7-4)─────────
+
+        /// <summary>
+        /// <c>search.list</c> で、チャンネルの動画を指定の順に並べて 1 ページ取る。
+        ///
+        /// <b>ここで取るのは動画 ID だけ</b>です。見出し・長さ・タグは
+        /// <c>videos.list</c> で引く<b>いままでの道</b>に合流させます
+        /// (<c>search.list</c> の snippet には長さが入っていないため、
+        ///  どのみち引き直しが要ります)。
+        ///
+        /// <b>API の割り当てを 100 単位使います</b>(<c>playlistItems</c> は 1 単位)。
+        /// 呼ぶ回数が増えないよう、1 回で取れるだけ取ります。
+        /// </summary>
+        public YouTubeFetchResult SearchChannelPage(
+            string channel, bool byName, string order, int want, string pageToken)
+        {
+            if (!IsAvailable) return YouTubeFetchResult.Failure(UnavailableReason);
+
+            string channelId;
+            string error;
+            if (!ResolveChannelId(channel, byName, out channelId, out error))
+            {
+                return YouTubeFetchResult.Failure(error);
+            }
+
+            int take = Math.Min(50, Clamp(want));
+            if (take <= 0) take = 50;
+
+            string query = "search?part=id&type=video&channelId=" + Escape(channelId)
+                           + "&order=" + Escape(string.IsNullOrEmpty(order) ? "viewCount" : order)
+                           + "&maxResults=" + take;
+
+            if (!string.IsNullOrEmpty(pageToken)) query += "&pageToken=" + Escape(pageToken);
+
+            string json;
+            if (!Get(query, out json, out error)) return YouTubeFetchResult.Failure(error);
+
+            var page = Parse<SearchListResponse>(json);
+            if (page == null || page.items == null || page.items.Length == 0)
+            {
+                return YouTubeFetchResult
+                    .Success(new List<YouTubeVideoInfo>(), "これ以上ありません。")
+                    .WithNextPage("");
+            }
+
+            var order_ = new List<string>();
+            for (int i = 0; i < page.items.Length; i++)
+            {
+                SearchItem item = page.items[i];
+                if (item == null || item.id == null) continue;
+                if (string.IsNullOrEmpty(item.id.videoId)) continue;
+                if (order_.Contains(item.id.videoId)) continue;
+
+                order_.Add(item.id.videoId);
+            }
+
+            string next = page.nextPageToken != null ? page.nextPageToken : "";
+
+            if (order_.Count == 0)
+            {
+                return YouTubeFetchResult
+                    .Success(new List<YouTubeVideoInfo>(), "この並びでは取れませんでした。")
+                    .WithNextPage(next);
+            }
+
+            return BuildFromIds(order_, next);
+        }
+
+        /// <summary>
+        /// チャンネル ID を引く。<c>@名前</c> でも <c>UC…</c> でも受けます。
+        /// <b>覚えておきます</b> —— ページを繰り返すたびに引くと、そのぶん割り当てを食うためです。
+        /// </summary>
+        private bool ResolveChannelId(
+            string channel, bool byName, out string channelId, out string error)
+        {
+            channelId = "";
+            error = "";
+
+            if (string.IsNullOrWhiteSpace(channel))
+            {
+                error = "チャンネルの指定が空です。";
+                return false;
+            }
+
+            if (!byName)
+            {
+                channelId = channel;
+                return true;
+            }
+
+            string cacheKey = "@" + channel;
+            if (_channelIdCache.ContainsKey(cacheKey))
+            {
+                channelId = _channelIdCache[cacheKey];
+                return true;
+            }
+
+            string json;
+            if (!Get("channels?part=id&forHandle=@" + Escape(channel), out json, out error))
+            {
+                return false;
+            }
+
+            var channels = Parse<ChannelIdListResponse>(json);
+            if (channels == null || channels.items == null || channels.items.Length == 0
+                || string.IsNullOrEmpty(channels.items[0].id))
+            {
+                error = "チャンネルが見つかりません: @" + channel + "\n"
+                        + "@名前 が変わっている場合は channel/UC… の URL を試してください。";
+                return false;
+            }
+
+            channelId = channels.items[0].id;
+            _channelIdCache[cacheKey] = channelId;
+            return true;
+        }
+
+        private readonly Dictionary<string, string> _channelIdCache = new Dictionary<string, string>();
+
+        /// <summary>
+        /// 動画 ID の並びから、いままでと同じ形の結果を作る。
+        /// <b>再生リストから読んだときと、この先はまったく同じ道</b>です。
+        /// </summary>
+        private YouTubeFetchResult BuildFromIds(List<string> ids, string nextPageToken)
+        {
+            var map = new Dictionary<string, YouTubeVideoInfo>();
+            string error;
+            if (!FillVideoDetails(ids, map, out error)) return YouTubeFetchResult.Failure(error);
+
+            var videos = new List<YouTubeVideoInfo>();
+            int unavailable = 0;
+
+            for (int i = 0; i < ids.Count; i++)
+            {
+                string id = ids[i];
+
+                if (map.ContainsKey(id))
+                {
+                    videos.Add(map[id]);
+                    continue;
+                }
+
+                var missing = new YouTubeVideoInfo();
+                missing.VideoId = id;
+                missing.Title = "(取得できません)";
+                missing.IsUnavailable = true;
+                missing.UnavailableReason = "非公開・削除済み・地域制限のいずれか";
+                videos.Add(missing);
+                unavailable++;
+            }
+
+            string message = videos.Count + " 件を取得しました。";
+            if (unavailable > 0) message += "(うち " + unavailable + " 件は再生できません)";
+
+            return YouTubeFetchResult.Success(videos, message).WithNextPage(nextPageToken);
+        }
+
         // ───────── 再生リストを読む ─────────
 
         private YouTubeFetchResult FetchPlaylistItems(string playlistId, int maxCount)
@@ -358,6 +516,10 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 // Phase6-4: 関連と絞り込みの材料。どちらも無いことがあるので既定を保つ。
                 if (item.snippet.tags != null) info.Tags = item.snippet.tags;
                 info.CategoryId = item.snippet.categoryId != null ? item.snippet.categoryId : "";
+
+                info.LiveBroadcastContent = item.snippet.liveBroadcastContent != null
+                    ? item.snippet.liveBroadcastContent
+                    : "";
             }
 
             if (item.contentDetails != null)
@@ -525,6 +687,37 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         }
 
         [Serializable]
+        private sealed class SearchListResponse
+        {
+            public string nextPageToken;
+            public SearchItem[] items;
+        }
+
+        [Serializable]
+        private sealed class SearchItem
+        {
+            public SearchItemId id;
+        }
+
+        [Serializable]
+        private sealed class SearchItemId
+        {
+            public string videoId;
+        }
+
+        [Serializable]
+        private sealed class ChannelIdListResponse
+        {
+            public ChannelIdItem[] items;
+        }
+
+        [Serializable]
+        private sealed class ChannelIdItem
+        {
+            public string id;
+        }
+
+        [Serializable]
         private sealed class VideoListResponse
         {
             public VideoItem[] items;
@@ -551,6 +744,10 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             // Phase6-4: 関連(RelatedIds)の材料。tags は付いていない動画も多い。
             public string[] tags;
             public string categoryId;
+
+            // Phase7-4: "none" / "live" / "upcoming"。
+            // 生配信と配信予定(プレミア公開を含む)を見分ける唯一の手掛かり。
+            public string liveBroadcastContent;
         }
 
         [Serializable]

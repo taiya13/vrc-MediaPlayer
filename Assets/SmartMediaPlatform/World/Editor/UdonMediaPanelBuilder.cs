@@ -264,14 +264,14 @@ namespace SmartMediaPlatform.World.EditorTools
             //    大きさではなく明るさで主従を付ける。曲名だけが明るい。
             float cursor = textTop;
 
-            view.TitleText = UdonWorldUiKit.Label(
+            view.TitleText = UdonWorldUiKit.FittedLabel(
                 section, "Title", textLeft, cursor, textWidth, titleHeight, titleSize,
-                TextAnchor.LowerLeft, UdonMediaTheme.TextPrimary);
+                wide ? 18 : 14, TextAnchor.LowerLeft, UdonMediaTheme.TextPrimary);
             cursor += titleHeight;
 
-            view.ArtistText = UdonWorldUiKit.Label(
+            view.ArtistText = UdonWorldUiKit.FittedLabel(
                 section, "Artist", textLeft, cursor, textWidth, artistHeight, artistSize,
-                TextAnchor.UpperLeft, UdonMediaTheme.TextSecondary);
+                wide ? 14 : 12, TextAnchor.UpperLeft, UdonMediaTheme.TextSecondary);
             cursor += artistHeight + UdonMediaTheme.Space1;
 
             Image chip = UdonWorldUiKit.RoundedPlate(
@@ -619,13 +619,14 @@ namespace SmartMediaPlatform.World.EditorTools
                 float textY = artH + UdonMediaTheme.Space1;
                 float textW = cardW - UdonMediaTheme.Space2 * 2f;
 
-                titles[i] = UdonWorldUiKit.Label(
+                titles[i] = UdonWorldUiKit.FittedLabel(
                     card.transform, "Title", UdonMediaTheme.Space2, textY, textW, 30f,
-                    UdonMediaTheme.TextBody, TextAnchor.UpperLeft, UdonMediaTheme.TextPrimary);
+                    UdonMediaTheme.TextBody, 12, TextAnchor.UpperLeft, UdonMediaTheme.TextPrimary);
 
-                artists[i] = UdonWorldUiKit.Label(
-                    card.transform, "Artist", UdonMediaTheme.Space2, textY + 30f, textW, 26f,
-                    UdonMediaTheme.TextCaption, TextAnchor.UpperLeft, UdonMediaTheme.TextSecondary);
+                artists[i] = UdonWorldUiKit.FittedLabel(
+                    card.transform, "Artist", UdonMediaTheme.Space2, textY + 30f, textW, 24f,
+                    UdonMediaTheme.TextCaption, 11, TextAnchor.UpperLeft,
+                    UdonMediaTheme.TextSecondary);
 
                 // ── 理由。強調色の札にして、いちばん下に置く。
                 //    「なぜ勧めるか」が言えないおすすめは押されません。
@@ -1055,13 +1056,15 @@ namespace SmartMediaPlatform.World.EditorTools
             float durationWidth = 86f;
             float textWidth = hitWidth - textX - durationWidth - UdonMediaTheme.Space2;
 
-            row.TitleText = UdonWorldUiKit.Label(
-                hit.transform, "Title", textX, height * 0.16f, textWidth, height * 0.34f,
-                UdonMediaTheme.TextTitle, TextAnchor.LowerLeft, UdonMediaTheme.TextPrimary);
+            // 曲名は長さがまちまちなので、入り切るまで小さくする。
+            // 途中で切れた名前は、小さい名前より役に立たない。
+            row.TitleText = UdonWorldUiKit.FittedLabel(
+                hit.transform, "Title", textX, height * 0.14f, textWidth, height * 0.38f,
+                UdonMediaTheme.TextBody, 13, TextAnchor.LowerLeft, UdonMediaTheme.TextPrimary);
 
-            row.SubText = UdonWorldUiKit.Label(
-                hit.transform, "Sub", textX, height * 0.52f, textWidth, height * 0.30f,
-                UdonMediaTheme.TextCaption, TextAnchor.UpperLeft, UdonMediaTheme.TextSecondary);
+            row.SubText = UdonWorldUiKit.FittedLabel(
+                hit.transform, "Sub", textX, height * 0.54f, textWidth, height * 0.28f,
+                14, 11, TextAnchor.UpperLeft, UdonMediaTheme.TextSecondary);
 
             row.DurationText = UdonWorldUiKit.Label(
                 hit.transform, "Duration", hitWidth - durationWidth - UdonMediaTheme.Space1, 0f,
@@ -1149,9 +1152,9 @@ namespace SmartMediaPlatform.World.EditorTools
                 band, "Arrow", UdonMediaTheme.Space2, 0f, 32f, BandHeight, 18,
                 TextAnchor.MiddleCenter, UdonMediaTheme.TextMuted);
 
-            Text channel = UdonWorldUiKit.Label(
+            Text channel = UdonWorldUiKit.FittedLabel(
                 band, "Channel", UdonMediaTheme.Space2 + 40f, 0f, width - 200f, BandHeight,
-                UdonMediaTheme.TextTitle, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
+                UdonMediaTheme.TextBody, 13, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
 
             Text count = UdonWorldUiKit.Label(
                 band, "Count", width - 130f, 0f, 112f - UdonMediaTheme.Space2, BandHeight,

@@ -209,6 +209,38 @@ namespace SmartMediaPlatform.World.EditorTools
         }
 
         /// <summary>
+        /// <b>枠に収まるまで小さくなる文字。</b>Phase7-4。
+        ///
+        /// <b>なぜ要るのか</b><br/>
+        /// 曲名の長さはこちらで決められません。
+        /// 「SEKAI NO OWARI「Habit」」のような見出しを固定の大きさで出すと、
+        /// <b>途中で切れて「SEKAI NO」しか読めません</b>。
+        /// 切れた名前は、短い名前より役に立ちません —— どれがどれか分からないためです。
+        ///
+        /// <b>短い名前は大きいまま</b>です。小さくなるのは入り切らないときだけなので、
+        /// ふだんの見た目は変わりません。
+        /// </summary>
+        /// <param name="size">入り切るときの大きさ(これより大きくはならない)。</param>
+        /// <param name="minimum">これより小さくはしない。読めなくなるため。</param>
+        public static Text FittedLabel(
+            Transform parent, string name, float x, float y, float width, float height,
+            int size, int minimum, TextAnchor anchor, Color color)
+        {
+            Text text = Label(parent, name, x, y, width, height, size, anchor, color);
+
+            text.resizeTextForBestFit = true;
+            text.resizeTextMaxSize = size;
+            text.resizeTextMinSize = minimum;
+
+            // 縮めて収めるので、折り返しは要らない。
+            // 折り返すと、1 行に収まる名前まで 2 行になって余白が崩れます。
+            text.horizontalOverflow = HorizontalWrapMode.Wrap;
+            text.verticalOverflow = VerticalWrapMode.Truncate;
+
+            return text;
+        }
+
+        /// <summary>
         /// <b>角の丸い押せるボタン。</b>Phase7-3。
         /// 文字の色は面の色から決めます(強調色の上は暗い文字、灰色の上は明るい文字)。
         /// </summary>

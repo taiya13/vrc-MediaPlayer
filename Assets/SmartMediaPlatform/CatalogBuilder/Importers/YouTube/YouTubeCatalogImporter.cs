@@ -19,7 +19,7 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
     /// </summary>
     public sealed class YouTubeCatalogImporter
         : ICatalogImporter, IIncrementalCatalogImporter, ICatalogImporterSetup,
-          ICatalogImporterFilter
+          ICatalogImporterFilter, ICatalogImporterModes
     {
         private readonly IYouTubeClient _client;
 
@@ -35,8 +35,19 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         /// </summary>
         public bool ExcludeShorts = true;
 
+        /// <summary>
+        /// <b>どの順で取るか。</b>Phase7-4。
+        /// <see cref="YouTubeFetchOrder.Latest"/>(既定)か
+        /// <see cref="YouTubeFetchOrder.Popular"/>。
+        /// 設定アセットがあればそちらが優先されます。
+        /// </summary>
+        public int FetchOrder = YouTubeFetchOrder.Latest;
+
         /// <summary>直近の取り込みで<b>見た</b>動画の総数。</summary>
         public int LastFetchedTotal { get; private set; }
+
+        /// <summary>直近の取り込みで生配信・配信予定として外した件数。</summary>
+        public int LastLiveExcluded { get; private set; }
 
         /// <summary>直近の取り込みでショートとして外した件数。</summary>
         public int LastShortsExcluded { get; private set; }
@@ -234,6 +245,79 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             }
         }
 
+        // ───────── 取り込み方(Phase7-4)─────────
+
+        public string[] ModeNames { get { return YouTubeFetchOrder.Labels; } }
+
+        public int Mode
+        {
+            get { return ResolveOrder(); }
+            set
+            {
+                FetchOrder = value;
+
+#if UNITY_EDITOR
+                YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+                if (settings == null || settings.FetchOrder == value) return;
+
+                settings.FetchOrder = value;
+                UnityEditor.EditorUtility.SetDirty(settings);
+                UnityEditor.AssetDatabase.SaveAssets();
+#endif
+            }
+        }
+
+        public string ModeHint
+        {
+            get
+            {
+                if (ResolveOrder() != YouTubeFetchOrder.Popular) return "";
+
+                return "再生数の多い順に取ります。よく見られている公式 MV が上に来ます。\n"
+                       + "チャンネルの URL のときだけ使えます(再生リストは新着順のみ)。\n"
+                       + "※ 人気順は API の割り当てを多く使います(1 ページで新着順の 100 倍)。"
+                       + "必要なぶんだけにしてください。";
+            }
+        }
+
+        /// <summary>件数を選べるのは人気順のときだけ。新着順は「そろうまで」取ります。</summary>
+        public string[] AmountLabels
+        {
+            get
+            {
+                return ResolveOrder() == YouTubeFetchOrder.Popular ? PopularCountLabels : null;
+            }
+        }
+
+        public int AmountIndex
+        {
+            get
+            {
+                int current = ResolvePopularCount();
+                for (int i = 0; i < PopularCounts.Length; i++)
+                {
+                    if (PopularCounts[i] == current) return i;
+                }
+                return 1;   // 既定は 50 件
+            }
+            set
+            {
+                if (value < 0 || value >= PopularCounts.Length) return;
+
+                int wanted = PopularCounts[value];
+                PopularMaxItems = wanted;
+
+#if UNITY_EDITOR
+                YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+                if (settings == null || settings.PopularMaxItems == wanted) return;
+
+                settings.PopularMaxItems = wanted;
+                UnityEditor.EditorUtility.SetDirty(settings);
+                UnityEditor.AssetDatabase.SaveAssets();
+#endif
+            }
+        }
+
         // ───────── 新着だけ(Phase6-5)─────────
 
         /// <summary>
@@ -288,6 +372,12 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 limit = boundary.MaxNewItems > 0 ? boundary.MaxNewItems : NewItemsPageSize;
             }
 
+            // 人気順は「上位から何件」を人が選ぶものなので、その件数を目標にする。
+            if (boundary == null && ResolveOrder() == YouTubeFetchOrder.Popular)
+            {
+                limit = ResolvePopularCount();
+            }
+
             // 0 は「上限を決めていない」。ページを繰り返す仕組みでは
             // 「そろったら止まる」の目標が要るので、既定の上限を当てる。
             if (limit <= 0) limit = DefaultMaxItems;
@@ -303,6 +393,7 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             LastVideos = harvest.Seen;
             LastFetchedTotal = harvest.Seen.Count;
             LastShortsExcluded = harvest.Shorts;
+            LastLiveExcluded = harvest.Live;
             LastImported = harvest.Items.Count;
 
             string tally = DescribeTally(harvest, dropShorts);
@@ -344,6 +435,9 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             /// <summary>ショートとして外した数。</summary>
             public int Shorts;
 
+            /// <summary>生配信・配信予定として外した数。</summary>
+            public int Live;
+
             /// <summary>再生できない(非公開・削除済み)として外した数。</summary>
             public int Unavailable;
 
@@ -384,19 +478,27 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         {
             var harvest = new HarvestResult();
 
-            // 動画 1 本にページは無いので、続きを取る仕組みは使わない。
-            var paged = LastTarget.Kind == YouTubeUrlParser.TargetVideo
+            // ── どの順で取るかは「戦略」が持つ。ここには順番の分岐を置かない。
+            //    動画 1 本にページも並び順も無いので、そのときだけ素で取る。
+            IYouTubeFetchStrategy strategy = LastTarget.Kind == YouTubeUrlParser.TargetVideo
                 ? null
-                : client as IPagedYouTubeClient;
+                : ResolveStrategy();
 
+            if (strategy != null && !strategy.CanHandle(LastTarget))
+            {
+                harvest.Error = strategy.UnsupportedReason(LastTarget);
+                return harvest;
+            }
+
+            var paged = client as IPagedYouTubeClient;
             int pageSize = paged != null && paged.PageSize > 0 ? paged.PageSize : limit;
 
             string pageToken = "";
 
             for (int page = 0; page < MaxPages; page++)
             {
-                YouTubeFetchResult fetched = paged != null
-                    ? FetchPage(paged, LastTarget, pageSize, pageToken)
+                YouTubeFetchResult fetched = strategy != null
+                    ? strategy.FetchPage(client, LastTarget, pageSize, pageToken)
                     : Fetch(client, LastTarget, limit);
 
                 if (fetched == null)
@@ -420,10 +522,53 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 harvest.HasMore = fetched.HasMore;
 
                 if (harvest.Items.Count >= limit) break;
-                if (paged == null || !fetched.HasMore) break;
+                if (strategy == null || !fetched.HasMore) break;
             }
 
             return harvest;
+        }
+
+        /// <summary>
+        /// いま使う取得戦略。設定アセットがあればそちらが優先。
+        /// <b>毎回読み直します</b>(取っておくと、あとから変えても効かないため)。
+        /// </summary>
+        private IYouTubeFetchStrategy ResolveStrategy()
+        {
+            return YouTubeFetchOrder.Resolve(ResolveOrder());
+        }
+
+        private int ResolveOrder()
+        {
+#if UNITY_EDITOR
+            YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+            if (settings != null) return settings.FetchOrder;
+#endif
+            return FetchOrder;
+        }
+
+        /// <summary>人気順で取る件数(20 / 50 / 100 / 200)。</summary>
+        public static readonly int[] PopularCounts = { 20, 50, 100, 200 };
+
+        public static readonly string[] PopularCountLabels = { "20 件", "50 件", "100 件", "200 件" };
+
+        /// <summary>人気順で目指す件数。既定は 50。</summary>
+        public int PopularMaxItems = 50;
+
+        private int ResolvePopularCount()
+        {
+            int wanted = PopularMaxItems;
+
+#if UNITY_EDITOR
+            YouTubeApiSettings settings = YouTubeApiSettings.LoadIfPresent();
+            if (settings != null) wanted = settings.PopularMaxItems;
+#endif
+
+            // 選べる数のどれかに寄せる(手で妙な数を入れられても壊れないように)。
+            for (int i = 0; i < PopularCounts.Length; i++)
+            {
+                if (wanted == PopularCounts[i]) return wanted;
+            }
+            return 50;
         }
 
         /// <summary>1 ページぶんを仕分けて取り込む。</summary>
@@ -443,6 +588,17 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 if (video.IsUnavailable)
                 {
                     harvest.Unavailable++;
+                    continue;
+                }
+
+                // ── 生配信・配信予定・プレミア公開は外す(Phase7-4)。
+                //
+                //    配信中のものは<b>終わりが来ない</b>ので、次の曲へ進みません。
+                //    配信予定のものは<b>まだ中身がありません</b>。
+                //    どちらもワールドの再生には使えないので、入り口で外します。
+                if (video.IsLiveOrUpcoming)
+                {
+                    harvest.Live++;
                     continue;
                 }
 
@@ -516,6 +672,10 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             if (dropShorts)
             {
                 sb.Append(" / ショート除外 ").Append(harvest.Shorts).Append(" 件");
+            }
+            if (harvest.Live > 0)
+            {
+                sb.Append(" / 配信中・予定 ").Append(harvest.Live).Append(" 件");
             }
             if (harvest.Unavailable > 0)
             {
