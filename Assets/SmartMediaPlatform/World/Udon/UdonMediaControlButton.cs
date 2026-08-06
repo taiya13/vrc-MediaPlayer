@@ -39,6 +39,14 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("見出しに出す文字")]
         public string LabelText = "";
 
+        [Header("番号を伝えたいとき(Phase7-6)")]
+        [Tooltip("イベントを送る前に、相手のどの変数へ番号を書き込むか。空なら書き込まない。"
+                 + "バーの何番目を押したか・キーボードの何文字目を押したか を伝えるのに使う")]
+        public string IndexVariable = "";
+
+        [Tooltip("IndexVariable へ書き込む番号")]
+        public int Index;
+
         void Start()
         {
             if (Label != null && LabelText.Length > 0) Label.text = LabelText;
@@ -54,6 +62,13 @@ namespace SmartMediaPlatform.World.Udon
         public void Click()
         {
             if (Target == null || EventName == null || EventName.Length == 0) return;
+
+            // 番号を先に渡してから知らせる。順番が逆だと、相手は
+            // 「前に押した番号」で動いてしまいます。
+            if (IndexVariable != null && IndexVariable.Length > 0)
+            {
+                Target.SetProgramVariable(IndexVariable, Index);
+            }
 
             Target.SendCustomEvent(EventName);
         }

@@ -344,6 +344,15 @@ namespace SmartMediaPlatform.World.EditorTools
                 session.Recommendation = recommendation;
                 session.Backend = backend;
                 session.Crossfade = crossfade;
+
+                // ── 再生予定が空になったらおすすめへ進む(Phase7-6)。
+                //
+                //    <b>ここで必ず書き込みます。</b>C# 側の初期値を変えても、
+                //    以前に作った Prefab には<b>そのとき保存された値が残ります</b>。
+                //    「1 曲を繰り返す」で保存されていると、
+                //    直したはずの挙動が実機では古いままになります。
+                session.EndBehaviour = UdonPlayerSession.EndBehaviourRecommend;
+                session.AutoQueueEnabled = true;
             }
 
             // 終わりの合図は、両系統から同じ Session へ届く必要がある。

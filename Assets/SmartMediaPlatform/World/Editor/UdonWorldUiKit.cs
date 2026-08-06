@@ -2,6 +2,7 @@
 using System;
 using SmartMediaPlatform.Video.EditorTools;
 using SmartMediaPlatform.World.Udon;
+using SmartMediaPlatform.World.Udon.UI;
 using UdonSharp;
 using UdonSharpEditor;
 using UnityEditor.Events;
@@ -386,11 +387,15 @@ namespace SmartMediaPlatform.World.EditorTools
             ApplyRadius(back, barRadius);
 
             // Fill Area / Fill …… Slider が伸ばすのはこの中身。
+            //
+            // <b>ここは Track と<b>まったく同じ場所</b>に置きます。</b>
+            // Phase7-4 まで、置いたあとに anchor を上端(anchorMin.y = 1)へ
+            // 書き換えていました。そのせいで色の付いた側だけが
+            // <b>触れる面の上端</b>へ寄り、灰色の床から浮いて見えていました
+            // (「バーの緑がずれている」の正体です)。
+            // Slider が書き換えるのは<b>この中の Fill だけ</b>なので、
+            // 入れ物のほうは Place の位置のままにしておくのが正解です。
             RectTransform fillArea = Place(root, "FillArea", 0f, barY, width, barHeight);
-            fillArea.anchorMin = new Vector2(0f, 1f);
-            fillArea.anchorMax = new Vector2(1f, 1f);
-            fillArea.offsetMin = new Vector2(0f, -barHeight);
-            fillArea.offsetMax = new Vector2(0f, 0f);
 
             var fillImage = Plate(fillArea, "Fill", 0f, 0f, width, barHeight, TrackFill);
             fillImage.raycastTarget = false;
@@ -663,6 +668,148 @@ namespace SmartMediaPlatform.World.EditorTools
 
         /// <summary>「使う」が届く距離(m)。</summary>
         public const float InteractDistance = 5f;
+
+        // ───────── 「使う」で動かすバー(Phase7-6)─────────
+
+        /// <summary>
+        /// <b>バーの上に「使う」で押せる区画を並べる。</b>Phase7-6。
+        ///
+        /// <b>実機で uGUI のポインターが届いていない</b>ことが分かったので、
+        /// つまみを掴む操作を<b>「使う」で狙う</b>操作へ置き換えます。
+        /// バーの見た目はそのままで、上に透明な当たり判定を並べるだけです。
+        ///
+        /// uGUI の <c>Slider</c> / <c>Scrollbar</c> は残してあります。
+        /// 値はこの区画から書き込まれるので、<b>今までの表示・処理はそのまま</b>動きます。
+        /// </summary>
+        /// <param name="parent">バーと同じ親。</param>
+        /// <param name="bar">動かすバー(<c>Scrollbar</c> のときは null)。</param>
+        /// <param name="scrollBar">動かすスクロールバー(<c>Slider</c> のときは null)。</param>
+        /// <param name="invert">上が 0 のスクロールバー用に値を裏返す。</param>
+        /// <param name="target">値を書き込んだあとに知らせる相手(保険)。</param>
+        public static UdonValueStrip ValueStrip(
+            Transform parent, string name, float x, float y, float width, float height,
+            int segments, Slider bar, Scrollbar scrollBar, bool invert,
+            UdonSharpBehaviour target, string eventName, string caption)
+        {
+            if (segments < 2) segments = 2;
+
+            RectTransform root = Place(parent, name, x, y, width, height);
+
+            bool needsCompile;
+            var strip = UdonSharpSceneUtility.AddUdonSharpComponent(
+                root.gameObject, typeof(UdonValueStrip), out needsCompile) as UdonValueStrip;
+
+            if (needsCompile) InteractNeedsCompile = true;
+
+            if (strip == null)
+            {
+                InteractFailures++;
+                Debug.LogWarning(
+                    "[UdonWorldUiKit] " + name + " に UdonValueStrip を付けられませんでした。"
+                    + "このバーは「使う」では動かせません。", root.gameObject);
+                return null;
+            }
+
+            strip.Bar = bar;
+            strip.ScrollBar = scrollBar;
+            strip.SegmentCount = segments;
+            strip.Invert = invert;
+            strip.Target = target;
+            strip.EventName = eventName == null ? "" : eventName;
+
+            bool vertical = height > width;
+            float cellW = vertical ? width : width / segments;
+            float cellH = vertical ? height / segments : height;
+
+            for (int i = 0; i < segments; i++)
+            {
+                float cellX = vertical ? 0f : cellW * i;
+                float cellY = vertical ? cellH * i : 0f;
+
+                RectTransform cell = Place(
+                    root, "Cell" + i, cellX, cellY, cellW, cellH);
+
+                var box = cell.gameObject.AddComponent<BoxCollider>();
+                box.size = new Vector3(cellW, cellH, 4f);
+                box.center = new Vector3(cellW * 0.5f, -cellH * 0.5f, 0f);
+                box.isTrigger = true;
+
+                bool cellNeedsCompile;
+                var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
+                    cell.gameObject, typeof(UdonMediaControlButton), out cellNeedsCompile)
+                    as UdonMediaControlButton;
+
+                if (cellNeedsCompile) InteractNeedsCompile = true;
+
+                if (relay == null)
+                {
+                    InteractFailures++;
+                    continue;
+                }
+
+                relay.Target = strip;
+                relay.EventName = "Pick";
+                relay.IndexVariable = "PickedIndex";
+                relay.Index = i;
+                relay.Label = null;
+                relay.LabelText = "";
+
+                ApplyInteractSettings(relay, caption);
+                InteractCount++;
+            }
+
+            return strip;
+        }
+
+        /// <summary>
+        /// <b>「使う」で押せる文字キーを 1 つ作る。</b>Phase7-6。
+        /// 押すと <paramref name="strip"/>(キーボード)へ何番目のキーかを伝えます。
+        /// </summary>
+        public static Button KeyboardKey(
+            Transform parent, string name, float x, float y, float width, float height,
+            string caption, int fontSize, Color face, int radius,
+            UdonSharpBehaviour target, string eventName, string indexVariable, int index)
+        {
+            Text label;
+            Button button = RoundedButton(
+                parent, name, x, y, width, height, caption, fontSize, face, radius, out label);
+
+            // uGUI 側(将来ポインターが通るようになったとき用)。
+            Bind(button, target, eventName);
+
+            GameObject host = button.gameObject;
+            var rect = host.GetComponent<RectTransform>();
+            if (rect == null) return button;
+
+            Vector2 size = rect.sizeDelta;
+            var box = host.AddComponent<BoxCollider>();
+            box.size = new Vector3(size.x, size.y, 4f);
+            box.center = new Vector3(size.x * 0.5f, -size.y * 0.5f, 0f);
+            box.isTrigger = true;
+
+            bool needsCompile;
+            var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
+                host, typeof(UdonMediaControlButton), out needsCompile) as UdonMediaControlButton;
+
+            if (needsCompile) InteractNeedsCompile = true;
+
+            if (relay == null)
+            {
+                InteractFailures++;
+                return button;
+            }
+
+            relay.Target = target;
+            relay.EventName = eventName;
+            relay.IndexVariable = indexVariable == null ? "" : indexVariable;
+            relay.Index = index;
+            relay.Label = null;
+            relay.LabelText = "";
+
+            ApplyInteractSettings(relay, caption);
+            InteractCount++;
+            return button;
+        }
 
         // ───────── proxy を UdonBehaviour へ書き戻す ─────────
 

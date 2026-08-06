@@ -66,6 +66,20 @@ namespace SmartMediaPlatform.World.EditorTools
         private const float LeftWidth = 568f;
         private const float RightWidth = 736f;
 
+        // ───────── 「使う」で動かすバーの細かさ(Phase7-6)─────────
+        //
+        // 区画を増やすほど細かく狙えますが、1 区画が狭くなって当てにくくなります。
+        // レーザーで無理なく当てられる幅(3 cm 前後)から逆算した数です。
+
+        /// <summary>再生位置バーの区画数。5 分の曲で 20 秒きざみ。</summary>
+        private const int SeekSegments = 16;
+
+        /// <summary>音量バーの区画数。0 / 8 / 17 …… / 100 %。</summary>
+        private const int VolumeSegments = 13;
+
+        /// <summary>一覧スクロールの区画数。</summary>
+        private const int ScrollSegments = 12;
+
         // ───────── 壁パネル ─────────
 
         /// <summary>
@@ -295,6 +309,13 @@ namespace SmartMediaPlatform.World.EditorTools
 
             UdonWorldUiKit.WireSlider(seek, view, "OnSeekChanged", "再生位置を動かす");
 
+            // ── 「使う」でも動かせるようにする(Phase7-6)。
+            //    実機では uGUI のポインターが届いていないので、
+            //    バーの上に細長い当たり判定を並べて、指した所へ飛ばします。
+            UdonWorldUiKit.ValueStrip(
+                section, "SeekStrip", 0f, barTop, width, seekTouch,
+                SeekSegments, seek, null, false, view, "OnSeekChanged", "この位置へ飛ぶ");
+
             // ── 時間(左に経過 / 右に残り)
             //    真ん中に状態を置くと 3 つが競合するので、
             //    状態は「読み込み中」など、伝えることがあるときだけ出す。
@@ -449,6 +470,12 @@ namespace SmartMediaPlatform.World.EditorTools
 
             view.VolumeSlider = volume;
             UdonWorldUiKit.WireSlider(volume, view, "OnVolumeSliderChanged", "音量");
+
+            // 「使う」でも動かせるようにする(Phase7-6)。
+            UdonWorldUiKit.ValueStrip(
+                section, "VolumeStrip", barX, 0f, barWidth, height,
+                VolumeSegments, volume, null, false,
+                view, "OnVolumeSliderChanged", "この音量にする");
 
             Text volumeLabel = UdonWorldUiKit.Label(
                 section, "VolumeText", barX, height, barWidth, 24f,
@@ -905,6 +932,13 @@ namespace SmartMediaPlatform.World.EditorTools
 
             UdonWorldUiKit.Bind(scroll, scroller, "OnScrolled");
             UdonWorldUiKit.Bind(bar, scroller, "OnScrolled");
+
+            // ── 「使う」でもスクロールできるようにする(Phase7-6)。
+            //    つまみを掴めない代わりに、行きたい高さを指して使います。
+            //    Scrollbar は下が 0・上が 1 なので、上から数えた区画とは逆向きです。
+            UdonWorldUiKit.ValueStrip(
+                page, "ScrollStrip", width - BarWidth, listTop, BarWidth, listHeight,
+                ScrollSegments, null, bar, true, scroller, "OnScrolled", "ここまで送る");
         }
 
         /// <summary>
@@ -919,6 +953,7 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             const float Height = 64f;
             const float ClearWidth = 56f;
+            const float TypeWidth = 108f;
 
             RectTransform bar = UdonWorldUiKit.Place(page, "Search", 0f, 0f, width, Height);
 
@@ -948,7 +983,8 @@ namespace SmartMediaPlatform.World.EditorTools
                 .raycastTarget = false;
 
             float fieldX = UdonMediaTheme.Space2 + 36f + UdonMediaTheme.Space1;
-            float fieldWidth = width - fieldX - ClearWidth - UdonMediaTheme.Space1;
+            float fieldWidth = width - fieldX - ClearWidth - TypeWidth
+                               - UdonMediaTheme.Space1 * 2f;
 
             RectTransform fieldRect = UdonWorldUiKit.Place(
                 bar, "Field", fieldX, 0f, fieldWidth, Height);
@@ -987,7 +1023,119 @@ namespace SmartMediaPlatform.World.EditorTools
             UdonWorldUiKit.Wire(clear, view, "ClearSearch", "検索をやめる");
 
             clear.gameObject.SetActive(false);
+
+            // ── ワールド内キーボード(Phase7-6)。
+            //    検索欄そのものは uGUI のポインターでしか開けないので、
+            //    「使う」で押せる文字キーを別に用意します。
+            Button typeButton = UdonWorldUiKit.RoundedButton(
+                bar, "SearchType", width - ClearWidth - TypeWidth - UdonMediaTheme.Space1 * 2f,
+                (Height - 44f) * 0.5f, TypeWidth, 44f, "打つ", UdonMediaTheme.TextCaption,
+                UdonMediaTheme.SurfaceRaised, 22, out unused);
+
+            BuildKeyboard(page, view, field, typeButton, width, Height + UdonMediaTheme.Space2);
+
             return Height;
+        }
+
+        /// <summary>キーの並び。1 文字 = 1 キー。10 個ずつ折り返します。</summary>
+        private const string KeyboardKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
+
+        /// <summary>1 行に並べるキーの数。</summary>
+        private const int KeyboardColumns = 10;
+
+        /// <summary>
+        /// <b>「使う」で打てるキーボード。</b>Phase7-6。
+        ///
+        /// <b>ふだんは隠してあります。</b>一覧の上に重なるので、
+        /// 出しっぱなしにすると曲が見えなくなるからです。
+        /// 「打つ」を押している間だけ出します。
+        /// </summary>
+        private static void BuildKeyboard(
+            RectTransform page, UdonMediaListView view, InputField field,
+            Button toggle, float width, float top)
+        {
+            const float Gap = 8f;
+            const float KeyHeight = 62f;
+            const float PreviewHeight = 46f;
+
+            float keyWidth = (width - Gap * (KeyboardColumns - 1)) / KeyboardColumns;
+            int rows = (KeyboardKeys.Length + KeyboardColumns - 1) / KeyboardColumns;
+            float sheetHeight = PreviewHeight + Gap + rows * (KeyHeight + Gap);
+
+            RectTransform sheet = UdonWorldUiKit.Place(
+                page, "Keyboard", 0f, top, width, sheetHeight);
+            sheet.SetAsLastSibling();
+
+            // ── ほんの少し手前に出す。
+            //    キーは一覧の行に重なります。当たり判定がぴったり同じ高さにあると、
+            //    「使う」がどちらを拾うか決まらず、<b>キーを押したのに曲が始まる</b>
+            //    ことがあります。1 枚ぶん手前に置いて、必ずキーが先に当たるようにします。
+            sheet.localPosition = new Vector3(
+                sheet.localPosition.x, sheet.localPosition.y, -3f);
+
+            // 一覧の上に重なるので、下地は塗りつぶす(透けると読めない)。
+            UdonWorldUiKit.RoundedPlate(
+                sheet, "Back", 0f, 0f, width, sheetHeight,
+                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusMedium).raycastTarget = false;
+
+            Text preview = UdonWorldUiKit.Label(
+                sheet, "Preview", UdonMediaTheme.Space2, 0f,
+                width - UdonMediaTheme.Space2 * 2f, PreviewHeight,
+                UdonMediaTheme.TextBody, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
+
+            var keyboard = Add<UdonSearchKeyboard>(sheet.gameObject);
+            if (keyboard == null) return;
+
+            keyboard.Field = field;
+            keyboard.Preview = preview;
+            keyboard.List = view;
+            keyboard.Sheet = sheet.gameObject;
+            keyboard.Keys = KeyboardKeys;
+
+            float rowTop = PreviewHeight + Gap;
+
+            for (int i = 0; i < KeyboardKeys.Length; i++)
+            {
+                int column = i % KeyboardColumns;
+                int row = i / KeyboardColumns;
+
+                string caption = KeyboardKeys.Substring(i, 1);
+                if (caption == " ") caption = "空白";
+
+                UdonWorldUiKit.KeyboardKey(
+                    sheet, "Key" + i,
+                    column * (keyWidth + Gap), rowTop + row * (KeyHeight + Gap),
+                    keyWidth, KeyHeight, caption, UdonMediaTheme.TextBody,
+                    UdonMediaTheme.Surface, UdonMediaTheme.RadiusSmall,
+                    keyboard, "PressKey", "PickedIndex", i);
+            }
+
+            // ── 最後の行の余りに、消す・閉じるを置く。
+            int used = KeyboardKeys.Length % KeyboardColumns;
+            if (used == 0) used = KeyboardColumns;
+
+            int lastRow = rows - 1;
+            float lastRowTop = rowTop + lastRow * (KeyHeight + Gap);
+
+            string[] captions = new string[] { "1字消", "全消し", "閉じる" };
+            string[] events = new string[] { "Backspace", "ClearAll", "Close" };
+
+            for (int i = 0; i < captions.Length; i++)
+            {
+                int column = used + i;
+                if (column >= KeyboardColumns) break;
+
+                UdonWorldUiKit.KeyboardKey(
+                    sheet, "Key" + events[i],
+                    column * (keyWidth + Gap), lastRowTop, keyWidth, KeyHeight,
+                    captions[i], UdonMediaTheme.TextCaption,
+                    UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusSmall,
+                    keyboard, events[i], "", 0);
+            }
+
+            UdonWorldUiKit.Wire(toggle, keyboard, "Toggle", "文字を打つ");
+
+            sheet.gameObject.SetActive(false);
         }
 
         /// <summary>

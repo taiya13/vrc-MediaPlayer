@@ -110,6 +110,7 @@ namespace UnityEngine
         public Quaternion localRotation { get; set; }
         public Transform parent { get; set; }
         public void SetAsFirstSibling() { }
+        public void SetAsLastSibling() { }
         public Transform root { get { return null; } }
         public int childCount { get { return 0; } }
         public Transform GetChild(int index) { return null; }

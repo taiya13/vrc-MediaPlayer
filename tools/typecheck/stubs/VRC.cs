@@ -249,6 +249,8 @@ namespace UdonSharp
         public void SendCustomEventDelayedSeconds(string eventName, float delaySeconds) { }
         public void SendCustomEventDelayedFrames(string eventName, int delayFrames) { }
         public void SendCustomNetworkEvent(VRC.Udon.Common.Interfaces.NetworkEventTarget target, string eventName) { }
+        public void SetProgramVariable(string name, object value) { }
+        public object GetProgramVariable(string name) { return null; }
         public void RequestSerialization() { }
         public void DisableInteractive() { }
     }

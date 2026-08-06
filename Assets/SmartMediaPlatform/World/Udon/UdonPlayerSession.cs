@@ -695,32 +695,79 @@ namespace SmartMediaPlatform.World.Udon
                 seedId, _queueCount + RecentSkipDepth + 8);
             if (count <= 0) return -1;
 
-            // ── 1 周目:さっき聴いたばかりのものを避けて選ぶ。
+            // ── 1 周目:さっき聴いたばかりのものを避けて、<b>ランダムに</b>選ぶ。
             //
-            //    <b>これが無いと短い輪を回ります。</b>
+            //    <b>先頭から順に選んではいけません。</b>
             //    「A に似ている B」は、たいてい「B に似ている A」でもあるので、
-            //    おすすめで流し続けると A → B → A → B と往復します。
-            //    直近に聴いたものを避けるだけで、この輪は切れます。
-            for (int i = 0; i < count; i++)
-            {
-                int candidate = Recommendation.GetResultIndex(i);
-                if (!IsUsableRecommendation(candidate)) continue;
-                if (WasPlayedRecently(candidate)) continue;
-                return candidate;
-            }
+            //    いつも 1 位を取ると A → B → A → B と往復します。
+            //    直近に聴いたものを避けたうえで、残りから等確率で引きます。
+            int pick = PickRandomUsable(count, true);
+            if (pick >= 0) return pick;
 
             // ── 2 周目:それでも見つからないなら、さっき聴いたものも許す。
             //
             //    曲が少ないカタログでは、避けているだけで候補が尽きます。
             //    <b>止まるより、少し前に聴いた曲でも流れ続けるほうがまし</b>です。
+            pick = PickRandomUsable(count, false);
+            if (pick >= 0) return pick;
+
+            // ── 3 周目:おすすめが 1 件も使えないときは、カタログから引く。
+            //
+            //    <b>ここが無いと、同じ曲を鳴らし直すか止まるかしかありません。</b>
+            //    「再生予定が空になったら、おすすめから次を流す」という約束は、
+            //    おすすめが尽きた日も守られていなければ意味がないので、
+            //    最後は<b>カタログの中の別の曲</b>まで下がって探します。
+            return PickAnyOtherFromCatalog();
+        }
+
+        /// <summary>
+        /// <b>使える候補から 1 つを等確率で引く。</b>Phase7-6。
+        ///
+        /// 使える候補が何個あるかは最後まで見ないと分からないので、
+        /// 配列に貯めずに<b>リザーバー抽出</b>で選びます
+        /// (<see cref="SmartMediaPlatform.Recommendation.UdonModel.RecommendationScoringModel.TakeAsRandomPick"/>
+        /// の写しです)。
+        /// </summary>
+        private int PickRandomUsable(int count, bool avoidRecent)
+        {
+            int seen = 0;
+            int chosen = -1;
+
             for (int i = 0; i < count; i++)
             {
                 int candidate = Recommendation.GetResultIndex(i);
                 if (!IsUsableRecommendation(candidate)) continue;
-                return candidate;
+                if (avoidRecent && WasPlayedRecently(candidate)) continue;
+
+                seen++;
+                if (seen <= 1 || Random.Range(0, seen) == 0) chosen = candidate;
             }
 
-            return -1;
+            return chosen;
+        }
+
+        /// <summary>
+        /// カタログの中から、いま鳴っているもの・再生予定のものを除いて 1 つ引く。
+        /// <b>おすすめが尽きたときの最後の砦</b>です。
+        /// </summary>
+        private int PickAnyOtherFromCatalog()
+        {
+            if (Store == null || Store.Catalog == null) return -1;
+
+            int total = Store.Catalog.Count;
+            int seen = 0;
+            int chosen = -1;
+
+            for (int i = 0; i < total; i++)
+            {
+                if (i == _currentIndex) continue;
+                if (IndexInQueue(i) >= 0) continue;
+
+                seen++;
+                if (seen <= 1 || Random.Range(0, seen) == 0) chosen = i;
+            }
+
+            return chosen;
         }
 
         /// <summary>おすすめとして使えるか(カタログにあり、いま鳴っておらず、予定にも無い)。</summary>

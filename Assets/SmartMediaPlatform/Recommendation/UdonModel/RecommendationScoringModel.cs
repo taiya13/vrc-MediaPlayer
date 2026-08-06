@@ -191,5 +191,28 @@ namespace SmartMediaPlatform.Recommendation.UdonModel
             for (int i = 0; i < actualTake; i++) resultIndices[i] = candidateIndices[i];
             return actualTake;
         }
+
+        // ───────── 自動再生でどれを選ぶか(Phase7-6)─────────
+
+        /// <summary>
+        /// <b>いま見ている候補を採用するか。</b>
+        ///
+        /// おすすめの並びのうち<b>使える候補だけを、等確率で 1 つ選ぶ</b>ための判定です。
+        /// 使える候補が何個あるかは<b>最後まで見ないと分かりません</b>。
+        /// かといって全部を配列に貯めると、Udon では毎回配列を作ることになります。
+        /// そこで「<paramref name="seen"/> 個目を確率 1/seen で採用する」を繰り返します。
+        /// これだけで、最後まで見終わったときにどの候補も等確率になります
+        /// (リザーバー抽出)。
+        ///
+        /// <paramref name="roll"/> は <c>0</c> 以上 <paramref name="seen"/> 未満の乱数です。
+        /// Udon 側は <c>UnityEngine.Random.Range(0, seen)</c>、
+        /// テストでは決めた値を渡します。
+        /// </summary>
+        /// <param name="seen">これが何個目の「使える候補」か(1 から数える)。</param>
+        public static bool TakeAsRandomPick(int seen, int roll)
+        {
+            if (seen <= 1) return true;
+            return roll == 0;
+        }
     }
 }
