@@ -89,6 +89,40 @@ namespace SmartMediaPlatform.World.Udon.UI
         }
 
         /// <summary>
+        /// <b>「使う」で動かされた。</b>Phase7-6。
+        ///
+        /// <see cref="OnScrolled"/> は <see cref="ScrollRect"/> の位置を読みますが、
+        /// <b>実機ではその ScrollRect まで操作が届いていません</b>。
+        /// こちらは <see cref="UdonValueStrip"/> から
+        /// <b>「上から何割の所」を直接受け取ります</b>。
+        /// 途中に uGUI を挟まないので、押せさえすれば必ず動きます。
+        /// </summary>
+        /// <param name="top01">0 = いちばん上、1 = いちばん下。</param>
+        public void ScrollToFraction(float top01)
+        {
+            if (List == null) return;
+
+            Rebuild();
+
+            int max = MaxOffset();
+            if (max <= 0) return;
+
+            int offset = Mathf.RoundToInt(Mathf.Clamp01(top01) * max);
+            if (offset == _appliedOffset) return;
+            _appliedOffset = offset;
+
+            List.ScrollTo(offset);
+
+            // つまみも合わせておく(見た目だけ。ここから操作は戻ってこない)。
+            if (Scroll != null)
+            {
+                _writing = true;
+                Scroll.verticalNormalizedPosition = 1f - (float)offset / max;
+                _writing = false;
+            }
+        }
+
+        /// <summary>
         /// <b>一覧の側が動いた(▲▼ ボタン・検索・再生中へ追従)。</b>
         /// つまみをそちらへ合わせます。<see cref="UdonMediaListView"/> から呼ばれます。
         /// </summary>

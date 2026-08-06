@@ -314,7 +314,7 @@ namespace SmartMediaPlatform.World.EditorTools
             //    バーの上に細長い当たり判定を並べて、指した所へ飛ばします。
             UdonWorldUiKit.ValueStrip(
                 section, "SeekStrip", 0f, barTop, width, seekTouch,
-                SeekSegments, seek, null, false, view, "OnSeekChanged", "この位置へ飛ぶ");
+                SeekSegments, seek, null, null, false, view, "OnSeekChanged", "");
 
             // ── 時間(左に経過 / 右に残り)
             //    真ん中に状態を置くと 3 つが競合するので、
@@ -474,8 +474,8 @@ namespace SmartMediaPlatform.World.EditorTools
             // 「使う」でも動かせるようにする(Phase7-6)。
             UdonWorldUiKit.ValueStrip(
                 section, "VolumeStrip", barX, 0f, barWidth, height,
-                VolumeSegments, volume, null, false,
-                view, "OnVolumeSliderChanged", "この音量にする");
+                VolumeSegments, volume, null, null, false,
+                view, "OnVolumeSliderChanged", "");
 
             Text volumeLabel = UdonWorldUiKit.Label(
                 section, "VolumeText", barX, height, barWidth, 24f,
@@ -938,7 +938,7 @@ namespace SmartMediaPlatform.World.EditorTools
             //    Scrollbar は下が 0・上が 1 なので、上から数えた区画とは逆向きです。
             UdonWorldUiKit.ValueStrip(
                 page, "ScrollStrip", width - BarWidth, listTop, BarWidth, listHeight,
-                ScrollSegments, null, bar, true, scroller, "OnScrolled", "ここまで送る");
+                ScrollSegments, null, null, scroller, false, null, "", "");
         }
 
         /// <summary>

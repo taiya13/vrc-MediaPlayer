@@ -657,8 +657,11 @@ namespace SmartMediaPlatform.World.EditorTools
 
             var serialized = new UnityEditor.SerializedObject(udon);
 
+            // caption が空文字なら<b>空のまま書き込みます</b>(Phase7-6)。
+            // 既定の "Use" を残さず、何も出さないためです。
+            // 触ってほしくないときは null を渡してください。
             var text = serialized.FindProperty("interactText");
-            if (text != null && !string.IsNullOrEmpty(caption)) text.stringValue = caption;
+            if (text != null && caption != null) text.stringValue = caption;
 
             var proximity = serialized.FindProperty("proximity");
             if (proximity != null) proximity.floatValue = InteractDistance;
@@ -688,12 +691,22 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <param name="target">値を書き込んだあとに知らせる相手(保険)。</param>
         public static UdonValueStrip ValueStrip(
             Transform parent, string name, float x, float y, float width, float height,
-            int segments, Slider bar, Scrollbar scrollBar, bool invert,
-            UdonSharpBehaviour target, string eventName, string caption)
+            int segments, Slider bar, Scrollbar scrollBar, UdonListScroller scroller,
+            bool invert, UdonSharpBehaviour target, string eventName, string caption)
         {
             if (segments < 2) segments = 2;
 
             RectTransform root = Place(parent, name, x, y, width, height);
+
+            // ── ほんの少し手前に出す(Phase7-6)。
+            //
+            //    一覧のスクロールは、行や「予定へ」と<b>同じ場所に重なります</b>。
+            //    当たり判定がぴったり同じ高さにあると、「使う」がどちらを拾うか
+            //    決まらず、<b>送ったつもりが曲が始まる</b>ことになります
+            //    (スクロールだけ動かなかったのは、たぶんこれです)。
+            //    1 枚ぶん手前に置いて、必ずこちらが先に当たるようにします。
+            root.localPosition = new Vector3(
+                root.localPosition.x, root.localPosition.y, -3f);
 
             bool needsCompile;
             var strip = UdonSharpSceneUtility.AddUdonSharpComponent(
@@ -712,6 +725,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
             strip.Bar = bar;
             strip.ScrollBar = scrollBar;
+            strip.Scroller = scroller;
             strip.SegmentCount = segments;
             strip.Invert = invert;
             strip.Target = target;

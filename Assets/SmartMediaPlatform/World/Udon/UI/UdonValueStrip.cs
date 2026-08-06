@@ -40,6 +40,10 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("一覧のスクロールバー")]
         public Scrollbar ScrollBar;
 
+        [Tooltip("一覧のスクロール担当。ここが入っていると、"
+                 + "uGUI を通さずに一覧へ直接「上から何割か」を渡す(Phase7-6)")]
+        public UdonListScroller Scroller;
+
         [Header("設定")]
         [Tooltip("いくつに区切るか。多いほど細かく狙えるが、1 区画が狭くなる")]
         public int SegmentCount = 16;
@@ -90,6 +94,18 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         private void Apply(float t)
         {
+            // ── 一覧は uGUI を通さない。
+            //
+            //    <b>Scrollbar に値を書いても、実機では一覧が動きませんでした。</b>
+            //    ScrollRect → Scrollbar → ScrollRect と uGUI の中を往復して
+            //    はじめて一覧に届く作りだったからです。
+            //    行き先を知っているなら、直接渡すほうが確実です。
+            if (Scroller != null)
+            {
+                Scroller.ScrollToFraction(t);
+                return;
+            }
+
             if (Bar != null)
             {
                 Bar.value = Bar.minValue + (Bar.maxValue - Bar.minValue) * t;
@@ -102,7 +118,8 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>Console 表示用の 1 行。</summary>
         public string Describe()
         {
-            string what = Bar != null ? "バー" : (ScrollBar != null ? "スクロール" : "行き先なし");
+            string what = Scroller != null ? "一覧"
+                : (Bar != null ? "バー" : (ScrollBar != null ? "スクロール" : "行き先なし"));
             return what + " を " + SegmentCount + " 区画で操作";
         }
     }

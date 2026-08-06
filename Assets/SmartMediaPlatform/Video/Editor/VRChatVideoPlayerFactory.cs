@@ -135,7 +135,11 @@ namespace SmartMediaPlatform.Video.EditorTools
             //    上位(UdonPlayerSession)は「終わった」と知らされないので次へ進めず、
             //    <b>「同じ動画がリピートし続ける」</b>という形になります。
             //    次に何を流すかを決めるのは再生予定であって、プレイヤーではありません。
-            bool loopOff = TrySetMember(result.Player, false, "Loop", "loop");
+            //    欄の名前は SDK の版で変わるので、思い当たるものを順に試します。
+            //    <b>それでも消せなかったときのために</b>、実行時にも
+            //    UdonVideoBackend が再生位置を見張って終わりを見つけます(Phase7-6)。
+            bool loopOff = TrySetMember(
+                result.Player, false, "Loop", "loop", "_loop", "m_Loop", "isLooping", "IsLooping");
 
             var loopTarget = result.Player.GetComponent<UnityEngine.Video.VideoPlayer>();
             if (loopTarget != null) loopTarget.isLooping = false;

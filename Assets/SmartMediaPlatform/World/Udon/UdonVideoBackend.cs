@@ -149,6 +149,10 @@ namespace SmartMediaPlatform.World.Udon
             _lastReportedErrorCode = -1;
             _lastLoadAt = Time.time;
 
+            // 新しい曲なので、終わりの見張りをやり直す。
+            _endReported = false;
+            _lastWatchedTime = 0f;
+
             Player.LoadURL(url);
             return true;
         }
@@ -243,6 +247,94 @@ namespace SmartMediaPlatform.World.Udon
             return Mathf.Clamp01(GetTime() / duration);
         }
 
+        // ───────── 終わりを自分で見つける(Phase7-6)─────────
+
+        [Header("終わりの見張り(Phase7-6)")]
+        [Tooltip("VRChat の「終わりました」(OnVideoEnd)が届かない・"
+                 + "プレイヤーが勝手に頭へ戻る環境があるので、再生位置を見て自分でも終わりを見つける。"
+                 + "0 にすると切れる")]
+        public float EndWatchInterval = 0.4f;
+
+        [Tooltip("残りがこの秒数を切ったら「終わった」とみなす")]
+        public float EndThresholdSeconds = 0.4f;
+
+        private float _nextEndCheck;
+        private float _lastWatchedTime;
+        private bool _endReported;
+
+        void Update()
+        {
+            if (EndWatchInterval <= 0f) return;
+            if (Time.time < _nextEndCheck) return;
+
+            _nextEndCheck = Time.time + EndWatchInterval;
+            WatchForEnd();
+        }
+
+        /// <summary>
+        /// <b>再生位置を見て、終わりを自分で見つける。</b>Phase7-6。
+        ///
+        /// <b>なぜ要るのか</b><br/>
+        /// 上位(<see cref="UdonPlayerSession"/>)が次へ進むきっかけは
+        /// <see cref="OnVideoEnd"/> ひとつだけでした。ところが
+        /// <list type="bullet">
+        /// <item>AVPro では「終わりました」が届かないことがある</item>
+        /// <item>プレイヤー側の繰り返しが切れていないと、届かないまま頭へ戻る</item>
+        /// </list>
+        /// のどちらでも、上位は<b>終わったことを永久に知りません</b>。
+        /// これが「曲が終わるとまた最初から始まる」の形です。
+        ///
+        /// <b>知らせが来なくても進めるようにします。</b>
+        /// <list type="number">
+        /// <item>終わり際まで来た</item>
+        /// <item>終わり際にいたのに頭へ戻った(= 勝手に繰り返した)</item>
+        /// </list>
+        /// のどちらかで、こちらから <see cref="UdonPlayerSession.NotifyEnded"/> を呼びます。
+        /// 二重に呼ばないよう、1 曲につき 1 回だけです。
+        /// </summary>
+        private void WatchForEnd()
+        {
+            if (Player == null || Session == null) return;
+            if (IsLoading || !_started) return;
+
+            float duration = GetDuration();
+
+            // 長さが分からない(生配信など)ときは、終わりも分からない。
+            if (duration <= 1f) return;
+
+            float time = GetTime();
+            float previous = _lastWatchedTime;
+            _lastWatchedTime = time;
+
+            if (_endReported) return;
+
+            // (1) 終わりまで来た。
+            if (time >= duration - EndThresholdSeconds)
+            {
+                ReportEnd("終わりまで来ました");
+                return;
+            }
+
+            // (2) 終わり際にいたのに頭へ戻った = プレイヤーが勝手に繰り返した。
+            //     人が手でバーを戻したときと区別するため、
+            //     <b>直前が終わり際だったときだけ</b>そう見なします。
+            if (previous > duration - 2f && time < previous - 2f)
+            {
+                ReportEnd("頭へ戻ったので一周したとみなします");
+            }
+        }
+
+        private void ReportEnd(string why)
+        {
+            _endReported = true;
+            _started = false;
+            _wantsPlay = false;
+
+            Debug.Log("[UdonVideoBackend] " + why + "(index " + LoadedIndex + ")", gameObject);
+
+            Session.NotifyEnded();
+        }
+
         // ───────── VRChat からの知らせ ─────────
         // 同じ GameObject の動画プレイヤーが直接ここへ送ってくる。
 
@@ -285,6 +377,11 @@ namespace SmartMediaPlatform.World.Udon
             }
 
             _started = false;
+
+            // 見張り(WatchForEnd)がすでに知らせていたら、二重に進めない。
+            if (_endReported) return;
+            _endReported = true;
+
             if (Session != null) Session.NotifyEnded();
         }
 
