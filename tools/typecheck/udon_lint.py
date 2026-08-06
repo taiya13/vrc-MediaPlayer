@@ -130,9 +130,16 @@ RULES = [
 SDK_OUT_ALLOWED = re.compile(r"TryGetValue\s*\(")
 
 GENERIC_METHOD = re.compile(r"\b(?:public|private|protected|internal)\s+[\w\[\]<>.]+\s+\w+\s*<\s*\w")
+# static フィールドは const だけが許される。
+#
+# Phase7-5 まで、この正規表現は (?!readonly\s+) で "static readonly" を
+# 見逃していました。UdonSharp は static readonly も扱えない
+# ("Static fields are not yet supported on user defined types")のに、
+# ここを素通りしたせいで実機で初めてコンパイルが止まりました。
+# 修飾子(public/private/…)も省略できるようにしてあります。
 STATIC_FIELD = re.compile(
-    r"^\s*(?:public|private|protected|internal)\s+static\s+(?!readonly\s+)(?!const\s+)"
-    r"[\w\[\]<>.]+\s+\w+\s*(=|;)")
+    r"^\s*(?:(?:public|private|protected|internal)\s+)?static\s+(?!const\s+)"
+    r"(?:readonly\s+)?[\w\[\]<>.]+\s+\w+\s*(=|;)")
 DEFAULT_ARG = re.compile(
     r"\b(?:public|private|protected|internal)\s+[\w\[\]<>.]+\s+\w+\s*\([^)]*\w\s*=\s*[^)=]")
 

@@ -156,7 +156,7 @@ namespace SmartMediaPlatform.World.Udon.UI
                     //    関連の無い曲では 0 件になり、「関連動画」の域を出ませんでした。
                     //
                     //    再生予定にある曲は、除外せず Engine 側で優先度だけ下げてもらいます。
-                    int[] queue = Session != null ? Session.SnapshotQueue() : EmptyIndices;
+                    int[] queue = Session != null ? Session.SnapshotQueue() : _emptyIndices;
 
                     // さっき聴いたものを外すぶん、多めに出させる。
                     found = Recommendation.GetRecommendations(
@@ -228,7 +228,9 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         private int _emptyReason = EmptyNone;
 
-        private static readonly int[] EmptyIndices = new int[0];
+        // UdonSharp は UdonSharpBehaviour の static フィールドを扱えないので、
+        // ふつうのインスタンス変数として持ちます(中身は空のまま変えません)。
+        private int[] _emptyIndices = new int[0];
 
         private string DescribeEmptyReason()
         {
