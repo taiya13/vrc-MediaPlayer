@@ -22,8 +22,16 @@ namespace SmartMediaPlatform.World.Udon.UI
     /// <b>なぜそれなのかが分からないので押されません</b>。
     /// 出すのは<b>いちばん強い理由 1 つだけ</b>です。
     ///
-    /// <b>作るカードの数は決め打ち</b>です(ふつう 4 枚)。
+    /// <b>作るカードの数は決め打ち</b>です(ふつう 6 枚)。
     /// 一覧と同じで、GameObject を増やさずに中身だけ差し替えます。
+    ///
+    /// <b>Phase7-4:「関連動画」から「おすすめ」へ。</b>
+    /// 以前はカタログ側で事前計算した「関連」だけを対象にしていたので、
+    /// 関連の無い曲では 0 件になり、機能自体が「関連動画」の域を出ませんでした。
+    /// いまは <see cref="UdonRecommendationEngine.GetRecommendations"/> を使い、
+    /// <b>カタログ全体から</b>同じアーティスト → 同じジャンル → タグ一致 → それ以外、
+    /// の階層順で選びます。<b>ロジックは一切ここに書きません</b>(このクラスは
+    /// 受け取った結果をカードへ表示するだけの窓口です)。
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonRecommendationCards : UdonSharpBehaviour
@@ -122,13 +130,37 @@ namespace SmartMediaPlatform.World.Udon.UI
         {
             int found = 0;
 
-            if (current >= 0 && Store != null && Recommendation != null)
+            // 0 件になったときに理由を出し分けるための状態(Phase7-4)。
+            _emptyReason = EmptyNone;
+
+            if (current < 0)
+            {
+                _emptyReason = EmptyNothingPlaying;
+            }
+            else if (Store == null || Store.Count <= 1)
+            {
+                // 種になる曲しか無い(または Store 自体が無い)なら、何を選んでも空になる。
+                _emptyReason = EmptyCatalogTooSmall;
+            }
+            else if (Recommendation == null)
+            {
+                _emptyReason = EmptyNoEngine;
+            }
+            else
             {
                 string seedId = Store.GetId(current);
                 if (seedId != null && seedId.Length > 0)
                 {
+                    // ── カタログ全体から、階層順(アーティスト→ジャンル→タグ→それ以外)に選ぶ(Phase7-4)。
+                    //    以前は Catalog Builder が事前計算した「関連」だけが対象だったので、
+                    //    関連の無い曲では 0 件になり、「関連動画」の域を出ませんでした。
+                    //
+                    //    再生予定にある曲は、除外せず Engine 側で優先度だけ下げてもらいます。
+                    int[] queue = Session != null ? Session.SnapshotQueue() : EmptyIndices;
+
                     // さっき聴いたものを外すぶん、多めに出させる。
-                    found = Recommendation.GetRelatedRecommendations(seedId, count + SkipDepth);
+                    found = Recommendation.GetRecommendations(
+                        seedId, count + SkipDepth, queue, queue.Length);
                 }
             }
 
@@ -175,14 +207,35 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             bool empty = filled == 0;
 
+            // 候補は見つかったのに、全部おすすめから外れた(理論上は SkipDepth が
+            // count を大きく超えるほど直近の履歴が偏っているときだけ起こる)。
+            if (empty && _emptyReason == EmptyNone && found > 0) _emptyReason = EmptyNoMatches;
+
             if (EmptyMessage != null) EmptyMessage.SetActive(empty);
-            if (EmptyText != null)
-            {
-                // 鳴っていないだけなのか、鳴っているが似た曲が無いのかは別のこと。
-                EmptyText.text = current < 0
-                    ? "曲を再生すると、似た曲がここに出ます"
-                    : "関連する曲はありません";
-            }
+            if (EmptyText != null && empty) EmptyText.text = DescribeEmptyReason();
+        }
+
+        // ───────── 0 件の理由(Phase7-4)─────────
+        //
+        // 「同じ『ありません』でも、次に何をすればよいかが違います」という
+        // このプロジェクトの一覧側の方針(UdonMediaListView.EmptyMessageFor)と揃えます。
+
+        private const int EmptyNone = 0;
+        private const int EmptyNothingPlaying = 1;
+        private const int EmptyCatalogTooSmall = 2;
+        private const int EmptyNoEngine = 3;
+        private const int EmptyNoMatches = 4;
+
+        private int _emptyReason = EmptyNone;
+
+        private static readonly int[] EmptyIndices = new int[0];
+
+        private string DescribeEmptyReason()
+        {
+            if (_emptyReason == EmptyNothingPlaying) return "曲を再生すると、おすすめがここに出ます";
+            if (_emptyReason == EmptyCatalogTooSmall) return "曲がもっと増えると、おすすめが出るようになります";
+            if (_emptyReason == EmptyNoEngine) return "おすすめの仕組みが見つかりませんでした";
+            return "いまはおすすめが見つかりませんでした";
         }
 
         /// <summary>

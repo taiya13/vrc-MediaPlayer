@@ -241,10 +241,32 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>検索欄が変わったとき。<c>InputField.onValueChanged</c> から呼ぶ。</summary>
         public void OnSearchChanged()
         {
+            if (ApplySearchFieldText()) Refresh();
+        }
+
+        /// <summary>
+        /// <see cref="Refresh"/> から毎回呼ぶポーリング版。
+        /// <b>変わっていれば取り込むだけで、ここから <see cref="Refresh"/> は呼びません</b>
+        /// (呼び出し元がすでに <see cref="Refresh"/> の中にいるため、
+        ///  ここで呼び返すと同じ 1 回の書き直しが二重に走ります)。
+        /// </summary>
+        private void PollSearchField()
+        {
+            ApplySearchFieldText();
+        }
+
+        /// <summary>
+        /// 検索欄の文字を読み、変わっていれば取り込む。
+        /// <see cref="OnSearchChanged"/>(イベント経路)と
+        /// <see cref="PollSearchField"/>(毎フレーム経路)の共通部分です。
+        /// </summary>
+        /// <returns>変わっていたら true。</returns>
+        private bool ApplySearchFieldText()
+        {
             string typed = SearchField != null ? SearchField.text : "";
             if (typed == null) typed = "";
 
-            if (typed == _query) return;
+            if (typed == _query) return false;
 
             _query = typed;
 
@@ -253,7 +275,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             Offset = 0;
             _builtFor = -1;
 
-            Refresh();
+            return true;
         }
 
         /// <summary>検索をやめる。「×」から呼ぶ。</summary>
@@ -466,6 +488,22 @@ namespace SmartMediaPlatform.World.Udon.UI
         public void Refresh()
         {
             EnsureInitialized();
+
+            // ── 検索欄を毎回ポーリングする(Phase7-4)。
+            //
+            //    <c>InputField.onValueChanged</c> だけに頼らないのは、
+            //    VRChat の実機キーボード(VR のレーザーで文字を打つ画面)から
+            //    入力したとき、<b>1 文字ごとにこのイベントが飛んでこない
+            //    ことがある</b>ためです。onValueChanged は uGUI が
+            //    「コードから text を書き換えた」経路をたどったときにしか
+            //    確実に発火せず、VRChat 側のキーボードの実装次第では
+            //    素通りします。「検索バーが反応しない」の主因はこれでした。
+            //
+            //    ここは 0.5 秒に 1 回(<see cref="UdonMediaPanel.RefreshInterval"/>)
+            //    しか回らないので、コストはほぼありません。
+            //    onValueChanged のほうも残してあるので、効く環境では
+            //    そのまま即座に反応します。
+            if (Source == SourceLibrary) PollSearchField();
 
             int rows = RowCount();
             if (rows == 0) return;

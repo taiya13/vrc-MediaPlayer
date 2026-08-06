@@ -1,4 +1,5 @@
 #if UNITY_EDITOR && VRC_SDK_VRCSDK3
+using System;
 using SmartMediaPlatform.Video.EditorTools;
 using SmartMediaPlatform.World.Udon;
 using UdonSharp;
@@ -760,9 +761,57 @@ namespace SmartMediaPlatform.World.EditorTools
             collider.size = new Vector3(width, height, 0.01f / metersPerPixel);
             collider.center = Vector3.zero;
 
+            // ── VRC_UiShape。<b>これが無いと、World Space Canvas は
+            //    VRChat のポインター(VR のレーザー・Desktop のマウス)で
+            //    操作できないことがあります</b>。
+            //
+            //    EventSystem + GraphicRaycaster は Unity 標準の仕組みで、
+            //    Editor や Desktop では動きます。ところが VRChat 実機では、
+            //    <b>「このワールドの Canvas は触ってよい」という印を
+            //    VRC_UiShape で明示しないと、ボタンだけは Interact(使う)で
+            //    動いていても、Slider や InputField のドラッグ操作は
+            //    ポインターがそもそも Canvas に届かず沈黙します</b>。
+            //    「使う」で押せるボタンだけ動き、つまみ・音量・検索欄が
+            //    まったく反応しない、という報告と符合します。
+            //
+            //    型は SDK の版で名前空間が変わることがあるので、
+            //    名前で探します。見つからなければ、Editor 確認用として
+            //    そのまま進めます(実機では要調査、とログに残す)。
+            Type shapeType = FindTypeByName("VRC_UiShape") ?? FindTypeByName("VRCUiShape");
+            if (shapeType != null)
+            {
+                go.AddComponent(shapeType);
+            }
+            else
+            {
+                Debug.LogWarning(
+                    "[UdonWorldUiKit] VRC_UiShape が見つかりませんでした。"
+                    + "実機で uGUI(つまみ・音量・検索欄)が反応しない場合は、"
+                    + "使っている VRChat SDK にこのコンポーネントがあるか確認してください。");
+            }
+
             // ここから作るボタンの「実寸」を測れるようにしておく
             CurrentMetersPerPixel = metersPerPixel;
             return rect;
+        }
+
+        /// <summary>名前だけで型を探す(SDK の名前空間が版で変わっても壊れないように)。</summary>
+        private static Type FindTypeByName(string simpleName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type[] types;
+                try { types = assembly.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; }
+
+                if (types == null) continue;
+
+                foreach (var type in types)
+                {
+                    if (type != null && type.Name == simpleName) return type;
+                }
+            }
+            return null;
         }
 
         /// <summary>
@@ -803,6 +852,33 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             var found = UnityEngine.Object.FindObjectsOfType<UnityEngine.EventSystems.EventSystem>();
             return found == null ? 0 : found.Length;
+        }
+
+        /// <summary>
+        /// すでに置いてある Canvas に VRC_UiShape を足す。
+        /// Phase7-2 以前に作った Prefab には無いので、置き直さずに直せるようにします。
+        /// </summary>
+        /// <returns>足した数。</returns>
+        public static int AddUiShapeToExistingCanvases(GameObject root)
+        {
+            if (root == null) return 0;
+
+            Type shapeType = FindTypeByName("VRC_UiShape") ?? FindTypeByName("VRCUiShape");
+            if (shapeType == null) return 0;
+
+            var canvases = root.GetComponentsInChildren<Canvas>(true);
+            int added = 0;
+
+            foreach (var canvas in canvases)
+            {
+                if (canvas == null || canvas.renderMode != RenderMode.WorldSpace) continue;
+                if (canvas.GetComponent(shapeType) != null) continue;
+
+                canvas.gameObject.AddComponent(shapeType);
+                added++;
+            }
+
+            return added;
         }
     }
 }

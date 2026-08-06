@@ -1,4 +1,5 @@
 #if UNITY_EDITOR && VRC_SDK_VRCSDK3
+using System;
 using System.Text;
 using UdonSharp;
 using UdonSharpEditor;
@@ -78,6 +79,80 @@ namespace SmartMediaPlatform.World.EditorTools
             return added;
         }
 
+        /// <summary>
+        /// <b>すでに置いてある Canvas に VRC_UiShape を足す。</b>Phase7-4。
+        ///
+        /// EventSystem と当たり判定を入れても、実機でつまみ・音量・検索欄が
+        /// 反応しない報告が続いたため、<b>原因候補として</b>追加しました。
+        /// VRC_UiShape はワールドの Canvas を VRChat のポインター(VR のレーザー・
+        /// Desktop のマウス)で操作してよいと明示するコンポーネントで、
+        /// これが無いと<b>ボタンは「使う」で動くのに、Slider や InputField の
+        /// ドラッグ操作だけが沈黙する</b>という、実際に報告された症状と一致します。
+        /// SDK に無ければ何もしません(型を名前で探すため、無くてもコンパイルは壊れません)。
+        /// </summary>
+        private static int AddUiShapes()
+        {
+            var panels = FindPanels();
+            int added = 0;
+
+            for (int i = 0; i < panels.Length; i++)
+            {
+                if (panels[i] == null) continue;
+                added += UdonWorldUiKit.AddUiShapeToExistingCanvases(panels[i].gameObject);
+            }
+
+            return added;
+        }
+
+        private static Type FindUiShapeType()
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type[] types;
+                try { types = assembly.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException e) { types = e.Types; }
+                if (types == null) continue;
+
+                foreach (var type in types)
+                {
+                    if (type == null) continue;
+                    if (type.Name == "VRC_UiShape" || type.Name == "VRCUiShape") return type;
+                }
+            }
+            return null;
+        }
+
+        private static int CountWorldSpaceCanvases(UdonMediaPanel[] panels)
+        {
+            int count = 0;
+            for (int i = 0; i < panels.Length; i++)
+            {
+                if (panels[i] == null) continue;
+                var canvases = panels[i].GetComponentsInChildren<Canvas>(true);
+                foreach (var c in canvases)
+                {
+                    if (c != null && c.renderMode == RenderMode.WorldSpace) count++;
+                }
+            }
+            return count;
+        }
+
+        private static int CountCanvasesWithUiShape(UdonMediaPanel[] panels, Type shapeType)
+        {
+            int count = 0;
+            for (int i = 0; i < panels.Length; i++)
+            {
+                if (panels[i] == null) continue;
+                var canvases = panels[i].GetComponentsInChildren<Canvas>(true);
+                foreach (var c in canvases)
+                {
+                    if (c == null || c.renderMode != RenderMode.WorldSpace) continue;
+                    if (c.GetComponent(shapeType) != null) count++;
+                }
+            }
+            return count;
+        }
+
         // ───────── 診断 ─────────
 
         [MenuItem(DiagnoseMenu, false, -60)]
@@ -112,6 +187,31 @@ namespace SmartMediaPlatform.World.EditorTools
             else
             {
                 sb.AppendLine("  ✓ EventSystem: 1 個");
+            }
+
+            // ── VRC_UiShape。無いと実機でつまみ・音量・検索欄が反応しないことがある
+            //    (原因候補。EventSystem/当たり判定だけでは直らなかったための追加調査)。
+            Type shapeType = FindUiShapeType();
+            if (shapeType == null)
+            {
+                sb.AppendLine("  ？ VRC_UiShape が見つかりません(使っている SDK の版を確認してください)。");
+            }
+            else
+            {
+                int withShape = CountCanvasesWithUiShape(panels, shapeType);
+                int totalCanvases = CountWorldSpaceCanvases(panels);
+
+                if (totalCanvases > 0 && withShape < totalCanvases)
+                {
+                    sb.AppendLine("  ✗ VRC_UiShape が付いていない Canvas があります("
+                                  + withShape + " / " + totalCanvases + ")。");
+                    sb.AppendLine("    → つまみ・音量・検索欄が実機で反応しない原因候補です。");
+                    sb.AppendLine("    → 「操作 UI の配線を繋ぎ直す」を押すと足します。");
+                }
+                else if (totalCanvases > 0)
+                {
+                    sb.AppendLine("  ✓ VRC_UiShape: 全 Canvas に付いています");
+                }
             }
 
             if (panels.Length == 0)
@@ -329,6 +429,10 @@ namespace SmartMediaPlatform.World.EditorTools
             // すでに置いてあるパネルには当たり判定が無いことがある(Phase7-2 以前)。
             int colliders = AddCanvasColliders();
 
+            // VRC_UiShape が無いと、ボタンは「使う」で動いても
+            // つまみ・音量・検索欄が実機で沈黙することがある(Phase7-4)。
+            int uiShapes = AddUiShapes();
+
             UdonMediaPanel[] panels = FindPanels();
 
             if (panels.Length == 0)
@@ -362,6 +466,10 @@ namespace SmartMediaPlatform.World.EditorTools
                 + (colliders > 0
                     ? "Canvas に当たり判定を " + colliders + " 個 足しました"
                       + "(これが無いとレーザーが届きません)。\n"
+                    : "")
+                + (uiShapes > 0
+                    ? "Canvas に VRC_UiShape を " + uiShapes + " 個 足しました"
+                      + "(これが無いと実機でつまみ・音量・検索欄が反応しないことがあります)。\n"
                     : "")
                 + "ボタンを " + rewired + " 個 繋ぎ直しました。\n"
                 + "  uGUI(onClick)   : " + UdonWorldUiKit.BindCount + " 個\n"
