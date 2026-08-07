@@ -37,6 +37,105 @@ namespace SmartMediaPlatform.Video.EditorTools
     {
         private const string MenuRoot = "Tools/Smart Media Platform/UdonSharp/";
 
+        /// <summary>
+        /// このシステムが作る U# プログラムの置き場所。
+        /// <b>SmartMediaPlatform の外</b>です(更新でフォルダを入れ替えても消えないように)。
+        /// </summary>
+        public const string ProgramFolder = "Assets/SmartMediaPlatform_Data/UdonPrograms";
+
+        /// <summary>
+        /// <b>元の .cs が無くなったプログラムを、読み込み時に自分で片付ける。</b>Phase7-6。
+        ///
+        /// <b>なぜ要るのか</b><br/>
+        /// プログラム(<c>.asset</c>)は<b>更新で消えない場所</b>に置いてあります。
+        /// おかげでシステムを入れ替えてもシーンは壊れませんが、
+        /// <b>クラスを 1 つ削除したときだけ</b>は逆に働きます。
+        /// 中身の C# が消えたプログラムだけが取り残され、
+        /// <c>Source C# script on ○○ is null</c> で<b>ビルドが丸ごと止まります</b>。
+        /// 実際 <c>UdonSearchKeyboard</c> を廃止したときにこれが起きました。
+        ///
+        /// 元の .cs が無いプログラムは<b>二度とコンパイルできません</b>。
+        /// 直す方法が無い以上、置いておく理由もないので、読み込み時に消します。
+        /// </summary>
+        [InitializeOnLoadMethod]
+        private static void CleanupOnLoad()
+        {
+            // 起動直後は AssetDatabase がまだ整っていないので 1 回待つ。
+            EditorApplication.delayCall += () => CleanupOrphanPrograms(true);
+        }
+
+        /// <summary>
+        /// <see cref="ProgramFolder"/> にある、元の .cs が無いプログラムを消す。
+        /// <b>ここが見るのはこのシステムのフォルダだけ</b>です
+        /// (他所の U# プログラムには触りません)。
+        /// </summary>
+        /// <param name="quiet">1 件も無いときは何も言わない。</param>
+        /// <returns>消した数。</returns>
+        public static int CleanupOrphanPrograms(bool quiet)
+        {
+            if (!IsAvailable) return 0;
+            if (!AssetDatabase.IsValidFolder(ProgramFolder)) return 0;
+
+            var scriptMember = FindMonoScriptMember(ProgramAssetType);
+            if (scriptMember == null) return 0;
+
+            var log = new StringBuilder();
+            int removed = 0;
+
+            foreach (var guid in AssetDatabase.FindAssets(
+                         "t:" + ProgramAssetType.Name, new[] { ProgramFolder }))
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                var asset = AssetDatabase.LoadAssetAtPath<ScriptableObject>(path);
+                if (asset == null || !ProgramAssetType.IsInstanceOfType(asset)) continue;
+
+                var script = scriptMember.GetValue(asset) as MonoScript;
+                if (script != null && script.GetClass() != null) continue;
+
+                // 名前からクラスを引き当てられるなら、消さずに繋ぎ直す。
+                string typeName = Path.GetFileNameWithoutExtension(path);
+                var type = FindBehaviourTypeByName(typeName);
+                var found = type != null ? FindMonoScript(type) : null;
+
+                if (found != null)
+                {
+                    scriptMember.SetValue(asset, found);
+                    EditorUtility.SetDirty(asset);
+                    log.AppendLine("  繋ぎ直し: " + path);
+                    continue;
+                }
+
+                AssetDatabase.DeleteAsset(path);
+                removed++;
+                log.AppendLine("  削除    : " + path + "(元の .cs がありません)");
+            }
+
+            if (removed > 0)
+            {
+                AssetDatabase.SaveAssets();
+                AssetDatabase.Refresh();
+            }
+
+            if (log.Length > 0)
+            {
+                Debug.Log(
+                    "[UdonSharpProgramAssetFactory] 使えなくなった U# プログラムを片付けました。\n"
+                    + log);
+            }
+            else if (!quiet)
+            {
+                Debug.Log("[UdonSharpProgramAssetFactory] 片付けるプログラムはありませんでした。");
+            }
+
+            return removed;
+        }
+
+        [MenuItem(MenuRoot + "使えなくなったプログラムを片付ける")]
+        private static void CleanupOrphanProgramsMenu()
+        {
+            CleanupOrphanPrograms(false);
+        }
+
         /// <summary>生成・確認の結果。</summary>
         public struct Report
         {
@@ -288,7 +387,7 @@ namespace SmartMediaPlatform.Video.EditorTools
             //    更新してもシーンが壊れません。
             //    ※ 既にどこかにあるプログラムは FindProgramAsset が場所を問わず
             //      見つけて再利用するので、古い置き場のものもそのまま使えます。
-            const string programFolder = "Assets/SmartMediaPlatform_Data/UdonPrograms";
+            const string programFolder = ProgramFolder;
             string assetPath = programFolder + "/" + behaviourType.Name + ".asset";
 
             if (!AssetDatabase.IsValidFolder(programFolder))

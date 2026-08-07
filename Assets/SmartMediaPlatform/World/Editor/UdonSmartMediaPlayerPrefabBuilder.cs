@@ -127,6 +127,12 @@ namespace SmartMediaPlatform.World.EditorTools
             _bakedCount = 0;
             _syncFailures = 0;
 
+            // 0-a. 使えなくなった U# プログラムを先に片付ける(Phase7-6)。
+            //     クラスを 1 つ廃止すると、その .asset だけが
+            //     「更新で消えない場所」に取り残されます。中身の C# が無い
+            //     プログラムは二度とコンパイルできず、<b>ビルドを丸ごと止めます</b>。
+            UdonSharpProgramAssetFactory.CleanupOrphanPrograms(true);
+
             // 0. U# のプログラム(.asset)を全部先に用意する。
             //    コンパイル前にコンポーネントを置くと
             //    「the U# program asset on this component is null」の壊れた状態が
