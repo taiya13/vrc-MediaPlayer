@@ -146,6 +146,21 @@ DEFAULT_ARG = re.compile(
 
 DERIVES = re.compile(r"\bclass\s+\w+\s*:\s*[^{;]*\bUdonSharpBehaviour\b")
 
+# ───────── VRCUrlInputField(Phase7-10)─────────
+#
+# C# としては InputField そっくりの型ですが、<b>Udon から触れるのはごく一部</b>です。
+# text / SetUrl などを書くと mcs は通り、UdonSharp が
+# 「Method is not exposed to Udon」で落とします。実機のビルドで初めて分かるので、
+# ここで先に見つけます。
+URL_FIELD_DECL = re.compile(
+    r"\bVRCUrlInputField\s+(\w+)\s*[;=]")
+
+# ここに無いものを使うと実機で落ちる。増やすときは実機で確かめてから。
+URL_FIELD_ALLOWED = {
+    "GetUrl", "Select", "ActivateInputField", "DeactivateInputField",
+    "gameObject", "transform", "enabled", "interactable", "targetGraphic",
+}
+
 
 def is_udon_behaviour(path):
     """UdonSharpBehaviour を継承しているファイルか(コメントの言及は数えない)。"""
@@ -180,6 +195,21 @@ def check(path):
                              raw_lines[i - 1].strip()))
         if DEFAULT_ARG.search(line):
             problems.append((i, "引数の既定値は使えない", raw_lines[i - 1].strip()))
+
+    # VRCUrlInputField は Udon から触れる範囲が狭い
+    url_fields = set(URL_FIELD_DECL.findall(code))
+    for name in url_fields:
+        for m in re.finditer(r"\b" + re.escape(name) + r"\s*\.\s*(\w+)", code):
+            member = m.group(1)
+            if member in URL_FIELD_ALLOWED:
+                continue
+
+            line_no = code[:m.start()].count("\n") + 1
+            problems.append((
+                line_no,
+                "VRCUrlInputField." + member + " は Udon から触れない"
+                "(使えるのは " + " / ".join(sorted(URL_FIELD_ALLOWED)) + ")",
+                raw_lines[line_no - 1].strip()))
 
     problems.sort()
     return problems

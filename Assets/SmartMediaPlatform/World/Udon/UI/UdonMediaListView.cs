@@ -296,9 +296,12 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <returns>変わっていたら true。</returns>
         private bool ApplySearchFieldText()
         {
-            // VRCUrlInputField でも、打ち込まれた文字は text から読めます。
-            string typed = SearchField != null ? SearchField.text : "";
-            if (typed == null) typed = "";
+            string typed = ReadSearchField();
+
+            // 「×」で消したときの文字は、打ち直されるまで無かったことにする。
+            // (VRCUrlInputField の中身は Udon から書き換えられないので、
+            //  見た目を消す代わりに<b>こちらが読まない</b>ことで消します)
+            if (_clearedText != null && typed == _clearedText) typed = "";
 
             if (typed == _query) return false;
 
@@ -335,10 +338,39 @@ namespace SmartMediaPlatform.World.Udon.UI
             SearchField.ActivateInputField();
         }
 
+        // 「×」で消したときの文字。これと同じ間は「検索していない」とみなす。
+        private string _clearedText;
+
+        /// <summary>
+        /// <b>検索欄の文字を読む。</b>Phase7-10。
+        ///
+        /// <c>VRCUrlInputField</c> で Udon から触れるのは
+        /// <c>GetUrl()</c> <b>だけ</b>です。<c>text</c> は
+        /// 「Method is not exposed to Udon」で弾かれます。
+        /// 打ち込まれた文字は URL として包まれて返ってくるので、
+        /// そこから中身を取り出します。
+        /// </summary>
+        private string ReadSearchField()
+        {
+            if (SearchField == null) return "";
+
+            VRC.SDKBase.VRCUrl url = SearchField.GetUrl();
+            if (url == null) return "";
+
+            string text = url.Get();
+            return text == null ? "" : text;
+        }
+
         /// <summary>検索をやめる。「×」から呼ぶ。</summary>
         public void ClearSearch()
         {
-            if (SearchField != null) SearchField.text = "";
+            // ── <b>欄の中身は書き換えません</b>(Phase7-10)。
+            //
+            //    Udon から触れるのは <c>GetUrl()</c> だけで、
+            //    <c>text</c> も <c>SetUrl</c> も白名簿に無い版があります。
+            //    そこで「いま入っている文字は無かったことにする」と覚えておき、
+            //    <b>読む側で消します</b>。打ち直せばまた効きます。
+            _clearedText = ReadSearchField();
 
             _query = "";
             Offset = 0;
