@@ -405,9 +405,14 @@ namespace SmartMediaPlatform.World.EditorTools
                 section, "Next", side + Gap + main + Gap, 0f, side, height, "▶▶",
                 wide ? 30 : 26, UdonMediaTheme.SurfaceRaised, radius, out unused);
 
+            // ── 「…」だけは<b>角丸の長方形</b>にする(Phase7-10)。
+            //    他のボタンと同じ「高さの半分」を角丸にすると、
+            //    幅が高さより狭いので<b>卵型</b>になります。
+            //    幅の半分より小さい角丸にすれば、ちゃんと長方形に見えます。
             Button more = UdonWorldUiKit.RoundedButton(
                 section, "More", width - MoreWidth, 0f, MoreWidth, height, "…",
-                wide ? 28 : 24, UdonMediaTheme.Surface, radius, out unused);
+                wide ? 28 : 24, UdonMediaTheme.Surface,
+                UdonMediaTheme.RadiusLarge, out unused);
 
             view.PlayPauseLabel = playPauseLabel;
 
@@ -449,9 +454,12 @@ namespace SmartMediaPlatform.World.EditorTools
             RectTransform sheet = UdonWorldUiKit.Place(
                 section, "MoreSheet", 0f, height + UdonMediaTheme.Space1, width, sheetHeight);
 
-            // 一段手前に出す。下にある操作と当たり判定を取り合わないため。
+            // ── しっかり手前へ出す(Phase7-10)。
+            //    <b>1 枚ぶんでは足りませんでした。</b>後ろの一覧と重なって
+            //    文字が透けて見えるので、はっきり浮かせます
+            //    (30px ≒ 4 cm。近すぎず、板から浮きすぎない距離)。
             sheet.localPosition = new Vector3(
-                sheet.localPosition.x, sheet.localPosition.y, -4f);
+                sheet.localPosition.x, sheet.localPosition.y, -30f);
 
             UdonWorldUiKit.GlassCard(
                 sheet, "Back", 0f, 0f, width, sheetHeight,
@@ -662,6 +670,12 @@ namespace SmartMediaPlatform.World.EditorTools
             var tabs = Add<UdonMediaTabs>(section.gameObject);
             if (tabs == null) return null;
 
+            // ── 探す欄は<b>いちばん上</b>(Phase7-10)。
+            //    タブの中に隠していたので、「曲」を開くまで存在に気付けませんでした。
+            //    探すのは<b>タブを選ぶより前</b>の行動なので、その順に並べます。
+            const float SearchHeight = 64f;
+            float searchHeight = SearchHeight + UdonMediaTheme.Space2;
+
             float tabWidth = Mathf.Floor((width - TabGap * (TabCount - 1)) / TabCount);
 
             var lists = new UdonMediaListView[TabCount];
@@ -673,13 +687,16 @@ namespace SmartMediaPlatform.World.EditorTools
             // ── 並びは「アーティスト → 曲 → おすすめ → 再生予定」(Phase7-6)。
             //    <b>最初に開くのはアーティスト</b>です。曲を全部並べても
             //    どれを選べばよいか決められないので、まず誰を聴くかから入ります。
+            // ── 並びは「アーティスト → 曲 → おすすめ → お気に入り → 履歴 → 再生予定」。
+            //    <b>おすすめを 3 番目</b>へ持ってきたのは、
+            //    「曲を見る → そのまま次を選ぶ」が<b>隣どうし</b>になるからです。
             int[] sources =
             {
                 UdonMediaListView.SourceArtist,
                 UdonMediaListView.SourceLibrary,
+                UdonMediaListView.SourceRelated,
                 UdonMediaListView.SourceFavorite,
                 UdonMediaListView.SourceHistory,
-                UdonMediaListView.SourceRelated,
                 UdonMediaListView.SourceQueue,
             };
 
@@ -692,13 +709,14 @@ namespace SmartMediaPlatform.World.EditorTools
             for (int i = 0; i < TabCount; i++)
             {
                 float tabX = i * (tabWidth + TabGap);
+                float tabTop = searchHeight;
 
                 // ── タブは<b>面を持ちません</b>(Frost / Phase7-7)。
                 //    塗った箱を 4 つ並べると、そこがいちばん強い模様になり、
                 //    <b>中身より枠のほうが目に入ります</b>。
                 //    選ばれていることは、下を滑る 1 本の線だけで示します。
                 Button tab = UdonWorldUiKit.HitArea(
-                    section, "Tab" + i, tabX, 0f, tabWidth, TabHeight,
+                    section, "Tab" + i, tabX, tabTop, tabWidth, TabHeight,
                     new Color(1f, 1f, 1f, 0.001f));
 
                 // タブは 4 本並ぶので、いちばん小さい段(2 m の下限)を使う。
@@ -712,7 +730,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
                 UdonWorldUiKit.Wire(tab, tabs, events[i], "ここを見る");
 
-                float pageTop = TabHeight + UdonMediaTheme.Space3;
+                float pageTop = searchHeight + TabHeight + UdonMediaTheme.Space3;
                 RectTransform page = UdonWorldUiKit.Place(
                     section, "Page" + i, 0f, pageTop, width, height - pageTop);
 
@@ -736,7 +754,7 @@ namespace SmartMediaPlatform.World.EditorTools
             //    ぱっと点け消しすると「どこからどこへ移ったか」が残りません。
             //    線が滑れば、移動そのものが目に入ります。
             Image indicator = UdonWorldUiKit.RoundedPlate(
-                section, "Indicator", 0f, TabHeight - 5f, tabWidth * 0.5f, 5f,
+                section, "Indicator", 0f, searchHeight + TabHeight - 5f, tabWidth * 0.5f, 5f,
                 UdonMediaTheme.Accent, 3);
             indicator.raycastTarget = false;
 
@@ -750,7 +768,7 @@ namespace SmartMediaPlatform.World.EditorTools
             tabs.Labels = labels;
 
             // おすすめはカードなので一覧を持たない。名前だけ決め打ちで渡す。
-            tabs.FixedLabels = new[] { "", "", "", "", "おすすめ", "" };
+            tabs.FixedLabels = new[] { "", "", "おすすめ", "", "", "" };
 
             // ── アーティストを選んだら曲のタブへ移る(Phase7-6)。
             UdonMediaListView artistList = lists[0];
@@ -770,12 +788,18 @@ namespace SmartMediaPlatform.World.EditorTools
             tabs.Selected = 0;
 
             tabs.SelectedColor = UdonMediaTheme.TextPrimary;
-            tabs.NormalColor = UdonMediaTheme.TextSecondary;
-            tabs.SecondaryColor = new Color(0.678f, 0.686f, 0.714f, 1f);
 
-            // ふだん使うのは「曲」と「おすすめ」。ここだけ濃く出す。
-            // 並びは sources と同じ:アーティスト / 曲 / お気に入り / 履歴 / おすすめ / 再生予定
-            tabs.Primary = new[] { false, true, false, false, true, false };
+            // ── 選んでいないタブも<b>同じ濃さ</b>にする(Phase7-10)。
+            //    薄くして「主役」を作ったつもりが、<b>ただ読めないタブ</b>に
+            //    なっていました。押せるものは、押せると分かる濃さで出します。
+            //    主従は<b>並び順</b>(左が先)と下線で伝えます。
+            tabs.NormalColor = UdonMediaTheme.TextSecondary;
+            tabs.SecondaryColor = UdonMediaTheme.TextSecondary;
+            tabs.Primary = null;
+
+            // ── 探す欄をいちばん上に置き、曲の一覧へ繋ぐ。
+            //    <b>絞り込むのは「曲」だけ</b>なので、繋ぎ先はそこ 1 つです。
+            if (songList != null) BuildSearchBar(section, songList, width);
 
             panel.Tabs = tabs;
             panel.Lists = lists;
@@ -792,11 +816,12 @@ namespace SmartMediaPlatform.World.EditorTools
         private static void BuildRecommendationCards(
             RectTransform page, UdonMediaPanel panel, float width, float height)
         {
-            // ── 2 × 2 = 4 枚(Phase7-9)。
-            //    3 列だと 1 枚あたりが狭く、曲名が 2 行目で切れていました。
-            //    <b>枚数より、1 枚が読めること</b>を取ります。
-            //    選び直したい人はスクロールではなくタブで戻れます。
-            const int Columns = 2;
+            // ── 3 × 2 = 6 枚(Phase7-10)。
+            //    2 列は<b>大きすぎました</b>。カード 1 枚が主役級の面積を取ると、
+            //    「いま鳴っている絵」と competing して視線が割れます。
+            //    おすすめは<b>選択肢の一覧</b>なので、
+            //    <b>ひと目で全部入る小ささ</b>のほうが速く選べます。
+            const int Columns = 3;
             const int Rows = 2;
             const int Count = Columns * Rows;
 
@@ -811,9 +836,9 @@ namespace SmartMediaPlatform.World.EditorTools
             // 「作りかけ」に見えます。
             float artH = Mathf.Round(cardW * 9f / 16f);
 
-            // 曲名 62(2 行入る)+ アーティスト 26 + 理由 26。
-            float cardH = artH + UdonMediaTheme.Space1 + 62f + 26f
-                          + UdonMediaTheme.Space1 + 26f + UdonMediaTheme.Space2;
+            // 曲名 44(2 行入る)+ アーティスト 22 + 理由 22。
+            float cardH = artH + UdonMediaTheme.Space1 + 44f + 22f
+                          + UdonMediaTheme.Space1 + 22f + UdonMediaTheme.Space1;
 
             float available = Mathf.Floor((height - gap * (Rows - 1) - 60f) / Rows);
             if (cardH > available) cardH = available;
@@ -862,7 +887,7 @@ namespace SmartMediaPlatform.World.EditorTools
                     TextAnchor.MiddleCenter, UdonMediaTheme.TextMuted);
 
                 float textY = artH + UdonMediaTheme.Space1;
-                float textW = cardW - UdonMediaTheme.Space2 * 2f;
+                float textW = cardW - UdonMediaTheme.Space1 * 2f;
 
                 // ── カードの中は<b>3 段の強さ</b>で組みます(Phase7-9)。
                 //
@@ -874,18 +899,18 @@ namespace SmartMediaPlatform.World.EditorTools
                 //    曲名より先に理由を読ませていました。理由は「押す決め手」ではなく
                 //    「押したあとの納得」なので、いちばん弱くて構いません。
                 titles[i] = UdonWorldUiKit.FittedLabel(
-                    card.transform, "Title", UdonMediaTheme.Space2, textY, textW, 62f,
-                    UdonMediaTheme.TextTitle, 16, TextAnchor.UpperLeft,
+                    card.transform, "Title", UdonMediaTheme.Space1, textY, textW, 44f,
+                    UdonMediaTheme.TextBody, 13, TextAnchor.UpperLeft,
                     UdonMediaTheme.TextPrimary);
 
                 artists[i] = UdonWorldUiKit.FittedLabel(
-                    card.transform, "Artist", UdonMediaTheme.Space2, textY + 64f, textW, 26f,
-                    UdonMediaTheme.TextCaption, 13, TextAnchor.UpperLeft,
+                    card.transform, "Artist", UdonMediaTheme.Space1, textY + 46f, textW, 22f,
+                    UdonMediaTheme.TextCaption, 12, TextAnchor.UpperLeft,
                     UdonMediaTheme.TextSecondary);
 
                 reasons[i] = UdonWorldUiKit.Label(
-                    card.transform, "Reason", UdonMediaTheme.Space2,
-                    cardH - 30f - UdonMediaTheme.Space1, textW, 26f, 15,
+                    card.transform, "Reason", UdonMediaTheme.Space1,
+                    cardH - 24f - UdonMediaTheme.Space1, textW, 22f, 14,
                     TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
 
                 // ── 「＋」= 再生予定へ。一覧と同じ形・同じ位置に置く。
@@ -933,10 +958,15 @@ namespace SmartMediaPlatform.World.EditorTools
         private static UdonMediaListView BuildList(
             RectTransform page, int source, float pageWidth, float height)
         {
-            const float RowHeight = 112f;
-            const float RowGap = 10f;
+            // ── アーティストの一覧は<b>名前 1 行</b>しか出しません(Phase7-10)。
+            //    曲の行と同じ高さを取ると、64px の帯の上下に 24px ずつ
+            //    <b>意味のない空白</b>が残ります。行そのものを詰めます。
+            bool namesOnly = source == UdonMediaListView.SourceArtist;
+
+            float RowHeight = namesOnly ? 72f : 112f;
+            float RowGap = namesOnly ? 6f : 10f;
             const float FooterHeight = 60f;
-            const int RowCount = 5;
+            int RowCount = namesOnly ? 7 : 5;
 
             // つまみのぶんだけ内側へ寄せる。重ねると「＋」が押せなくなる。
             const float ScrollBarLane = 22f + UdonMediaTheme.Space1;
@@ -969,11 +999,10 @@ namespace SmartMediaPlatform.World.EditorTools
                 listTop = SortHeight + UdonMediaTheme.Space2;
             }
 
-            // ── 検索バー(「すべての曲」だけ)
+            // ── 検索バーは<b>ここには置きません</b>(Phase7-10)。
+            //    タブの上へ移して、どのタブを見ていても目に入る所に置きました。
             if (source == UdonMediaListView.SourceLibrary)
             {
-                listTop = BuildSearchBar(page, view, width) + UdonMediaTheme.Space2;
-
                 // ── いま見ているチャンネルを上に貼り付けておく。
                 //    見出しは一覧の中にあるので 1 行スクロールで消えてしまい、
                 //    「別のアーティストへ移りたいだけなのに、いちばん上まで戻る」
@@ -1228,7 +1257,14 @@ namespace SmartMediaPlatform.World.EditorTools
             Image fieldBack = fieldRect.gameObject.AddComponent<Image>();
             fieldBack.color = new Color(0f, 0f, 0f, 0.001f);
 
-            var field = fieldRect.gameObject.AddComponent<InputField>();
+            // ── <b>VRCUrlInputField を使います</b>(Phase7-10)。
+            //
+            //    ふつうの InputField は、VR では<b>キーボードが出ません</b>。
+            //    出るのは VRChat 側が用意している <c>VRCUrlInputField</c> の
+            //    入力ダイアログだけで、URL 欄で開いたのがそれです。
+            //    <b>打ち込まれた文字はそのまま読めます</b>(URL かどうかは
+            //    再生するときにしか問われません)。探す言葉の入れ物として使います。
+            var field = fieldRect.gameObject.AddComponent<VRCUrlInputField>();
 
             Text typed = UdonWorldUiKit.Label(
                 fieldRect, "Text", 0f, 0f, fieldWidth, Height, UdonMediaTheme.TextBody,
@@ -1451,8 +1487,11 @@ namespace SmartMediaPlatform.World.EditorTools
         private static void BuildHeaderBand(
             RectTransform rowRect, UdonMediaListRow row, Button hit, float width, float height)
         {
-            // 見出しは曲より低くする。曲と同じ高さだと、どちらが親か分からない。
-            const float BandHeight = 64f;
+            // ── 見出しの帯。
+            //    曲の行(112px)の中では低くして「親」に見せますが、
+            //    アーティストの一覧(72px)では<b>行いっぱい</b>まで使います。
+            //    そこには曲の行が無いので、低くする理由がありません。
+            float BandHeight = height > 90f ? 64f : height;
 
             float top = (height - BandHeight) * 0.5f;
 

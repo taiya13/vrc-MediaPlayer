@@ -166,7 +166,7 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         [Header("検索とまとめ(Phase7-2。すべての曲のときだけ効く)")]
         [Tooltip("検索欄。空でも動く。押すと VRChat のキーボードが出る")]
-        public InputField SearchField;
+        public VRC.SDK3.Components.VRCUrlInputField SearchField;
 
         [Tooltip("検索中だけ出す「×」。空でも動く")]
         public GameObject SearchClearButton;
@@ -296,6 +296,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <returns>変わっていたら true。</returns>
         private bool ApplySearchFieldText()
         {
+            // VRCUrlInputField でも、打ち込まれた文字は text から読めます。
             string typed = SearchField != null ? SearchField.text : "";
             if (typed == null) typed = "";
 
