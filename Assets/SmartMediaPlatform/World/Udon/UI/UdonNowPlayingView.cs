@@ -109,6 +109,8 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// </summary>
         void Update()
         {
+            TickArtworkPop();
+
             if (Session == null) return;
             if (Session.CurrentIndex < 0) return;
 
@@ -140,6 +142,58 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetSeekSlider(backend.GetProgress());
             SetText(TimeText, FormatSeconds(elapsed) + " / " + FormatLength(length, Session.CurrentIndex));
             SetText(RemainingText, FormatRemaining(elapsed, length));
+        }
+
+        // ───────── 絵が入れ替わったときに弾ませる(Frost / Phase7-7)─────────
+
+        [Header("絵の動き(Frost / Phase7-7)")]
+        [Tooltip("弾ませる絵。空なら何も動かない")]
+        public RectTransform ArtworkRect;
+
+        [Tooltip("元の大きさに戻るまでの時間(秒)")]
+        public float ArtworkPopSeconds = 0.30f;
+
+        [Tooltip("入れ替わった瞬間の大きさ。1.04 なら 4% だけ大きく始まる")]
+        public float ArtworkPopScale = 1.04f;
+
+        // いまの倍率。1 に向かって毎フレーム戻る。
+        private float _artworkScale = 1f;
+        private int _poppedFor = -2;
+
+        /// <summary>
+        /// <b>曲が変わったら、絵をほんの少しだけ弾ませる。</b>
+        ///
+        /// <b>なぜ動かすのか</b><br/>
+        /// ワールドでは<b>視線が板の外にあることがふつう</b>です。
+        /// 絵が音もなく差し替わっても、次に見たときには終わっていて、
+        /// 「いつ変わったのか」が分かりません。<b>動きだけが、見ていない間にも
+        /// 気付かせられる合図</b>です。
+        ///
+        /// 4% しか変えないのは、大きく動かすと<b>安っぽく</b>なるからです。
+        /// 気付くが、邪魔にはならない —— その境目がこのあたりです。
+        /// </summary>
+        private void TickArtworkPop()
+        {
+            if (ArtworkRect == null) return;
+
+            int current = Session != null ? Session.CurrentIndex : -1;
+
+            if (current != _poppedFor)
+            {
+                _poppedFor = current;
+                _artworkScale = ArtworkPopScale;
+            }
+
+            if (_artworkScale <= 1.0005f && _artworkScale >= 0.9995f) return;
+
+            // 1 へ向かって指数的に戻る。時間で割るので、
+            // フレームレートが変わっても掛かる時間は同じ。
+            float k = ArtworkPopSeconds <= 0f
+                ? 1f
+                : Mathf.Clamp01(Time.deltaTime / ArtworkPopSeconds);
+
+            _artworkScale = Mathf.Lerp(_artworkScale, 1f, k);
+            ArtworkRect.localScale = new Vector3(_artworkScale, _artworkScale, 1f);
         }
 
         // ───────── 動かせる再生バー(Phase7-3)─────────

@@ -112,9 +112,11 @@ namespace SmartMediaPlatform.World.EditorTools
             RectTransform canvas = UdonWorldUiKit.WorldCanvas(root, "Canvas", W, H, 0.0013f);
             RectTransform body = UdonWorldUiKit.Place(canvas, "Body", 0f, 0f, W, H);
 
-            UdonWorldUiKit.RoundedPlate(
+            // ── パネルそのものが 1 枚の硝子(Frost / Phase7-7)。
+            //    半透明なので<b>後ろのワールドが透けます</b>。
+            UdonWorldUiKit.GlassCard(
                 body, "Backplate", 0f, 0f, W, H,
-                UdonMediaTheme.Base, UdonMediaTheme.RadiusLarge).raycastTarget = false;
+                UdonMediaTheme.Base, UdonMediaTheme.RadiusXLarge).raycastTarget = false;
 
             var panel = Add<UdonMediaPanel>(root);
             if (panel == null) return null;
@@ -183,9 +185,11 @@ namespace SmartMediaPlatform.World.EditorTools
             RectTransform canvas = UdonWorldUiKit.WorldCanvas(root, "Canvas", W, H, 0.00095f);
             RectTransform body = UdonWorldUiKit.Place(canvas, "Body", 0f, 0f, W, H);
 
-            UdonWorldUiKit.RoundedPlate(
+            // ── パネルそのものが 1 枚の硝子(Frost / Phase7-7)。
+            //    半透明なので<b>後ろのワールドが透けます</b>。
+            UdonWorldUiKit.GlassCard(
                 body, "Backplate", 0f, 0f, W, H,
-                UdonMediaTheme.Base, UdonMediaTheme.RadiusLarge).raycastTarget = false;
+                UdonMediaTheme.Base, UdonMediaTheme.RadiusXLarge).raycastTarget = false;
 
             var panel = Add<UdonMediaPanel>(root);
             if (panel == null) return null;
@@ -260,12 +264,23 @@ namespace SmartMediaPlatform.World.EditorTools
             var view = Add<UdonNowPlayingView>(section.gameObject);
             if (view == null) return null;
 
-            // ── 絵
+            // ── 絵。<b>この区画でいちばん面積を取るもの</b>。
+            //    影を敷いて、硝子の上に絵が 1 枚置かれているように見せます。
+            UdonWorldUiKit.RoundedPlate(
+                section, "ArtworkShadow", 0f, UdonWorldUiKit.GlassShadowDrop * 1.5f,
+                artWidth, artHeight, UdonMediaTheme.Shadow,
+                UdonMediaTheme.RadiusLarge).raycastTarget = false;
+
             Image artwork = UdonWorldUiKit.RoundedPlate(
                 section, "Artwork", 0f, 0f, artWidth, artHeight,
-                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusLarge);
+                UdonMediaTheme.SurfaceHover, UdonMediaTheme.RadiusLarge);
             artwork.raycastTarget = false;
             artwork.preserveAspect = true;
+
+            // 曲が変わったときに、ここを少しだけ弾ませる(Frost / Phase7-7)。
+            view.ArtworkRect = artwork.GetComponent<RectTransform>();
+            view.ArtworkPopSeconds = UdonMediaTheme.MotionSlow;
+            view.ArtworkPopScale = UdonMediaTheme.SelectScale;
 
             Text artworkFallback = UdonWorldUiKit.Label(
                 artwork.transform, "Fallback", 0f, 0f, artWidth, artHeight,
@@ -507,6 +522,7 @@ namespace SmartMediaPlatform.World.EditorTools
             var lists = new UdonMediaListView[TabCount];
             var pages = new GameObject[TabCount];
             var marks = new GameObject[TabCount];
+            var tabRects = new RectTransform[TabCount];
             var labels = new Text[TabCount];
 
             // ── 並びは「アーティスト → 曲 → おすすめ → 再生予定」(Phase7-6)。
@@ -526,19 +542,21 @@ namespace SmartMediaPlatform.World.EditorTools
             {
                 float tabX = i * (tabWidth + TabGap);
 
-                Text label;
-                Button tab = UdonWorldUiKit.RoundedButton(
-                    section, "Tab" + i, tabX, 0f, tabWidth, TabHeight, "",
-                    UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
-                    UdonMediaTheme.RadiusMedium, out label);
+                // ── タブは<b>面を持ちません</b>(Frost / Phase7-7)。
+                //    塗った箱を 4 つ並べると、そこがいちばん強い模様になり、
+                //    <b>中身より枠のほうが目に入ります</b>。
+                //    選ばれていることは、下を滑る 1 本の線だけで示します。
+                Button tab = UdonWorldUiKit.HitArea(
+                    section, "Tab" + i, tabX, 0f, tabWidth, TabHeight,
+                    new Color(1f, 1f, 1f, 0.001f));
 
-                // 選ばれている側は下線で示す。面の色だけだと 2 m 先で差が消える。
-                Image mark = UdonWorldUiKit.RoundedPlate(
-                    tab.transform, "Selected", tabWidth * 0.25f, TabHeight - 5f,
-                    tabWidth * 0.5f, 4f, UdonMediaTheme.Accent, 2);
-                mark.raycastTarget = false;
+                // タブは 4 本並ぶので、いちばん小さい段(2 m の下限)を使う。
+                Text label = UdonWorldUiKit.Label(
+                    tab.transform, "Label", 0f, 0f, tabWidth, TabHeight,
+                    UdonMediaTheme.TextCaption, TextAnchor.MiddleCenter,
+                    UdonMediaTheme.TextMuted);
 
-                marks[i] = mark.gameObject;
+                tabRects[i] = tab.GetComponent<RectTransform>();
                 labels[i] = label;
 
                 UdonWorldUiKit.Wire(tab, tabs, events[i], "ここを見る");
@@ -562,6 +580,18 @@ namespace SmartMediaPlatform.World.EditorTools
 
                 if (NeedsCompile) return tabs;
             }
+
+            // ── 選ばれているタブの下を滑る 1 本の線。
+            //    ぱっと点け消しすると「どこからどこへ移ったか」が残りません。
+            //    線が滑れば、移動そのものが目に入ります。
+            Image indicator = UdonWorldUiKit.RoundedPlate(
+                section, "Indicator", 0f, TabHeight - 5f, tabWidth * 0.5f, 5f,
+                UdonMediaTheme.Accent, 3);
+            indicator.raycastTarget = false;
+
+            tabs.Indicator = indicator.GetComponent<RectTransform>();
+            tabs.TabRects = tabRects;
+            tabs.SlideSeconds = UdonMediaTheme.MotionBase;
 
             tabs.Lists = lists;
             tabs.Pages = pages;
@@ -646,16 +676,23 @@ namespace SmartMediaPlatform.World.EditorTools
 
                 // カード全体が 1 つの大きなボタン。
                 // 「どこを押せばよいか」を考えさせないための形です。
+                UdonWorldUiKit.RoundedPlate(
+                    page, "CardShadow" + i, cx, cy + UdonWorldUiKit.GlassShadowDrop,
+                    cardW, cardH, UdonMediaTheme.Shadow,
+                    UdonMediaTheme.RadiusLarge).raycastTarget = false;
+
                 Button card = UdonWorldUiKit.HitArea(
-                    page, "Card" + i, cx, cy, cardW, cardH, UdonMediaTheme.SurfaceRaised);
+                    page, "Card" + i, cx, cy, cardW, cardH, UdonMediaTheme.Surface);
                 UdonWorldUiKit.ApplyRadius(
                     card.targetGraphic as Image, UdonMediaTheme.RadiusLarge);
+                UdonWorldUiKit.AddGlassEdge(
+                    card.targetGraphic as Image, cardW, UdonMediaTheme.RadiusLarge);
 
                 cards[i] = card.gameObject;
 
                 Image art = UdonWorldUiKit.RoundedPlate(
                     card.transform, "Artwork", 0f, 0f, cardW, artH,
-                    UdonMediaTheme.Surface, UdonMediaTheme.RadiusLarge);
+                    UdonMediaTheme.SurfaceHover, UdonMediaTheme.RadiusLarge);
                 art.raycastTarget = false;
                 art.preserveAspect = true;
                 artworks[i] = art;
@@ -764,9 +801,9 @@ namespace SmartMediaPlatform.World.EditorTools
                 //    ことになっていました。
                 const float StickyHeight = 44f;
 
-                Image sticky = UdonWorldUiKit.RoundedPlate(
+                Image sticky = UdonWorldUiKit.GlassPlate(
                     page, "StickyChannel", 0f, listTop, width, StickyHeight,
-                    UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusSmall);
+                    UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusMedium);
                 sticky.raycastTarget = false;
 
                 Text stickyText = UdonWorldUiKit.Label(
@@ -978,9 +1015,9 @@ namespace SmartMediaPlatform.World.EditorTools
             RectTransform bar = UdonWorldUiKit.Place(page, "Search", 0f, 0f, width, Height);
 
             // 入力欄は「へこんで見える」ほうが、打つ場所だと分かりやすい。
-            Image back = UdonWorldUiKit.RoundedPlate(
+            Image back = UdonWorldUiKit.GlassPlate(
                 bar, "Back", 0f, 0f, width, Height,
-                UdonMediaTheme.Surface, Mathf.RoundToInt(Height * 0.5f));
+                UdonMediaTheme.SurfaceRaised, Mathf.RoundToInt(Height * 0.5f));
             back.raycastTarget = false;
 
             // ── 虫めがねの絵文字は使いません。
@@ -1071,7 +1108,9 @@ namespace SmartMediaPlatform.World.EditorTools
 
             // 絵を大きくする。一覧で最初に目に入るのは文字ではなく絵なので、
             // ここが小さいと「どれがどれか」を文字で読ませることになります。
-            float artHeight = height - UdonMediaTheme.Space2;
+            // サムネイルは<b>行の高さいっぱい</b>まで使う。
+            // Frost では絵が主役なので、余白を削ってでも絵を大きく取ります。
+            float artHeight = height - UdonMediaTheme.Space1 * 1.5f;
             float artWidth = Mathf.Round(artHeight * 16f / 9f);
 
             bool queue = source == UdonMediaListView.SourceQueue;
@@ -1093,23 +1132,25 @@ namespace SmartMediaPlatform.World.EditorTools
             float hitX = BarWidth + UdonMediaTheme.Space1;
             float hitWidth = width - hitX - SecondaryWidth - UdonMediaTheme.Space1;
 
-            // ── 影。<b>明るい配色では、濃さの違いで段差を作れません</b>
-            //    (白の上の白は見えない)。1 枚だけ下にずらして敷きます。
+            // ── 1 行 = 1 枚の硝子カード(Frost / Phase7-7)。
+            //    影(下)と縁の光(上)を対で置いて、はじめて浮いて見えます。
             UdonWorldUiKit.RoundedPlate(
-                content, "Shadow", hitX, 3f, hitWidth, height,
+                content, "Shadow", hitX, UdonWorldUiKit.GlassShadowDrop, hitWidth, height,
                 UdonMediaTheme.Shadow, UdonMediaTheme.RadiusMedium).raycastTarget = false;
 
-            // 面は白。ここを透明にすると、
+            // 面は半透明の白。ここを完全に透明にすると、
             // 触れたときの明るさ変化(uGUI の ColorTint)が効かなくなります。
             Button hit = UdonWorldUiKit.HitArea(
-                content, "Hit", hitX, 0f, hitWidth, height, UdonMediaTheme.SurfaceRaised);
+                content, "Hit", hitX, 0f, hitWidth, height, UdonMediaTheme.Surface);
             UdonWorldUiKit.ApplyRadius(hit.targetGraphic as Image, UdonMediaTheme.RadiusMedium);
+            UdonWorldUiKit.AddGlassEdge(
+                hit.targetGraphic as Image, hitWidth, UdonMediaTheme.RadiusMedium);
 
             // ── 絵
             float artY = (height - artHeight) * 0.5f;
             Image artwork = UdonWorldUiKit.RoundedPlate(
                 hit.transform, "Artwork", UdonMediaTheme.Space1, artY, artWidth, artHeight,
-                UdonMediaTheme.Surface, UdonMediaTheme.RadiusSmall);
+                UdonMediaTheme.SurfaceHover, UdonMediaTheme.RadiusMedium);
             artwork.raycastTarget = false;
             artwork.preserveAspect = true;
 

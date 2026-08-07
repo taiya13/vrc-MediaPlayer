@@ -174,6 +174,62 @@ namespace SmartMediaPlatform.World.EditorTools
             return image;
         }
 
+        /// <summary>
+        /// <b>凍った硝子のカード。</b>Frost の基本部品(Phase7-7)。
+        ///
+        /// 3 枚を重ねて 1 枚の硝子に見せます。
+        /// <list type="number">
+        /// <item><b>影</b> …… 少し下にずらして敷く。「浮いている」の下半分</item>
+        /// <item><b>面</b> …… 半透明の白。<b>後ろのワールドが透ける</b></item>
+        /// <item><b>縁の光</b> …… 上端に 2 px の白い線。「浮いている」の上半分</item>
+        /// </list>
+        ///
+        /// <b>影と縁の光は必ず対で置きます。</b>片方だけだと、
+        /// 硝子ではなく<b>「ただの薄い色の板」</b>にしか見えません。
+        /// </summary>
+        /// <returns>面(中身はこの子として置く)。</returns>
+        public static Image GlassCard(
+            Transform parent, string name, float x, float y, float width, float height,
+            Color face, int radius)
+        {
+            RoundedPlate(
+                parent, name + "Shadow", x, y + GlassShadowDrop, width, height,
+                UdonMediaTheme.Shadow, radius).raycastTarget = false;
+
+            Image card = RoundedPlate(parent, name, x, y, width, height, face, radius);
+
+            AddGlassEdge(card, width, radius);
+            return card;
+        }
+
+        /// <summary>影が要らないときの硝子(入れ子の中など)。</summary>
+        public static Image GlassPlate(
+            Transform parent, string name, float x, float y, float width, float height,
+            Color face, int radius)
+        {
+            Image card = RoundedPlate(parent, name, x, y, width, height, face, radius);
+            AddGlassEdge(card, width, radius);
+            return card;
+        }
+
+        /// <summary>硝子の上端に光る線を 1 本引く。</summary>
+        public static void AddGlassEdge(Image card, float width, int radius)
+        {
+            if (card == null) return;
+
+            // 角の丸みに掛からないよう、左右を少し内側から始める。
+            float inset = radius * 0.7f;
+            float edgeWidth = width - inset * 2f;
+            if (edgeWidth <= 4f) return;
+
+            Image edge = Plate(
+                card.transform, "Edge", inset, 0f, edgeWidth, 2f, UdonMediaTheme.GlassEdge);
+            edge.raycastTarget = false;
+        }
+
+        /// <summary>影を落とす量(px)。大きくすると浮きすぎて安っぽくなる。</summary>
+        public const float GlassShadowDrop = 4f;
+
         /// <summary>板を角丸にする。すでに置いてあるものにも使えます。</summary>
         public static void ApplyRadius(Image image, int radius)
         {
@@ -254,6 +310,12 @@ namespace SmartMediaPlatform.World.EditorTools
                 parent, name, x, y, width, height, caption, fontSize, face, out label);
 
             ApplyRadius(button.targetGraphic as Image, radius);
+
+            // ── 硝子の縁(Frost / Phase7-7)。
+            //    ボタンも硝子の一部なので、上端に同じ光を入れます。
+            //    <b>これが無いボタンだけ「別の素材」に見えます</b> —— 統一感は
+            //    形や色より、こういう細部の一致から生まれます。
+            AddGlassEdge(button.targetGraphic as Image, width, radius);
 
             if (label != null) label.color = OnFace(face);
             return button;

@@ -50,11 +50,27 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("選ばれていないタブの文字色")]
         public Color NormalColor = new Color(0.557f, 0.557f, 0.576f, 1f);
 
+        [Header("滑る下線(Frost / Phase7-7)")]
+        [Tooltip("選ばれているタブの下を滑る 1 本の線。"
+                 + "入れると SelectedMarks の代わりにこちらが動く")]
+        public RectTransform Indicator;
+
+        [Tooltip("タブそのものの並び。下線を滑らせる先を知るために使う")]
+        public RectTransform[] TabRects;
+
+        [Tooltip("滑りきるまでの時間(秒)。速いほど「すぐ効いた」と読まれる")]
+        public float SlideSeconds = 0.16f;
+
         [Header("状態")]
         [Tooltip("最初に開くタブ")]
         public int Selected;
 
         private bool _initialized;
+
+        // 下線がいまいる場所(px)。行き先へ向かって毎フレーム近づく。
+        private float _indicatorX;
+        private float _indicatorWidth;
+        private bool _indicatorPlaced;
 
         void Start()
         {
@@ -176,6 +192,56 @@ namespace SmartMediaPlatform.World.Udon.UI
 
                 if (Labels[i].text != label) Labels[i].text = label;
             }
+        }
+
+        // ───────── 滑る下線(Frost / Phase7-7)─────────
+
+        /// <summary>
+        /// <b>下線を、選ばれているタブの下まで滑らせる。</b>
+        ///
+        /// <b>なぜ動かすのか</b><br/>
+        /// タブをぱっと点け消しすると、<b>どこからどこへ移ったか</b>が残りません。
+        /// ワールドでは視線が板の端にあることも多く、切り替わったことに
+        /// 気付かないまま「押しても反応しない」と受け取られます。
+        /// <b>線が滑れば、移動そのものが目に入ります</b>。
+        ///
+        /// ホバーでは動かしません —— ワールド内 uGUI のポインター通知が
+        /// 実機で届かないので、「指している」を知る手段が無いためです。
+        /// </summary>
+        void Update()
+        {
+            if (Indicator == null) return;
+            if (TabRects == null || Selected < 0 || Selected >= TabRects.Length) return;
+
+            RectTransform tab = TabRects[Selected];
+            if (tab == null) return;
+
+            // 行き先。タブの真ん中に、タブの半分の幅で置く。
+            float wantedWidth = tab.sizeDelta.x * 0.5f;
+            float wantedX = tab.anchoredPosition.x + (tab.sizeDelta.x - wantedWidth) * 0.5f;
+
+            if (!_indicatorPlaced)
+            {
+                // 最初の 1 回だけは滑らせない(どこからともなく飛んでくるのを防ぐ)。
+                _indicatorPlaced = true;
+                _indicatorX = wantedX;
+                _indicatorWidth = wantedWidth;
+            }
+            else
+            {
+                // 行き先へ向かって指数的に近づく。時間で割るので、
+                // フレームレートが変わっても<b>掛かる時間は同じ</b>。
+                float k = SlideSeconds <= 0f
+                    ? 1f
+                    : Mathf.Clamp01(Time.deltaTime / SlideSeconds);
+
+                _indicatorX = Mathf.Lerp(_indicatorX, wantedX, k);
+                _indicatorWidth = Mathf.Lerp(_indicatorWidth, wantedWidth, k);
+            }
+
+            Vector2 position = Indicator.anchoredPosition;
+            Indicator.anchoredPosition = new Vector2(_indicatorX, position.y);
+            Indicator.sizeDelta = new Vector2(_indicatorWidth, Indicator.sizeDelta.y);
         }
 
         /// <summary>いま開いている一覧。パネルが書き直すときに使う。</summary>
