@@ -143,6 +143,13 @@ namespace SmartMediaPlatform.World.Udon.UI
             {
                 if (Transport.Controller == null) Transport.Controller = Controller;
                 if (Transport.Session == null) Transport.Session = Session;
+
+                // 「…」の中身も、判断を持っている所へ繋ぐ(Phase7-9)。
+                if (Transport.Options != null && Transport.Options.Session == null)
+                {
+                    Transport.Options.Session = Session;
+                    if (Session != null) Session.Options = Transport.Options;
+                }
                 if (Transport.Screen == null) Transport.Screen = Screen;
                 if (Transport.Panel == null) Transport.Panel = this;
             }

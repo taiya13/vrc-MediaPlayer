@@ -109,6 +109,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             entry.DurationSeconds = item.DurationSeconds;
             entry.Tags = ToArray(item.Tags);
             entry.RelatedIds = ToArray(item.RelatedIds);
+            entry.ViewCount = item.ViewCount;
             return entry;
         }
 

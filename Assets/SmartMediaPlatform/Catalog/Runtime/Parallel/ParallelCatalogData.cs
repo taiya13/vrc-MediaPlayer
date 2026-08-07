@@ -26,6 +26,9 @@ namespace SmartMediaPlatform.Catalog.Parallel
 
         public int[] Durations;
 
+        /// <summary>人気度(千回単位)。Udon で扱えるよう int に丸めてある。</summary>
+        public int[] ViewCountsK;
+
         // --- タグ(CSR) ---
         public string[] TagValues;
         public int[] TagOffsets;      // 長さ = Count + 1

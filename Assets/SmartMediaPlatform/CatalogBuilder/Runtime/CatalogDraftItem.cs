@@ -42,6 +42,12 @@ namespace SmartMediaPlatform.CatalogBuilder
         public string PublishedAt = "";
 
         /// <summary>
+        /// 再生数(YouTube の viewCount)。おすすめの人気度に使う(Phase7-9)。
+        /// 分からなければ 0。
+        /// </summary>
+        public long ViewCount;
+
+        /// <summary>
         /// <b>再生側に無い情報。</b><see cref="MediaItem"/> は
         /// ID・見出し・URL など<b>再生に要るものしか持ちません</b>。
         /// 出どころ・サムネイル・公開日は編集のためだけのものなので、
@@ -77,6 +83,7 @@ namespace SmartMediaPlatform.CatalogBuilder
             DurationSeconds = item.DurationSeconds;
             Tags = ToArray(item.Tags);
             RelatedIds = ToArray(item.RelatedIds);
+            ViewCount = item.ViewCount;
         }
 
         /// <summary>再生側へ渡せる形になっているか。</summary>
@@ -115,7 +122,8 @@ namespace SmartMediaPlatform.CatalogBuilder
                 Clean(Tags),
                 Url.Trim(),
                 DurationSeconds < 0 ? 0 : DurationSeconds,
-                Clean(RelatedIds));
+                Clean(RelatedIds),
+                ViewCount < 0 ? 0 : ViewCount);
         }
 
         public CatalogDraftItem Clone()
@@ -133,6 +141,7 @@ namespace SmartMediaPlatform.CatalogBuilder
             copy.Source = Source;
             copy.ThumbnailPath = ThumbnailPath;
             copy.PublishedAt = PublishedAt;
+            copy.ViewCount = ViewCount;
             return copy;
         }
 

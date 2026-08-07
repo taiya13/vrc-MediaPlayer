@@ -83,7 +83,18 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private bool _sortDescending;
 
         private bool _showThumbnails = true;
-        private bool _groupDraft;
+        /// <summary>
+        /// <b>チャンネルごとにまとめて出す。</b>Phase7-9 で<b>既定を「まとめる」に</b>しました。
+        ///
+        /// 40 件・80 件と取り込むと、平らな一覧では
+        /// <b>どこからどこまでが 1 つのチャンネルか</b>が読めません。
+        /// まとめれば、チャンネル単位で畳めて、
+        /// 「このチャンネル全部にジャンルを付ける」も 2 手で終わります。
+        ///
+        /// <b>これは Unity の中の見せ方だけです。</b>
+        /// 書き出す中身も並びも変わらないので、<b>ワールド側は何も変わりません</b>。
+        /// </summary>
+        private bool _groupDraft = true;
         private bool _groupSelection = true;
         private bool _autoRelated = true;
         private bool _showRelatedOptions;

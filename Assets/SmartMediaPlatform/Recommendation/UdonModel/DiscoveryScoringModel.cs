@@ -294,6 +294,37 @@ namespace SmartMediaPlatform.Recommendation.UdonModel
             int tk = keys[a]; keys[a] = keys[b]; keys[b] = tk;
         }
 
+        /// <summary>
+        /// <b>再生数を 0〜1 に均す。</b>Phase7-9。
+        ///
+        /// <b>そのまま割ってはいけません。</b>再生数の分布は極端に偏っていて、
+        /// 1 億回の曲が 1 本あると、10 万回の曲は <c>0.001</c> になります。
+        /// つまり<b>ほとんどの曲で人気度が効かなくなります</b>。
+        ///
+        /// 対数で潰すと「10 倍ごとに同じだけ上がる」ようになり、
+        /// 10 万回と 100 万回の差が、1000 万回と 1 億回の差と<b>同じ重み</b>になります。
+        /// 人が「人気」を感じる感覚もこちらに近いはずです。
+        /// </summary>
+        public static float PopularityOf(float views, float maxViews)
+        {
+            if (views <= 0f || maxViews <= 0f) return 0f;
+
+            float top = Log10(1f + maxViews);
+            if (top <= 0f) return 0f;
+
+            float here = Log10(1f + views);
+            float ratio = here / top;
+
+            return Clamp01(ratio);
+        }
+
+        /// <summary>常用対数。テストでも Udon でも同じ結果になるよう自前で持つ。</summary>
+        private static float Log10(float value)
+        {
+            if (value <= 0f) return 0f;
+            return (float)System.Math.Log10(value);
+        }
+
         /// <summary>文字列を数に潰す。<b>同じ文字列なら必ず同じ数</b>になればよい。</summary>
         public static int KeyOf(string text)
         {

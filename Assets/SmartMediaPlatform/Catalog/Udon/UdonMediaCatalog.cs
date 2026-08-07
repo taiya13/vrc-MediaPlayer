@@ -41,6 +41,14 @@ namespace SmartMediaPlatform.Catalog.Udon
         public VRCUrl[] Urls;          // 実行時生成不可のため編集時に焼き込む
         public int[] Durations;
 
+        /// <summary>
+        /// 人気度(取り込み元での再生数)。分からなければ 0。
+        /// <b>int にしてあります</b> —— Udon は long の配列を素直に扱えないので、
+        /// 焼き込むときに 1000 で割った「千回単位」に丸めます。
+        /// 10 億回でも 100 万に収まるので、int で足ります。
+        /// </summary>
+        public int[] ViewCountsK;
+
         // タグ(CSR): item i のタグ = TagValues[TagOffsets[i] .. TagOffsets[i + 1])
         public string[] TagValues;
         public int[] TagOffsets;       // 長さ = Count + 1
@@ -305,6 +313,29 @@ namespace SmartMediaPlatform.Catalog.Udon
         public string GetGenre(int index) { return Genres[index]; }
         public int GetMediaType(int index) { return Types[index]; }
         public int GetDurationSeconds(int index) { return Durations[index]; }
+
+        /// <summary>人気度(千回単位)。分からなければ 0。</summary>
+        public int GetViewCountK(int index)
+        {
+            if (ViewCountsK == null || index < 0 || index >= ViewCountsK.Length) return 0;
+            return ViewCountsK[index];
+        }
+
+        /// <summary>
+        /// カタログの中でいちばん大きい人気度(千回単位)。
+        /// おすすめが 0〜1 に均すのに使います。
+        /// </summary>
+        public int MaxViewCountK()
+        {
+            if (ViewCountsK == null) return 0;
+
+            int max = 0;
+            for (int i = 0; i < ViewCountsK.Length; i++)
+            {
+                if (ViewCountsK[i] > max) max = ViewCountsK[i];
+            }
+            return max;
+        }
 
         public VRCUrl GetUrl(int index)
         {

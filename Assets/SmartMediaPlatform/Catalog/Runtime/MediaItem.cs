@@ -39,6 +39,16 @@ namespace SmartMediaPlatform.Catalog
         /// </summary>
         public IReadOnlyList<string> RelatedIds { get; }
 
+        /// <summary>
+        /// <b>人気度。</b>取り込み元での再生数(YouTube の viewCount など)。
+        /// 分からなければ 0。
+        ///
+        /// <b>生の数を持ちます。</b>「上位何%」のような相対値にしないのは、
+        /// カタログに曲が足された瞬間に<b>全部の値が古くなる</b>からです。
+        /// 0〜1 へ均すのは、使う側(おすすめ)がそのときの最大値で行います。
+        /// </summary>
+        public long ViewCount { get; }
+
         public MediaItem(
             string id,
             string title,
@@ -48,7 +58,8 @@ namespace SmartMediaPlatform.Catalog
             string[] tags = null,
             string url = "",
             int durationSeconds = 0,
-            string[] relatedIds = null)
+            string[] relatedIds = null,
+            long viewCount = 0)
         {
             if (string.IsNullOrWhiteSpace(id))
                 throw new ArgumentException("MediaItem requires a non-empty id.", nameof(id));
@@ -64,6 +75,7 @@ namespace SmartMediaPlatform.Catalog
             Url = url ?? "";
             DurationSeconds = durationSeconds;
             RelatedIds = relatedIds != null ? (string[])relatedIds.Clone() : Empty;
+            ViewCount = viewCount < 0 ? 0 : viewCount;
         }
 
         public override string ToString()

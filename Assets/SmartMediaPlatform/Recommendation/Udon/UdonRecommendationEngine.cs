@@ -400,6 +400,9 @@ namespace SmartMediaPlatform.Recommendation.Udon
 
             int maxPlays = Profile != null ? Profile.MaxPlayCount() : 0;
 
+            // 取り込み時に焼き込んだ再生数(千回単位)。Phase7-9。
+            int maxViewsK = Catalog.MaxViewCountK();
+
             int m = candidates.Length;
             float[] scores = new float[m];
             int[] reasons = new int[m];
@@ -438,6 +441,16 @@ namespace SmartMediaPlatform.Recommendation.Udon
                     {
                         popularity = (float)Profile.PlayCountOf(cand) / (float)maxPlays;
                     }
+                }
+
+                // ── 世の中の人気(取り込み時の再生数)を主にする。
+                //    このワールドでの再生回数は、まだ数が少ないうちは
+                //    <b>たまたま最初に押された曲</b>を指しているだけなので、
+                //    足しはしても主役にはしません。
+                if (maxViewsK > 0)
+                {
+                    float world = PopularityOf(Catalog.GetViewCountK(cand), maxViewsK);
+                    popularity = world * 0.7f + popularity * 0.3f;
                 }
 
                 bool inQueue = IsInQueue(cand, queueIndices, queueCount);
@@ -737,6 +750,22 @@ namespace SmartMediaPlatform.Recommendation.Udon
         private string Lower(string text)
         {
             return text == null ? "" : text.ToLower();
+        }
+
+        /// <summary>
+        /// 再生数を 0〜1 に均す。<b>対数で潰します</b> ——
+        /// そのまま割ると、飛び抜けた 1 本のせいで他が全部 0 になるためです。
+        /// 正典 DiscoveryScoringModel.PopularityOf の写しです。
+        /// </summary>
+        private float PopularityOf(float views, float maxViews)
+        {
+            if (views <= 0f || maxViews <= 0f) return 0f;
+
+            // Log10 ではなく Log を使うのは、Udon で確実に呼べる側だからです。
+            float top = Mathf.Log(1f + maxViews);
+            if (top <= 0f) return 0f;
+
+            return Clamp01(Mathf.Log(1f + views) / top);
         }
 
         private float Clamp01(float value)

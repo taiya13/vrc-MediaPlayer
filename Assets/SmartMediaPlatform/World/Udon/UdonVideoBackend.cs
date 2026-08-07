@@ -198,6 +198,39 @@ namespace SmartMediaPlatform.World.Udon
             return true;
         }
 
+        /// <summary>
+        /// <b>カタログに無い URL を鳴らす。</b>Phase7-9。
+        ///
+        /// <b>URL を知ってよいのはこの層だけ</b>という決まりはそのままです。
+        /// 上位から渡ってくるのは <c>VRCUrl</c>(すでに URL になっているもの)で、
+        /// <b>文字列から URL を作ってはいません</b> ——
+        /// Udon では実行時に文字列から <c>VRCUrl</c> を作れないので、
+        /// もとをたどると必ず <c>VRCUrlInputField</c>(人が打ち込んだもの)です。
+        ///
+        /// <see cref="LoadedIndex"/> は -1 になります。カタログの何番でもないので、
+        /// 上位が「いまカタログの何を鳴らしているか」と取り違えないためです。
+        /// </summary>
+        public bool PlayExternal(VRCUrl url)
+        {
+            if (Player == null || url == null) return false;
+
+            _pendingIndex = -1;
+            LoadedIndex = -1;
+            LoadCount++;
+            IsLoading = true;
+            _started = false;
+            _wantsPlay = true;
+            _lastReportedErrorCode = -1;
+            _lastLoadAt = Time.time;
+
+            _endReported = false;
+            _lastWatchedTime = 0f;
+
+            Player.Pause();
+            Player.LoadURL(url);
+            return true;
+        }
+
         public bool Stop()
         {
             if (Player == null) return false;

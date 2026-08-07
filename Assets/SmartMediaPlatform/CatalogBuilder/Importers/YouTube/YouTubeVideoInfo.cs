@@ -28,6 +28,12 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         public string Description = "";
 
         /// <summary>
+        /// <b>再生数。</b>おすすめの「人気度」に使います(Phase7-9)。
+        /// 取れなければ 0 のまま。
+        /// </summary>
+        public long ViewCount;
+
+        /// <summary>
         /// 動画に付いているタグ。Phase6-4 で足しました。
         /// <b>付いていない動画も多い</b>ので、空を前提に扱ってください。
         /// </summary>
@@ -143,10 +149,19 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             item.Source = "YouTube";
 
             // Phase6-4: 関連(RelatedIds)と絞り込みの材料。
-            item.Tags = TrimTags(MaxTags);
+            // Phase7-9: <b>曲どうしで重なる言葉</b>を足す。
+            //   YouTube のタグはその曲固有のことが多く、「似ている」の物差しとしては
+            //   弱いので、アニメ / インスト / 2020年代 のような共通語を補います。
+            item.Tags = YouTubeAutoTagger.Merge(
+                TrimTags(MaxTags),
+                YouTubeAutoTagger.Generate(Title, Description, Tags, DurationSeconds, PublishedAt),
+                MaxTagsWithAuto);
 
             // Phase6-5: 並べ替えの材料。
             item.PublishedAt = PublishedAt;
+
+            // Phase7-9: おすすめの「人気度」に使う。
+            item.ViewCount = ViewCount;
 
             // Phase6-6: ジャンルはこちらで決める。
             // YouTube のカテゴリは「音楽」しか返さないので、そのまま入れると
@@ -181,6 +196,9 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         /// <b>編集画面がタグで埋まって使えなくなります</b>。
         /// </summary>
         public const int MaxTags = 8;
+
+        /// <summary>自動で足したぶんを含めた上限(Phase7-9)。</summary>
+        public const int MaxTagsWithAuto = 14;
 
         private string[] TrimTags(int limit)
         {

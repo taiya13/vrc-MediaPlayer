@@ -300,6 +300,8 @@ namespace UnityEngine
     public static class Mathf
     {
         public const float PI = 3.14159265f;
+        public static float Log(float f) { return (float)System.Math.Log(f); }
+        public static float Log10(float f) { return (float)System.Math.Log10(f); }
         public const float Infinity = float.PositiveInfinity;
         public const float Epsilon = 1.401298E-45f;
         public const float Deg2Rad = 0.0174532924f;

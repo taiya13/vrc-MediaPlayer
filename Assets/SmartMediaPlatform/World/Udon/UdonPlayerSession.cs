@@ -49,6 +49,13 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("その人の好み(お気に入り・履歴・再生回数)。Phase7-8。空でも動く")]
         public UdonUserProfile Profile;
 
+        [Tooltip("「…」の中身(繰り返し・おやすみ・URL)。Phase7-9。空でも動く")]
+        public UdonPlayerOptions Options;
+
+        [Tooltip("再生予定を一周し続ける(Phase7-9)。"
+                 + "取り出したものを後ろへ戻すので、予定が減りません")]
+        public bool RepeatQueue;
+
         [Header("再生予定が空になったときの動き(Phase7-3 / 既定は Phase7-5 で変更)")]
         [Tooltip("曲が終わって再生予定が空だったときにどうするか。"
                  + "0 = 止まる / 1 = いまの 1 曲を繰り返す / 2 = おすすめで流し続ける(既定)。"
@@ -477,6 +484,23 @@ namespace SmartMediaPlatform.World.Udon
         public int ConsecutiveErrors { get { return _consecutiveErrors; } }
 
         /// <summary>実際に鳴り始めた。ここで失敗の数を戻す。</summary>
+        /// <summary>
+        /// <b>カタログに無い URL が鳴り始めた。</b>Phase7-9。
+        /// 「いま鳴っているもの」を空にします —— カタログの何番でもないので、
+        /// 一覧が別の曲を鳴っていることにしてしまわないためです。
+        /// </summary>
+        public void NotifyExternalPlayback()
+        {
+            EnsureInitialized();
+
+            if (_currentIndex >= 0) PushHistory(_currentIndex);
+
+            _currentIndex = -1;
+            _requestedIndex = -1;
+            _isPlaying = true;
+            _exhausted = false;
+        }
+
         public void NotifyStarted()
         {
             _consecutiveErrors = 0;
@@ -519,6 +543,20 @@ namespace SmartMediaPlatform.World.Udon
 
                 // 裏がまだ鳴っていなかった。今までどおりの道で進む。
             }
+
+            // ── おやすみタイマーが「この曲で」なら、ここで止まる(Phase7-9)。
+            if (Options != null && Options.ShouldStopAfterTrack())
+            {
+                _isPlaying = false;
+
+                UdonVideoBackend stopping = ActiveBackend();
+                if (stopping != null) stopping.Stop();
+                return;
+            }
+
+            // ── 「あとで流す」に積まれた URL があれば、そちらが先(Phase7-9)。
+            //    人が明示的に積んだものなので、おすすめより優先します。
+            if (Options != null && Options.TryPlayNextExternal()) return;
 
             if (_queueCount > 0)
             {
@@ -657,6 +695,15 @@ namespace SmartMediaPlatform.World.Udon
             // 取り出した位置までを再生予定から外す(飛び越したぶんも一緒に消える)。
             for (int i = position + 1; i < _queueCount; i++) _queue[i - position - 1] = _queue[i];
             _queueCount -= position + 1;
+
+            // ── 再生予定を一周し続けるなら、取り出したものを後ろへ戻す(Phase7-9)。
+            //    <b>飛び越したぶんは戻しません。</b>飛ばしたのは人の意思なので、
+            //    戻すと「消したのにまた出てくる」になります。
+            if (RepeatQueue && _queueCount < QueueCapacity)
+            {
+                _queue[_queueCount] = next;
+                _queueCount++;
+            }
 
             _currentIndex = next;
             Load(next);

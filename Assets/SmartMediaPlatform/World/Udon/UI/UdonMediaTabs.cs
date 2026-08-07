@@ -50,6 +50,12 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("選ばれていないタブの文字色")]
         public Color NormalColor = new Color(0.557f, 0.557f, 0.576f, 1f);
 
+        [Tooltip("脇役のタブの文字色。選ばれていないときはさらに薄くする(Phase7-9)")]
+        public Color SecondaryColor = new Color(0.678f, 0.686f, 0.714f, 1f);
+
+        [Tooltip("主役のタブ(ここだけ濃く出す)。並びは Lists と同じ")]
+        public bool[] Primary;
+
         [Header("滑る下線(Frost / Phase7-7)")]
         [Tooltip("選ばれているタブの下を滑る 1 本の線。"
                  + "入れると SelectedMarks の代わりにこちらが動く")]
@@ -158,7 +164,18 @@ namespace SmartMediaPlatform.World.Udon.UI
 
                 if (Labels == null || i >= Labels.Length || Labels[i] == null) continue;
 
-                Color wanted = active ? SelectedColor : NormalColor;
+                // ── タブに<b>強弱</b>を付ける(Phase7-9)。
+                //
+                //    6 本を同じ濃さで並べると、どれも同じ重さに見えて
+                //    <b>毎回ぜんぶ読む</b>ことになります。ふだん使うのは
+                //    「曲」と「おすすめ」の 2 本なので、そこだけ濃く出し、
+                //    残りは<b>あることが分かる程度</b>まで下げます。
+                bool primary = Primary == null || i >= Primary.Length || Primary[i];
+
+                Color wanted = active
+                    ? SelectedColor
+                    : (primary ? NormalColor : SecondaryColor);
+
                 if (Labels[i].color != wanted) Labels[i].color = wanted;
             }
 

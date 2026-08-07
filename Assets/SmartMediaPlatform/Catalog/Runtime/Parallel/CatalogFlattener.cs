@@ -28,6 +28,7 @@ namespace SmartMediaPlatform.Catalog.Parallel
                 Types = new int[n],
                 Urls = new string[n],
                 Durations = new int[n],
+                ViewCountsK = new int[n],
                 TagOffsets = new int[n + 1],
                 RelatedOffsets = new int[n + 1],
             };
@@ -61,6 +62,12 @@ namespace SmartMediaPlatform.Catalog.Parallel
                 d.Types[i] = (int)item.Type;
                 d.Urls[i] = item.Url;
                 d.Durations[i] = item.DurationSeconds;
+
+                // 千回単位に丸める。Udon は long の配列を素直に扱えないので、
+                // ここで int に収めてしまう(10 億回でも 100 万に収まる)。
+                long views = item.ViewCount / 1000L;
+                if (views > int.MaxValue) views = int.MaxValue;
+                d.ViewCountsK[i] = (int)views;
 
                 d.TagOffsets[i] = tagPos;
                 for (int t = 0; t < item.Tags.Count; t++)

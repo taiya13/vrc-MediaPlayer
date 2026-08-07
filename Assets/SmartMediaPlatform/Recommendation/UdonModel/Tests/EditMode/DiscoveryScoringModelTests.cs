@@ -222,6 +222,43 @@ namespace SmartMediaPlatform.Recommendation.UdonModel.Tests
             Assert.AreEqual(0, DiscoveryScoringModel.KeyOf(null));
         }
 
+        // ───────── 人気度(Phase7-9)─────────
+
+        [Test]
+        public void 再生数が無ければ人気度は零()
+        {
+            Assert.AreEqual(0f, DiscoveryScoringModel.PopularityOf(0f, 1000000f), 0.0001f);
+            Assert.AreEqual(0f, DiscoveryScoringModel.PopularityOf(1000f, 0f), 0.0001f);
+        }
+
+        [Test]
+        public void いちばん多い曲の人気度は一()
+        {
+            Assert.AreEqual(1f, DiscoveryScoringModel.PopularityOf(1000000f, 1000000f), 0.0001f);
+        }
+
+        [Test]
+        public void 対数なので少ない再生数でも埋もれない()
+        {
+            // 1 億回が最大のとき、10 万回の曲。
+            // そのまま割ると 0.001 で、人気度は実質ゼロになる。
+            float linear = 100000f / 100000000f;
+            float scaled = DiscoveryScoringModel.PopularityOf(100000f, 100000000f);
+
+            Assert.Less(linear, 0.01f, "そのまま割ると埋もれる");
+            Assert.Greater(scaled, 0.55f, "対数なら半分より上に来る");
+        }
+
+        [Test]
+        public void 十倍ごとに同じだけ上がる()
+        {
+            float a = DiscoveryScoringModel.PopularityOf(1000f, 100000000f);
+            float b = DiscoveryScoringModel.PopularityOf(10000f, 100000000f);
+            float c = DiscoveryScoringModel.PopularityOf(100000f, 100000000f);
+
+            Assert.AreEqual(b - a, c - b, 0.01f);
+        }
+
         // ───────── 通しで見る ─────────
 
         [Test]

@@ -175,6 +175,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// 再生ボタンと同じ大きさで並んでいました。<b>初めて見た人の選択肢を
         /// 3 つに減らす</b>ため、ここへ畳んであります。
         /// </summary>
+        [Tooltip("「…」の中身(Phase7-9)。入っているとそちらが開け閉てを持つ")]
+        public UdonPlayerOptions Options;
+
         public void ToggleMore()
         {
             if (MoreSheet == null) return;

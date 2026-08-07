@@ -66,6 +66,9 @@ namespace SmartMediaPlatform.Catalog.Assets
 
             [Tooltip("関連メディアの ID。Catalog Builder が事前計算して埋める想定")]
             public string[] RelatedIds;
+
+            [Tooltip("再生数(YouTube の viewCount)。おすすめの人気度に使う。不明なら 0")]
+            public long ViewCount;
         }
 
         [Header("カタログ")]
@@ -117,7 +120,8 @@ namespace SmartMediaPlatform.Catalog.Assets
                     tags: entry.Tags,
                     url: entry.Url,
                     durationSeconds: entry.DurationSeconds,
-                    relatedIds: entry.RelatedIds));
+                    relatedIds: entry.RelatedIds,
+                    viewCount: entry.ViewCount));
             }
 
             return items;

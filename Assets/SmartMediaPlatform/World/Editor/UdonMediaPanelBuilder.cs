@@ -5,6 +5,7 @@ using SmartMediaPlatform.World.Udon;
 using SmartMediaPlatform.World.Udon.UI;
 using UnityEngine;
 using UnityEngine.UI;
+using VRC.SDK3.Components;
 
 namespace SmartMediaPlatform.World.EditorTools
 {
@@ -48,6 +49,8 @@ namespace SmartMediaPlatform.World.EditorTools
                 typeof(UdonMediaListRow),
                 typeof(UdonListScroller),
                 typeof(UdonRecommendationCards),
+                typeof(UdonValueStrip),
+                typeof(UdonPlayerOptions),
             };
         }
 
@@ -63,8 +66,11 @@ namespace SmartMediaPlatform.World.EditorTools
 
         private const float Pad = UdonMediaTheme.Space4;          // 32
         private const float ColumnGap = UdonMediaTheme.Space4;    // 32
-        private const float LeftWidth = 568f;
-        private const float RightWidth = 736f;
+        // ── 視線は「絵 → 曲名 → おすすめ」と流れてほしい(Phase7-9)。
+        //    左が広すぎると、おすすめまでの距離が長くなり、
+        //    首を振らないと次の曲を選べません。左を少し削って右へ寄せます。
+        private const float LeftWidth = 512f;
+        private const float RightWidth = 792f;
 
         // ───────── 「使う」で動かすバーの細かさ(Phase7-6)─────────
         //
@@ -248,7 +254,10 @@ namespace SmartMediaPlatform.World.EditorTools
             float seekTouch = wide ? 40f : 34f;
             float seekBar = wide ? 8f : 7f;
 
-            float textTop = wide ? artHeight + UdonMediaTheme.Space2 : 0f;
+            // ── 絵と文字を<b>近づける</b>(Phase7-9)。
+            //    離すと、絵と曲名が「別のもの」に見えます。
+            //    ひとかたまりに見せたいので、間は 1 単位だけにします。
+            float textTop = wide ? artHeight + UdonMediaTheme.Space1 : 0f;
             float textLeft = wide ? 0f : artWidth + UdonMediaTheme.Space2;
             float textWidth = wide ? width : width - textLeft;
 
@@ -411,45 +420,181 @@ namespace SmartMediaPlatform.World.EditorTools
         }
 
         /// <summary>
-        /// 「…」で開く引き出し。<b>めったに使わないものを、目に入らない所へ</b>。
-        /// 開いていないときは畳んであるので、初めて見た人の選択肢は 3 つに減ります。
+        /// <b>「…」で下から出るシート。</b>Phase7-9。
+        ///
+        /// <b>設定画面にはしません。</b>別ウィンドウを開くと、
+        /// <list type="bullet">
+        /// <item>いま鳴っているものが見えなくなる</item>
+        /// <item>「戻る」を探さないと帰れない</item>
+        /// </list>
+        /// の 2 つが同時に起きます。ワールドではどちらも致命的です。
+        /// <b>操作の真上に重ねて、押した所のすぐそばで閉じられる</b>形にします。
+        ///
+        /// 中身はどれも<b>1 回決めたらしばらく触らないもの</b>です。
+        /// だから常には出しません。
         /// </summary>
         private static void BuildMoreSheet(
             RectTransform section, UdonTransportView view,
             float width, float height, bool wide, Button more)
         {
-            const float SheetHeight = 80f;
-            float pad = UdonMediaTheme.Space1;
+            const float RowHeight = 64f;
+            const float Gap = 10f;
+
+            float pad = UdonMediaTheme.Space2;
+            float inner = width - pad * 2f;
+
+            // 上から:URL 欄 → 再生 / 予定へ → 繰り返し → おやすみ → 停止 / 予定を空に → 閉じる
+            float sheetHeight = pad * 2f + RowHeight * 6f + Gap * 5f + 28f;
 
             RectTransform sheet = UdonWorldUiKit.Place(
-                section, "MoreSheet", 0f, height + UdonMediaTheme.Space1, width, SheetHeight);
+                section, "MoreSheet", 0f, height + UdonMediaTheme.Space1, width, sheetHeight);
 
-            Image back = UdonWorldUiKit.RoundedPlate(
-                sheet, "Back", 0f, 0f, width, SheetHeight,
-                UdonMediaTheme.Surface, UdonMediaTheme.RadiusMedium);
-            back.raycastTarget = false;
+            // 一段手前に出す。下にある操作と当たり判定を取り合わないため。
+            sheet.localPosition = new Vector3(
+                sheet.localPosition.x, sheet.localPosition.y, -4f);
 
-            float inner = SheetHeight - pad * 2f;
-            float half = (width - pad * 3f) / 2f;
+            UdonWorldUiKit.GlassCard(
+                sheet, "Back", 0f, 0f, width, sheetHeight,
+                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusLarge).raycastTarget = false;
 
+            // つまんで下ろす取っ手。<b>形だけ</b>ですが、
+            // 「これは下から出てきた板だ」と伝えるのはこの 1 本です。
+            UdonWorldUiKit.RoundedPlate(
+                sheet, "Grabber", width * 0.5f - 34f, UdonMediaTheme.Space1, 68f, 5f,
+                UdonMediaTheme.Outline, 3).raycastTarget = false;
+
+            var options = Add<UdonPlayerOptions>(sheet.gameObject);
+
+            float y = pad + 20f;
             Text unused;
+
+            // ── URL
+            UdonWorldUiKit.Label(
+                sheet, "UrlCaption", pad, y - 4f, inner, 24f,
+                UdonMediaTheme.TextCaption, TextAnchor.LowerLeft, UdonMediaTheme.TextMuted)
+                .text = "YouTube の URL を貼り付けて再生";
+
+            y += 26f;
+
+            RectTransform fieldRect = UdonWorldUiKit.Place(
+                sheet, "UrlField", pad, y, inner, RowHeight);
+
+            Image fieldBack = fieldRect.gameObject.AddComponent<Image>();
+            fieldBack.color = UdonMediaTheme.Surface;
+            UdonWorldUiKit.ApplyRadius(fieldBack, UdonMediaTheme.RadiusMedium);
+
+            var urlField = fieldRect.gameObject.AddComponent<VRCUrlInputField>();
+
+            Text typed = UdonWorldUiKit.Label(
+                fieldRect, "Text", UdonMediaTheme.Space2, 0f,
+                inner - UdonMediaTheme.Space4, RowHeight,
+                UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
+            typed.raycastTarget = false;
+
+            Text placeholder = UdonWorldUiKit.Label(
+                fieldRect, "Placeholder", UdonMediaTheme.Space2, 0f,
+                inner - UdonMediaTheme.Space4, RowHeight,
+                UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
+            placeholder.text = "https://www.youtube.com/watch?v=…";
+            placeholder.raycastTarget = false;
+
+            urlField.textComponent = typed;
+            urlField.placeholder = placeholder;
+            urlField.targetGraphic = fieldBack;
+
+            // 枠のどこを「使う」でも VRChat のキーボードが開くようにする。
+            if (options != null)
+            {
+                UdonWorldUiKit.InteractArea(
+                    sheet, "UrlHit", pad, y, inner, RowHeight,
+                    options, "OpenUrlKeyboard", "URL を打つ");
+            }
+
+            y += RowHeight + Gap;
+
+            // ── 再生 / 予定へ
+            float half = (inner - Gap) * 0.5f;
+
+            Button playUrl = UdonWorldUiKit.RoundedButton(
+                sheet, "UrlPlay", pad, y, half, RowHeight, "▶ 再生",
+                UdonMediaTheme.TextBody, UdonMediaTheme.Accent,
+                UdonMediaTheme.RadiusMedium, out unused);
+
+            Button queueUrl = UdonWorldUiKit.RoundedButton(
+                sheet, "UrlQueue", pad + half + Gap, y, half, RowHeight, "＋ 予定へ",
+                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.RadiusMedium, out unused);
+
+            y += RowHeight + Gap;
+
+            Text urlStatus = UdonWorldUiKit.Label(
+                sheet, "UrlStatus", pad, y - Gap, inner, 22f,
+                UdonMediaTheme.TextCaption, TextAnchor.UpperLeft, UdonMediaTheme.TextMuted);
+
+            // ── 繰り返し
+            Text repeatLabel;
+            Button repeat = UdonWorldUiKit.RoundedButton(
+                sheet, "Repeat", pad, y, inner, RowHeight, "繰り返し:切",
+                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.RadiusMedium, out repeatLabel);
+
+            y += RowHeight + Gap;
+
+            // ── おやすみタイマー
+            Text sleepLabel;
+            Button sleep = UdonWorldUiKit.RoundedButton(
+                sheet, "Sleep", pad, y, inner, RowHeight, "おやすみ:切",
+                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.RadiusMedium, out sleepLabel);
+
+            y += RowHeight + Gap;
+
+            // ── 停止 / 予定を空に
             Button stop = UdonWorldUiKit.RoundedButton(
-                sheet, "Stop", pad, pad, half, inner, "■ 停止",
-                wide ? UdonMediaTheme.TextBody : 17,
-                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusSmall, out unused);
+                sheet, "Stop", pad, y, half, RowHeight, "■ 停止",
+                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.RadiusMedium, out unused);
 
             Button clear = UdonWorldUiKit.RoundedButton(
-                sheet, "ClearUpcoming", pad * 2f + half, pad, half, inner, "予定を空に",
-                wide ? UdonMediaTheme.TextBody : 17,
-                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusSmall, out unused);
+                sheet, "ClearUpcoming", pad + half + Gap, y, half, RowHeight, "予定を空に",
+                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.RadiusMedium, out unused);
+
+            y += RowHeight + Gap;
+
+            // ── 閉じる
+            Button close = UdonWorldUiKit.RoundedButton(
+                sheet, "Close", pad, y, inner, RowHeight, "閉じる",
+                UdonMediaTheme.TextBody, UdonMediaTheme.Base,
+                UdonMediaTheme.RadiusMedium, out unused);
 
             UdonWorldUiKit.Wire(stop, view, "Stop", "停止");
             UdonWorldUiKit.Wire(clear, view, "ClearUpcoming", "再生予定を空にする");
 
-            // 引き出しは畳んで置く。開け閉ては UdonMediaPanel の Toggle を借りる。
-            sheet.gameObject.SetActive(false);
-            UdonWorldUiKit.Wire(more, view, "ToggleMore", "そのほかの操作");
+            if (options != null)
+            {
+                options.Sheet = sheet.gameObject;
+                options.UrlField = urlField;
+                options.UrlStatus = urlStatus;
+                options.RepeatLabel = repeatLabel;
+                options.SleepLabel = sleepLabel;
 
+                UdonWorldUiKit.Wire(playUrl, options, "PlayUrl", "この URL を再生");
+                UdonWorldUiKit.Wire(queueUrl, options, "EnqueueUrl", "この URL をあとで");
+                UdonWorldUiKit.Wire(repeat, options, "CycleRepeat", "繰り返しを変える");
+                UdonWorldUiKit.Wire(sleep, options, "CycleSleep", "おやすみタイマー");
+                UdonWorldUiKit.Wire(close, options, "Close", "閉じる");
+                UdonWorldUiKit.Wire(more, options, "Toggle", "そのほかの操作");
+
+                view.Options = options;
+            }
+            else
+            {
+                UdonWorldUiKit.Wire(more, view, "ToggleMore", "そのほかの操作");
+            }
+
+            // 畳んで置く。
+            sheet.gameObject.SetActive(false);
             view.MoreSheet = sheet.gameObject;
         }
 
@@ -625,7 +770,12 @@ namespace SmartMediaPlatform.World.EditorTools
             tabs.Selected = 0;
 
             tabs.SelectedColor = UdonMediaTheme.TextPrimary;
-            tabs.NormalColor = UdonMediaTheme.TextMuted;
+            tabs.NormalColor = UdonMediaTheme.TextSecondary;
+            tabs.SecondaryColor = new Color(0.678f, 0.686f, 0.714f, 1f);
+
+            // ふだん使うのは「曲」と「おすすめ」。ここだけ濃く出す。
+            // 並びは sources と同じ:アーティスト / 曲 / お気に入り / 履歴 / おすすめ / 再生予定
+            tabs.Primary = new[] { false, true, false, false, true, false };
 
             panel.Tabs = tabs;
             panel.Lists = lists;
@@ -642,9 +792,11 @@ namespace SmartMediaPlatform.World.EditorTools
         private static void BuildRecommendationCards(
             RectTransform page, UdonMediaPanel panel, float width, float height)
         {
-            // 3 × 2 = 6 枚。4 枚だと「選んだ」感じがせず、
-            // 押さなかったときに次の手が無くなる。
-            const int Columns = 3;
+            // ── 2 × 2 = 4 枚(Phase7-9)。
+            //    3 列だと 1 枚あたりが狭く、曲名が 2 行目で切れていました。
+            //    <b>枚数より、1 枚が読めること</b>を取ります。
+            //    選び直したい人はスクロールではなくタブで戻れます。
+            const int Columns = 2;
             const int Rows = 2;
             const int Count = Columns * Rows;
 
@@ -658,8 +810,10 @@ namespace SmartMediaPlatform.World.EditorTools
             // 余っている高さで割ると、絵の下に意味のない空白が生まれ、
             // 「作りかけ」に見えます。
             float artH = Mathf.Round(cardW * 9f / 16f);
-            float cardH = artH + UdonMediaTheme.Space1 + 30f + 26f
-                          + UdonMediaTheme.Space1 + 32f + UdonMediaTheme.Space2;
+
+            // 曲名 62(2 行入る)+ アーティスト 26 + 理由 26。
+            float cardH = artH + UdonMediaTheme.Space1 + 62f + 26f
+                          + UdonMediaTheme.Space1 + 26f + UdonMediaTheme.Space2;
 
             float available = Mathf.Floor((height - gap * (Rows - 1) - 60f) / Rows);
             if (cardH > available) cardH = available;
@@ -710,27 +864,29 @@ namespace SmartMediaPlatform.World.EditorTools
                 float textY = artH + UdonMediaTheme.Space1;
                 float textW = cardW - UdonMediaTheme.Space2 * 2f;
 
+                // ── カードの中は<b>3 段の強さ</b>で組みます(Phase7-9)。
+                //
+                //    1. 曲名 …… 大きく、濃く。<b>選ぶときに読むのはここだけ</b>
+                //    2. アーティスト …… 1 段小さく、薄く
+                //    3. おすすめ理由 …… さらに小さく。<b>札をやめて 1 行の添え書き</b>へ
+                //
+                //    理由を強調色の札にしていたので、<b>4 枚並ぶと札のほうが目立ち</b>、
+                //    曲名より先に理由を読ませていました。理由は「押す決め手」ではなく
+                //    「押したあとの納得」なので、いちばん弱くて構いません。
                 titles[i] = UdonWorldUiKit.FittedLabel(
-                    card.transform, "Title", UdonMediaTheme.Space2, textY, textW, 30f,
-                    UdonMediaTheme.TextBody, 12, TextAnchor.UpperLeft, UdonMediaTheme.TextPrimary);
+                    card.transform, "Title", UdonMediaTheme.Space2, textY, textW, 62f,
+                    UdonMediaTheme.TextTitle, 16, TextAnchor.UpperLeft,
+                    UdonMediaTheme.TextPrimary);
 
                 artists[i] = UdonWorldUiKit.FittedLabel(
-                    card.transform, "Artist", UdonMediaTheme.Space2, textY + 30f, textW, 24f,
-                    UdonMediaTheme.TextCaption, 11, TextAnchor.UpperLeft,
+                    card.transform, "Artist", UdonMediaTheme.Space2, textY + 64f, textW, 26f,
+                    UdonMediaTheme.TextCaption, 13, TextAnchor.UpperLeft,
                     UdonMediaTheme.TextSecondary);
 
-                // ── 理由。強調色の札にして、いちばん下に置く。
-                //    「なぜ勧めるか」が言えないおすすめは押されません。
-                Image chip = UdonWorldUiKit.RoundedPlate(
-                    card.transform, "ReasonChip", UdonMediaTheme.Space2,
-                    cardH - 36f - UdonMediaTheme.Space1, textW, 32f,
-                    UdonMediaTheme.AccentWash, UdonMediaTheme.RadiusSmall);
-                chip.raycastTarget = false;
-
                 reasons[i] = UdonWorldUiKit.Label(
-                    chip.transform, "Reason", UdonMediaTheme.Space1, 0f,
-                    textW - UdonMediaTheme.Space2, 32f, 15,
-                    TextAnchor.MiddleLeft, UdonMediaTheme.Accent);
+                    card.transform, "Reason", UdonMediaTheme.Space2,
+                    cardH - 30f - UdonMediaTheme.Space1, textW, 26f, 15,
+                    TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
 
                 // ── 「＋」= 再生予定へ。一覧と同じ形・同じ位置に置く。
                 //    カードを押すとすぐ流れてしまうので、

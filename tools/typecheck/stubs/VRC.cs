@@ -45,6 +45,16 @@ namespace VRC.SDK3.Components
     public class VRCSceneDescriptor : VRC.SDKBase.VRC_SceneDescriptor { }
     public class VRCObjectSync : MonoBehaviour { }
     public class VRCPickup : MonoBehaviour { }
+
+    /// <summary>
+    /// URL を人が打ち込むための入力欄。<b>実行時に VRCUrl を得られる唯一の道</b>。
+    /// (Udon では文字列から VRCUrl を作れない)
+    /// </summary>
+    public class VRCUrlInputField : UnityEngine.UI.InputField
+    {
+        public VRC.SDKBase.VRCUrl GetUrl() { return null; }
+        public void SetUrl(VRC.SDKBase.VRCUrl url) { }
+    }
 }
 
 namespace VRC.SDK3.Components.Video
