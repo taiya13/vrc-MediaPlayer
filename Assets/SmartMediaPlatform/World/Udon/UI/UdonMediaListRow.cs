@@ -75,6 +75,19 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("2 つめのボタンに出す文字。何をするボタンかを常に見せる")]
         public Text SecondaryLabel;
 
+        [Header("お気に入り(Phase7-8)")]
+        [Tooltip("♥ のボタン。空でも動く")]
+        public GameObject FavoriteButton;
+
+        [Tooltip("♥ の文字。入っているかどうかを色で示す")]
+        public Text FavoriteLabel;
+
+        [Tooltip("お気に入りに入っているときの ♥ の色")]
+        public Color FavoriteOnColor = new Color(0f, 0.478f, 1f, 1f);
+
+        [Tooltip("入っていないときの ♥ の色")]
+        public Color FavoriteOffColor = new Color(0.741f, 0.749f, 0.776f, 1f);
+
         [Header("チャンネルの見出しとして使うとき(Phase7-2)")]
         [Tooltip("見出しのときだけ出す帯。空なら見出しにできない")]
         public GameObject HeaderBand;
@@ -125,6 +138,28 @@ namespace SmartMediaPlatform.World.Udon.UI
         }
 
         /// <summary>2 つめのボタンを押した。<c>Button.onClick</c> から呼ぶ。</summary>
+        /// <summary>♥ が押された。一覧に伝えるだけ。</summary>
+        public void ClickFavorite()
+        {
+            if (List == null) return;
+            List.OnRowFavorite(Row);
+        }
+
+        /// <summary>
+        /// ♥ の見た目を合わせる。
+        /// <b>形ではなく色で示します</b> —— ♥ と ♡ を出し分けると、
+        /// 組み込みフォントに ♡ が無い環境で<b>豆腐(□)</b>になるためです。
+        /// </summary>
+        public void ShowFavorite(bool on, bool visible)
+        {
+            SetActive(FavoriteButton, visible);
+
+            if (FavoriteLabel == null) return;
+
+            Color wanted = on ? FavoriteOnColor : FavoriteOffColor;
+            if (FavoriteLabel.color != wanted) FavoriteLabel.color = wanted;
+        }
+
         public void ClickSecondary()
         {
             if (List != null) List.OnRowSecondary(Row);
@@ -149,6 +184,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetActive(NowPlayingBar, false);
             SetActive(PressedMarker, false);
             SetActive(SecondaryButton, false);
+            SetActive(FavoriteButton, false);
             ShowEqualizer(false);
 
             SetActive(HeaderBand, true);
@@ -175,6 +211,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetActive(NowPlayingBar, false);
             SetActive(PressedMarker, false);
             SetActive(SecondaryButton, false);
+            SetActive(FavoriteButton, false);
 
             SetText(IndexText, "");
             SetText(TitleText, "");

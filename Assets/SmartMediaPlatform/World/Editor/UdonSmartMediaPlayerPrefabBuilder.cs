@@ -98,6 +98,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 typeof(UdonMediaControlButton),
                 typeof(UdonSyncCoordinator),
                 typeof(UdonCrossfadeCoordinator),
+                typeof(UdonUserProfile),
                 typeof(UdonSmartMediaPlayer),
             };
 
@@ -353,6 +354,15 @@ namespace SmartMediaPlatform.World.EditorTools
             if (recommendation != null) recommendation.Catalog = catalog;
             if (_needsCompile) return root;
 
+            // ── その人の好み(お気に入り・履歴・再生回数)。Phase7-8。
+            //    <b>同期しません。</b>好みは人それぞれで、
+            //    他人の履歴が自分のおすすめに混ざるほうが困ります。
+            var profileObject = Child(root, "Profile");
+            var profile = Add<UdonUserProfile>(profileObject);
+            if (profile != null) profile.Catalog = catalog;
+            if (recommendation != null) recommendation.Profile = profile;
+            if (_needsCompile) return root;
+
             // ── Crossfade(曲と曲を繋ぐ担当。Phase7-5 / Phase7-6 で既定はオフ)
             //    Session も Backend も、混ぜ方のことは知りません。
             //    <see cref="UseCrossfade"/> が false のときは<b>置きません</b> —
@@ -381,6 +391,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 session.Recommendation = recommendation;
                 session.Backend = backend;
                 session.Crossfade = crossfade;
+                session.Profile = profile;
 
                 // ── 再生予定が空になったらおすすめへ進む(Phase7-6)。
                 //

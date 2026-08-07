@@ -157,6 +157,10 @@ namespace SmartMediaPlatform.World.Udon.UI
                     if (list.Controller == null) list.Controller = Controller;
                     if (list.Session == null) list.Session = Session;
                     if (list.Store == null) list.Store = Store;
+
+                    // 好み(お気に入り・履歴)は Session が持っている所から借りる。
+                    // パネルは何枚でも置けるので、各自が別々に持つと食い違います。
+                    if (list.Profile == null && Session != null) list.Profile = Session.Profile;
                     if (list.Panel == null) list.Panel = this;
 
                     BindRows(list);

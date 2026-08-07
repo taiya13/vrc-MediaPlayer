@@ -510,7 +510,7 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             const float TabHeight = 76f;
             const float TabGap = 9f;
-            const int TabCount = 4;
+            const int TabCount = 6;
 
             RectTransform section = UdonWorldUiKit.Place(body, "Browser", x, y, width, height);
 
@@ -532,11 +532,17 @@ namespace SmartMediaPlatform.World.EditorTools
             {
                 UdonMediaListView.SourceArtist,
                 UdonMediaListView.SourceLibrary,
+                UdonMediaListView.SourceFavorite,
+                UdonMediaListView.SourceHistory,
                 UdonMediaListView.SourceRelated,
                 UdonMediaListView.SourceQueue,
             };
 
-            string[] events = { "SelectTab0", "SelectTab1", "SelectTab2", "SelectTab3" };
+            string[] events =
+            {
+                "SelectTab0", "SelectTab1", "SelectTab2",
+                "SelectTab3", "SelectTab4", "SelectTab5",
+            };
 
             for (int i = 0; i < TabCount; i++)
             {
@@ -599,11 +605,11 @@ namespace SmartMediaPlatform.World.EditorTools
             tabs.Labels = labels;
 
             // おすすめはカードなので一覧を持たない。名前だけ決め打ちで渡す。
-            tabs.FixedLabels = new[] { "", "", "おすすめ", "" };
+            tabs.FixedLabels = new[] { "", "", "", "", "おすすめ", "" };
 
             // ── アーティストを選んだら曲のタブへ移る(Phase7-6)。
             UdonMediaListView artistList = lists[0];
-            UdonMediaListView songList = lists[1];
+            UdonMediaListView songList = lists[1];   // 並びは sources と同じ
 
             if (artistList != null)
             {
@@ -789,8 +795,25 @@ namespace SmartMediaPlatform.World.EditorTools
             view.FollowNowPlaying = source == UdonMediaListView.SourceQueue;
             view.GroupByChannel = source == UdonMediaListView.SourceLibrary;
 
-            // ── 検索バー(「すべての曲」だけ)
+            // ── お気に入りの並べ替え(Phase7-8)
             float listTop = 0f;
+            if (source == UdonMediaListView.SourceFavorite)
+            {
+                const float SortHeight = 52f;
+
+                Text sortLabel;
+                Button sort = UdonWorldUiKit.RoundedButton(
+                    page, "Sort", 0f, 0f, width, SortHeight, "追加が新しい順",
+                    UdonMediaTheme.TextCaption, UdonMediaTheme.Surface,
+                    UdonMediaTheme.RadiusMedium, out sortLabel);
+
+                view.SortLabel = sortLabel;
+                UdonWorldUiKit.Wire(sort, view, "CycleSort", "並べ替え");
+
+                listTop = SortHeight + UdonMediaTheme.Space2;
+            }
+
+            // ── 検索バー(「すべての曲」だけ)
             if (source == UdonMediaListView.SourceLibrary)
             {
                 listTop = BuildSearchBar(page, view, width) + UdonMediaTheme.Space2;
@@ -1130,7 +1153,8 @@ namespace SmartMediaPlatform.World.EditorTools
             //    縞模様は中身より先に目に入ります。区切りは余白に任せて、
             //    <b>触れたときだけ</b>薄く浮かせるほうが速く読めます。
             float hitX = BarWidth + UdonMediaTheme.Space1;
-            float hitWidth = width - hitX - SecondaryWidth - UdonMediaTheme.Space1;
+            // ♥ と「＋」の 2 つぶん、行の中身を詰める。
+            float hitWidth = width - hitX - SecondaryWidth * 2f - UdonMediaTheme.Space1 * 2f;
 
             // ── 1 行 = 1 枚の硝子カード(Frost / Phase7-7)。
             //    影(下)と縁の光(上)を対で置いて、はじめて浮いて見えます。
@@ -1197,6 +1221,25 @@ namespace SmartMediaPlatform.World.EditorTools
                 Mathf.RoundToInt(SecondaryWidth * 0.5f), out secondaryLabel);
 
             row.SecondaryLabel = secondaryLabel;
+
+            // ── ♥(Phase7-8)。「好き」と「いま聴く」は別なので、別のボタンにする。
+            //    形(♥ / ♡)ではなく<b>色</b>で入っているかを示します —— 組み込み
+            //    フォントに ♡ が無い環境で豆腐(□)になるのを避けるためです。
+            Text favoriteLabel;
+            Button favoriteButton = UdonWorldUiKit.RoundedButton(
+                content, "Favorite",
+                width - SecondaryWidth * 2f - UdonMediaTheme.Space1,
+                (height - SecondaryWidth) * 0.5f,
+                SecondaryWidth, SecondaryWidth, "♥", 30,
+                UdonMediaTheme.Surface,
+                Mathf.RoundToInt(SecondaryWidth * 0.5f), out favoriteLabel);
+
+            row.FavoriteButton = favoriteButton.gameObject;
+            row.FavoriteLabel = favoriteLabel;
+            row.FavoriteOnColor = UdonMediaTheme.Accent;
+            row.FavoriteOffColor = UdonMediaTheme.TextMuted;
+
+            UdonWorldUiKit.Wire(favoriteButton, row, "ClickFavorite", "お気に入り");
 
             // ── 印は中身より後に置く(半透明でかぶせる)。
             Image highlight = UdonWorldUiKit.RoundedPlate(

@@ -46,6 +46,9 @@ namespace SmartMediaPlatform.World.Udon
                  + "空なら今までどおり Backend へ直接読ませます")]
         public UdonCrossfadeCoordinator Crossfade;
 
+        [Tooltip("その人の好み(お気に入り・履歴・再生回数)。Phase7-8。空でも動く")]
+        public UdonUserProfile Profile;
+
         [Header("再生予定が空になったときの動き(Phase7-3 / 既定は Phase7-5 で変更)")]
         [Tooltip("曲が終わって再生予定が空だったときにどうするか。"
                  + "0 = 止まる / 1 = いまの 1 曲を繰り返す / 2 = おすすめで流し続ける(既定)。"
@@ -283,6 +286,9 @@ namespace SmartMediaPlatform.World.Udon
         {
             EnsureInitialized();
 
+            // 最後まで聴かずに送ったなら、それは「飛ばした」ということ(Phase7-8)。
+            if (Profile != null && _currentIndex >= 0) Profile.NoteSkipped(_currentIndex);
+
             if (_queueCount > 0) return TakeFromQueue(0);
 
             int pick = AutoQueueEnabled ? PickRecommendation() : -1;
@@ -474,6 +480,13 @@ namespace SmartMediaPlatform.World.Udon
         public void NotifyStarted()
         {
             _consecutiveErrors = 0;
+
+            // ── 実際に鳴り始めたときだけ履歴に積む(Phase7-8)。
+            //
+            //    <b>「読み込みを頼んだ」ではなく「鳴った」で数えます。</b>
+            //    読み込みに失敗した曲や、鳴る前に飛ばした曲が履歴に残ると、
+            //    おすすめが「聴いていない曲」を避け始めます。
+            if (Profile != null && _currentIndex >= 0) Profile.NotePlayed(_currentIndex);
         }
 
         /// <summary>
@@ -691,8 +704,13 @@ namespace SmartMediaPlatform.World.Udon
             if (seedId == null || seedId.Length == 0) return -1;
 
             // 使えない候補(再生中・再生予定・さっき聴いたもの)があるので多めに出させる。
-            int count = Recommendation.GetNextRecommendations(
-                seedId, _queueCount + RecentSkipDepth + 8);
+            // ── 発見の仕組みを通す(Phase7-8)。
+            //
+            //    以前はここだけ Phase7-3 の重み付き合計を使っていたので、
+            //    <b>おすすめタブと自動再生で別のものが出ていました</b>。
+            //    再生予定を渡すのは、engine 側で下げてもらうためです。
+            int count = Recommendation.GetRecommendations(
+                seedId, _queueCount + RecentSkipDepth + 8, _queue, _queueCount);
             if (count <= 0) return -1;
 
             // ── 1 周目:さっき聴いたばかりのものを避けて、<b>ランダムに</b>選ぶ。

@@ -55,8 +55,14 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>アーティスト(チャンネル)の一覧。曲ではなく名前が並ぶ(Phase7-6)。</summary>
         public const int SourceArtist = 3;
 
+        /// <summary>お気に入り(Phase7-8)。</summary>
+        public const int SourceFavorite = 4;
+
+        /// <summary>最近聴いたもの(Phase7-8)。</summary>
+        public const int SourceHistory = 5;
+
         [Header("何の一覧か")]
-        [Tooltip("0=Library / 1=関連 / 2=Queue / 3=アーティスト")]
+        [Tooltip("0=Library / 1=関連 / 2=Queue / 3=アーティスト / 4=お気に入り / 5=履歴")]
         public int Source = SourceLibrary;
 
         [Header("アーティストで絞る(Phase7-6)")]
@@ -69,6 +75,13 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         [Tooltip("アーティスト一覧の側だけ入れる。選んだあとに開くタブ")]
         public UdonMediaTabs Tabs;
+
+        [Header("好み(Phase7-8)")]
+        [Tooltip("お気に入り・履歴の持ち主。空だと ♥ と履歴タブが動かない")]
+        public SmartMediaPlatform.World.Udon.UdonUserProfile Profile;
+
+        [Tooltip("お気に入りの並びを出す先(お気に入りタブだけ)")]
+        public Text SortLabel;
 
         [Tooltip("選んだあとに開くタブの番号")]
         public int SongTabIndex = 1;
@@ -232,6 +245,8 @@ namespace SmartMediaPlatform.World.Udon.UI
         public int TotalCount()
         {
             if (Source == SourceQueue) return Session != null ? Session.QueueCount : 0;
+            if (Source == SourceFavorite) return Profile != null ? Profile.FavoriteCount : 0;
+            if (Source == SourceHistory) return Profile != null ? Profile.HistoryCount : 0;
             if (Source == SourceRelated) return ResolveRelated().Length;
 
             if (UsesView())
@@ -651,6 +666,10 @@ namespace SmartMediaPlatform.World.Udon.UI
             {
                 total = Session != null ? Session.QueueCount : 0;
             }
+            else if (Source == SourceFavorite || Source == SourceHistory)
+            {
+                total = TotalCount();
+            }
             else if (UsesView())
             {
                 EnsureView();
@@ -695,6 +714,14 @@ namespace SmartMediaPlatform.World.Udon.UI
                 else if (Source == SourceQueue)
                 {
                     if (Session != null) catalogIndex = Session.GetQueueAt(position);
+                }
+                else if (Source == SourceFavorite)
+                {
+                    if (Profile != null) catalogIndex = Profile.GetFavoriteAt(position);
+                }
+                else if (Source == SourceHistory)
+                {
+                    if (Profile != null) catalogIndex = Profile.GetHistoryAt(position);
                 }
                 else if (UsesView())
                 {
@@ -745,6 +772,11 @@ namespace SmartMediaPlatform.World.Udon.UI
                     Store != null ? Store.GetThumbnail(catalogIndex) : null,
                     FallbackInitial(genre),
                     SecondaryLabel());
+
+                // ♥ は「好み」を持っているときだけ出す(Phase7-8)。
+                target.ShowFavorite(
+                    Profile != null && Profile.IsFavorite(catalogIndex),
+                    Profile != null);
 
                 // 押した行に短く印を出す。
                 // uGUI の色変化は「使う」で押したときには出ないので、
@@ -830,6 +862,49 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (catalogIndex < 0) return;
 
             Report(Controller.EnqueueCatalogIndex(catalogIndex), "Queue に追加", title);
+        }
+
+        /// <summary>
+        /// <b>♥ が押された。</b>Phase7-8。
+        ///
+        /// 入れる / 外すを切り替えるだけです。<b>再生はしません</b> ——
+        /// 「好き」と「いま聴く」は別のことなので、同じ操作にまとめると
+        /// <b>お気に入りに入れるたびに曲が変わります</b>。
+        /// </summary>
+        public void OnRowFavorite(int row)
+        {
+            EnsureInitialized();
+            if (Profile == null) return;
+
+            int rows = RowCount();
+            if (row < 0 || row >= rows) return;
+            if (!Accept(2, row)) return;
+            if (_shown == null || row >= _shown.Length) return;
+
+            int catalogIndex = _shown[row];
+            if (catalogIndex < 0) return;
+
+            string title = TitleAt(row);
+            bool added = Profile.ToggleFavorite(catalogIndex);
+
+            MarkTouched(Offset + row);
+
+            // お気に入りタブでは、外した瞬間に並びが縮みます。
+            _builtFor = -1;
+            Refresh();
+
+            Report(true, added ? "お気に入りに追加" : "お気に入りから削除", title);
+        }
+
+        /// <summary>お気に入りの並びを次のものへ送る。</summary>
+        public void CycleSort()
+        {
+            if (Profile == null) return;
+
+            Profile.CycleFavoriteSort();
+            Offset = 0;
+            _builtFor = -1;
+            Refresh();
         }
 
         // ───────── スクロール(ボタンからそのまま呼べる)─────────
@@ -1160,6 +1235,8 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Source == SourceQueue) return "再生予定";
             if (Source == SourceRelated) return "おすすめ";
             if (Source == SourceArtist) return "アーティスト";
+            if (Source == SourceFavorite) return "お気に入り";
+            if (Source == SourceHistory) return "履歴";
             return "曲";
         }
 
@@ -1170,6 +1247,8 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Source == SourceQueue) return "再生予定";
             if (Source == SourceRelated) return "おすすめ";
             if (Source == SourceArtist) return "アーティスト";
+            if (Source == SourceFavorite) return "お気に入り";
+            if (Source == SourceHistory) return "さっき聴いた曲";
 
             // アーティストを選んでいるなら、その名前をそのまま見出しにする。
             // 「すべての曲」と出したまま 1 組しか並んでいないのは嘘になります。
@@ -1220,6 +1299,13 @@ namespace SmartMediaPlatform.World.Udon.UI
             }
 
             RefreshStickyChannel();
+
+            // 並べ替えのボタンに、いまの並びを書く(お気に入りタブだけ)。
+            if (SortLabel != null && Profile != null)
+            {
+                string sort = Profile.FavoriteSortLabel();
+                if (SortLabel.text != sort) SortLabel.text = sort;
+            }
 
             int filled = total - Offset;
             if (filled < 0) filled = 0;

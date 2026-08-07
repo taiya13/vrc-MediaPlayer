@@ -48,6 +48,19 @@ namespace SmartMediaPlatform.Recommendation.Udon
         [Tooltip("参照するカタログ(Inspector で割り当て)")]
         public UdonMediaCatalog Catalog;
 
+        [Tooltip("その人の好み(お気に入り・履歴・再生回数)。空でも動く")]
+        public SmartMediaPlatform.World.Udon.UdonUserProfile Profile;
+
+        [Header("発見(Phase7-8)")]
+        [Tooltip("同じアーティストから続けて取ってよい曲数。"
+                 + "ここが 1 か 2 でないと「同じ人しか出ない」に戻る")]
+        [Range(1, 8)]
+        public int MaxPerArtist = 2;
+
+        [Tooltip("直近この曲数までを「さっき聴いた」として下げる")]
+        [Range(0, 32)]
+        public int RecentDepth = 10;
+
         [Header("スコアリング重み(RecommendationRule.CreateDefault と一致)")]
         public float WeightRelated = 10.0f;
         public float WeightSameArtist = 5.0f;
@@ -83,6 +96,15 @@ namespace SmartMediaPlatform.Recommendation.Udon
         /// </summary>
         public const int ReasonPopular = 5;
 
+        /// <summary>お気に入りに入れているアーティストの曲(Phase7-8)。</summary>
+        public const int ReasonFavoriteArtist = 6;
+
+        /// <summary>しばらく聴いていない曲(Phase7-8)。</summary>
+        public const int ReasonFresh = 7;
+
+        /// <summary>お気に入りに多いジャンルの曲(Phase7-8)。</summary>
+        public const int ReasonFavoriteGenre = 8;
+
         private int[] _resultReasons;
 
         public int ResultCount { get { return _resultCount; } }
@@ -99,11 +121,27 @@ namespace SmartMediaPlatform.Recommendation.Udon
         /// <summary>理由を人が読む言葉にする。</summary>
         public string DescribeReason(int reason)
         {
-            if (reason == ReasonSameArtist) return "同じチャンネル";
+            if (reason == ReasonSameArtist) return "このアーティスト";
+            if (reason == ReasonFavoriteArtist) return "お気に入りに近い";
             if (reason == ReasonSameGenre) return "同じジャンル";
-            if (reason == ReasonSharedTag) return "似たタグ";
+            if (reason == ReasonSharedTag) return "似た雰囲気";
+            if (reason == ReasonFavoriteGenre) return "好きなジャンル";
+            if (reason == ReasonFresh) return "まだ聴いていない";
             if (reason == ReasonRelated) return "この曲と一緒によく聴かれます";
-            if (reason == ReasonPopular) return "人気曲";
+            if (reason == ReasonPopular) return "よく聴かれています";
+            return "おすすめ";
+        }
+
+        /// <summary>「発見」の見出しに出す言葉(理由ごとのまとまりの名前)。</summary>
+        public string DescribeGroup(int reason)
+        {
+            if (reason == ReasonSameArtist) return "このアーティストが好きなら";
+            if (reason == ReasonFavoriteArtist) return "お気に入りに近い";
+            if (reason == ReasonSameGenre) return "同じジャンル";
+            if (reason == ReasonSharedTag) return "似た雰囲気";
+            if (reason == ReasonFavoriteGenre) return "好きなジャンルから";
+            if (reason == ReasonFresh) return "まだ聴いていないもの";
+            if (reason == ReasonPopular) return "最近よく聴かれています";
             return "おすすめ";
         }
         public string GetResultId(int i) { return Catalog.GetId(_resultIndices[i]); }
@@ -190,7 +228,7 @@ namespace SmartMediaPlatform.Recommendation.Udon
                 c++;
             }
 
-            return RankByTierInto(seed, candidates, count, queueIndices, queueCount);
+            return RankByDiscoveryInto(seed, candidates, count, queueIndices, queueCount);
         }
 
         /// <summary>
@@ -269,6 +307,443 @@ namespace SmartMediaPlatform.Recommendation.Udon
             }
             _resultCount = take;
             return take;
+        }
+
+
+        // ═════════ 発見(Phase7-8)═════════
+        //
+        // 正典 DiscoveryScoringModel の写しです。
+        // <b>計算のしかたを変えるときは必ず両方を直してください。</b>
+        // 点数の意味と、なぜこの比率なのかは正典側に書いてあります。
+
+        private const float WSameArtist = 120f;
+        private const float WSameGenre = 90f;
+        private const float WTagUnit = 35f;
+        private const float WMaxTagBonus = 105f;
+        private const float WFavoriteArtist = 70f;
+        private const float WFavoriteGenre = 45f;
+        private const float WFavorite = 60f;
+        private const float WMaxPopularity = 40f;
+        private const float WMaxRecentPenalty = 220f;
+        private const float WQueuePenalty = 1000f;
+        private const float WCurrentPenalty = 100000f;
+        private const float WMaxRandomNoise = 25f;
+
+        /// <summary>理由ごとのまとまりの最大数。</summary>
+        public const int MaxGroups = 6;
+
+        /// <summary>1 つのまとまりに入れる最大数。</summary>
+        public const int MaxPerGroup = 8;
+
+        private int[] _groupReasons;
+        private int[] _groupSizes;
+        private int[] _groupItems;
+        private int _groupTotal;
+
+        /// <summary>いくつのまとまりができたか(Phase7-8)。</summary>
+        public int GroupCount { get { return _groupTotal; } }
+
+        /// <summary>そのまとまりの理由(<c>Reason…</c> のどれか)。</summary>
+        public int GetGroupReason(int group)
+        {
+            if (_groupReasons == null || group < 0 || group >= _groupTotal) return ReasonNone;
+            return _groupReasons[group];
+        }
+
+        /// <summary>そのまとまりの見出し。</summary>
+        public string GetGroupTitle(int group)
+        {
+            return DescribeGroup(GetGroupReason(group));
+        }
+
+        /// <summary>そのまとまりに何曲入っているか。</summary>
+        public int GetGroupItemCount(int group)
+        {
+            if (_groupSizes == null || group < 0 || group >= _groupTotal) return 0;
+            return _groupSizes[group];
+        }
+
+        /// <summary>そのまとまりの <paramref name="position"/> 番目の曲。</summary>
+        public int GetGroupItem(int group, int position)
+        {
+            if (_groupItems == null) return -1;
+            if (group < 0 || group >= _groupTotal) return -1;
+            if (position < 0 || position >= _groupSizes[group]) return -1;
+
+            return _groupItems[group * MaxPerGroup + position];
+        }
+
+        /// <summary>
+        /// <b>点数を付けて、理由ごとに仕分けて、多様さを保って並べる。</b>Phase7-8。
+        ///
+        /// やることは 3 つです。
+        /// <list type="number">
+        /// <item>候補ぜんぶに点数と理由を付ける</item>
+        /// <item>理由ごとのまとまり(「このアーティストが好きなら」など)を作る</item>
+        /// <item>1 本の並びを作る。<b>ただし 1 組から取りすぎない</b></item>
+        /// </list>
+        ///
+        /// <b>3 番目が「同じ人しか出ない」の答え</b>です。
+        /// 点数だけで並べると、同アーティストが 10 曲あれば上位 10 件が
+        /// 全部その人になります。点数は正しいのに一覧としては失敗なので、
+        /// 選ぶ側で <see cref="MaxPerArtist"/> の枠を掛けます。
+        /// </summary>
+        private int RankByDiscoveryInto(
+            int seed, int[] candidates, int count, int[] queueIndices, int queueCount)
+        {
+            string seedArtist = Lower(Catalog.GetArtist(seed));
+            string seedGenre = Lower(Catalog.GetGenre(seed));
+
+            int seedTagCount = Catalog.GetTagCount(seed);
+            string[] seedTags = new string[seedTagCount];
+            for (int i = 0; i < seedTagCount; i++) seedTags[i] = Lower(Catalog.GetTag(seed, i));
+
+            int maxPlays = Profile != null ? Profile.MaxPlayCount() : 0;
+
+            int m = candidates.Length;
+            float[] scores = new float[m];
+            int[] reasons = new int[m];
+            int[] artistKeys = new int[m];
+
+            for (int i = 0; i < m; i++)
+            {
+                int cand = candidates[i];
+
+                string candArtist = Lower(Catalog.GetArtist(cand));
+                string candGenre = Lower(Catalog.GetGenre(cand));
+
+                bool sameArtist = seedArtist.Length > 0 && candArtist == seedArtist;
+                bool sameGenre = seedGenre.Length > 0 && candGenre == seedGenre;
+
+                int shared = SharedTagCount(seedTags, cand);
+
+                bool favoriteArtist = false;
+                bool favoriteGenre = false;
+                bool isFavorite = false;
+                int recentRank = -1;
+                float popularity = 0f;
+
+                if (Profile != null)
+                {
+                    // 種と同じアーティストなら、お気に入り由来の加点は付けません。
+                    // 同じ手掛かりを二重に数えると、そのアーティストだけが
+                    // どんどん強くなって、また「同じ人しか出ない」に戻ります。
+                    favoriteArtist = !sameArtist && Profile.IsFavoriteArtist(candArtist);
+                    favoriteGenre = !sameGenre && Profile.IsFavoriteGenre(candGenre);
+
+                    isFavorite = Profile.IsFavorite(cand);
+                    recentRank = Profile.RecentRankOf(cand);
+
+                    if (maxPlays > 0)
+                    {
+                        popularity = (float)Profile.PlayCountOf(cand) / (float)maxPlays;
+                    }
+                }
+
+                bool inQueue = IsInQueue(cand, queueIndices, queueCount);
+
+                scores[i] = DiscoveryScoreOf(
+                    sameArtist, sameGenre, shared,
+                    favoriteArtist, favoriteGenre, isFavorite,
+                    popularity, recentRank, inQueue, false, Random.Range(0f, 1f));
+
+                reasons[i] = DiscoveryReasonOf(
+                    sameArtist, sameGenre, shared,
+                    favoriteArtist, favoriteGenre, recentRank < 0);
+
+                artistKeys[i] = KeyOf(candArtist);
+            }
+
+            BuildGroups(candidates, scores, reasons);
+
+            int take = count < m ? count : m;
+            if (take < 0) take = 0;
+
+            int[] result = new int[take];
+            int[] work = new int[m];
+            float[] workScores = new float[m];
+            int[] workKeys = new int[m];
+            int[] workReasons = new int[m];
+
+            for (int i = 0; i < m; i++)
+            {
+                work[i] = candidates[i];
+                workScores[i] = scores[i];
+                workKeys[i] = artistKeys[i];
+                workReasons[i] = reasons[i];
+            }
+
+            int written = SelectDiverse(work, workScores, workKeys, workReasons, take, result);
+
+            _resultIndices = new int[written];
+            _resultScores = new float[written];
+            _resultReasons = new int[written];
+
+            for (int i = 0; i < written; i++)
+            {
+                _resultIndices[i] = work[i];
+                _resultScores[i] = workScores[i];
+                _resultReasons[i] = workReasons[i];
+            }
+
+            _resultCount = written;
+            return written;
+        }
+
+        /// <summary>
+        /// <b>理由ごとのまとまりを作る。</b>
+        ///
+        /// UI はいま 1 本の並びしか出しませんが、
+        /// <b>「発見」画面をあとから足せるように</b>ここで作っておきます。
+        /// まとまりの中でも、同じアーティストばかりにならないよう枠を掛けます。
+        /// </summary>
+        private void BuildGroups(int[] candidates, float[] scores, int[] reasons)
+        {
+            if (_groupReasons == null)
+            {
+                _groupReasons = new int[MaxGroups];
+                _groupSizes = new int[MaxGroups];
+                _groupItems = new int[MaxGroups * MaxPerGroup];
+            }
+
+            int[] wanted = new int[MaxGroups];
+            wanted[0] = ReasonSameArtist;
+            wanted[1] = ReasonFavoriteArtist;
+            wanted[2] = ReasonSameGenre;
+            wanted[3] = ReasonSharedTag;
+            wanted[4] = ReasonFresh;
+            wanted[5] = ReasonPopular;
+
+            _groupTotal = 0;
+
+            for (int g = 0; g < MaxGroups; g++)
+            {
+                int reason = wanted[g];
+
+                // この理由の候補だけ集める。
+                int n = 0;
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    if (reasons[i] == reason) n++;
+                }
+                if (n == 0) continue;
+
+                int[] pick = new int[n];
+                float[] pickScores = new float[n];
+                int[] pickKeys = new int[n];
+                int[] pickReasons = new int[n];
+
+                int c = 0;
+                for (int i = 0; i < candidates.Length; i++)
+                {
+                    if (reasons[i] != reason) continue;
+
+                    pick[c] = candidates[i];
+                    pickScores[c] = scores[i];
+                    pickKeys[c] = KeyOf(Lower(Catalog.GetArtist(candidates[i])));
+                    pickReasons[c] = reason;
+                    c++;
+                }
+
+                int take = n < MaxPerGroup ? n : MaxPerGroup;
+                int[] into = new int[take];
+                int written = SelectDiverse(pick, pickScores, pickKeys, pickReasons, take, into);
+
+                if (written <= 0) continue;
+
+                _groupReasons[_groupTotal] = reason;
+                _groupSizes[_groupTotal] = written;
+                for (int i = 0; i < written; i++)
+                {
+                    _groupItems[_groupTotal * MaxPerGroup + i] = into[i];
+                }
+                _groupTotal++;
+            }
+        }
+
+        /// <summary>
+        /// 点数順に選ぶ。ただし 1 組(アーティスト)から
+        /// <see cref="MaxPerArtist"/> 曲までしか取りません。
+        /// 正典 <c>DiscoveryScoringModel.SelectDiverseInto</c> の写しです。
+        /// </summary>
+        private int SelectDiverse(
+            int[] indices, float[] scores, int[] keys, int[] reasons, int take, int[] result)
+        {
+            int m = indices.Length;
+            int actualTake = take < m ? take : m;
+            if (actualTake < 0) actualTake = 0;
+
+            int[] takenKeys = new int[actualTake > 0 ? actualTake : 1];
+            int[] takenCounts = new int[actualTake > 0 ? actualTake : 1];
+            int takenKinds = 0;
+
+            int written = 0;
+
+            for (int k = 0; k < actualTake; k++)
+            {
+                int best = FindBest(
+                    indices, scores, keys, k, m, takenKeys, takenCounts, takenKinds, true);
+
+                if (best < 0)
+                {
+                    best = FindBest(
+                        indices, scores, keys, k, m, takenKeys, takenCounts, takenKinds, false);
+                }
+                if (best < 0) break;
+
+                if (best != k)
+                {
+                    int ti = indices[k]; indices[k] = indices[best]; indices[best] = ti;
+                    float ts = scores[k]; scores[k] = scores[best]; scores[best] = ts;
+                    int tk = keys[k]; keys[k] = keys[best]; keys[best] = tk;
+                    int tr = reasons[k]; reasons[k] = reasons[best]; reasons[best] = tr;
+                }
+
+                int key = keys[k];
+                int slot = -1;
+                for (int i = 0; i < takenKinds; i++)
+                {
+                    if (takenKeys[i] == key) { slot = i; break; }
+                }
+
+                if (slot < 0)
+                {
+                    takenKeys[takenKinds] = key;
+                    takenCounts[takenKinds] = 1;
+                    takenKinds++;
+                }
+                else
+                {
+                    takenCounts[slot] = takenCounts[slot] + 1;
+                }
+
+                result[written] = indices[k];
+                written++;
+            }
+
+            return written;
+        }
+
+        private int FindBest(
+            int[] indices, float[] scores, int[] keys, int from, int to,
+            int[] takenKeys, int[] takenCounts, int takenKinds, bool respectQuota)
+        {
+            int best = -1;
+
+            for (int j = from; j < to; j++)
+            {
+                if (respectQuota && MaxPerArtist > 0)
+                {
+                    int used = 0;
+                    for (int i = 0; i < takenKinds; i++)
+                    {
+                        if (takenKeys[i] == keys[j]) { used = takenCounts[i]; break; }
+                    }
+                    if (used >= MaxPerArtist) continue;
+                }
+
+                if (best < 0
+                    || scores[j] > scores[best]
+                    || (scores[j] == scores[best] && indices[j] < indices[best]))
+                {
+                    best = j;
+                }
+            }
+
+            return best;
+        }
+
+        private float DiscoveryScoreOf(
+            bool sameArtist, bool sameGenre, int sharedTagCount,
+            bool favoriteArtist, bool favoriteGenre, bool isFavorite,
+            float popularity01, int recentRank, bool inQueue, bool isCurrent, float randomNoise01)
+        {
+            float score = 0f;
+
+            if (sameArtist) score += WSameArtist;
+            if (sameGenre) score += WSameGenre;
+
+            if (sharedTagCount > 0)
+            {
+                float tag = sharedTagCount * WTagUnit;
+                score += tag > WMaxTagBonus ? WMaxTagBonus : tag;
+            }
+
+            if (favoriteArtist) score += WFavoriteArtist;
+            if (favoriteGenre) score += WFavoriteGenre;
+            if (isFavorite) score += WFavorite;
+
+            score += Clamp01(popularity01) * WMaxPopularity;
+            score -= RecentPenalty(recentRank);
+
+            if (inQueue) score -= WQueuePenalty;
+            if (isCurrent) score -= WCurrentPenalty;
+
+            score += Clamp01(randomNoise01) * WMaxRandomNoise;
+            return score;
+        }
+
+        private float RecentPenalty(int recentRank)
+        {
+            if (recentRank < 0) return 0f;
+            if (RecentDepth <= 0) return 0f;
+            if (recentRank >= RecentDepth) return 0f;
+
+            float remain = (float)(RecentDepth - recentRank) / (float)RecentDepth;
+            return WMaxRecentPenalty * remain;
+        }
+
+        private int DiscoveryReasonOf(
+            bool sameArtist, bool sameGenre, int sharedTagCount,
+            bool favoriteArtist, bool favoriteGenre, bool neverPlayed)
+        {
+            if (sameArtist) return ReasonSameArtist;
+            if (favoriteArtist) return ReasonFavoriteArtist;
+            if (sameGenre) return ReasonSameGenre;
+            if (sharedTagCount > 0) return ReasonSharedTag;
+            if (favoriteGenre) return ReasonFavoriteGenre;
+            if (neverPlayed) return ReasonFresh;
+            return ReasonPopular;
+        }
+
+        private int SharedTagCount(string[] seedTagsLower, int candidate)
+        {
+            int candTagCount = Catalog.GetTagCount(candidate);
+            int shared = 0;
+
+            for (int t = 0; t < candTagCount; t++)
+            {
+                string ct = Lower(Catalog.GetTag(candidate, t));
+                if (ct.Length == 0) continue;
+
+                for (int s = 0; s < seedTagsLower.Length; s++)
+                {
+                    if (seedTagsLower[s] == ct) { shared++; break; }
+                }
+            }
+
+            return shared;
+        }
+
+        private int KeyOf(string text)
+        {
+            if (text == null || text.Length == 0) return 0;
+
+            int hash = 17;
+            for (int i = 0; i < text.Length; i++) hash = hash * 31 + text[i];
+            return hash;
+        }
+
+        private string Lower(string text)
+        {
+            return text == null ? "" : text.ToLower();
+        }
+
+        private float Clamp01(float value)
+        {
+            if (value < 0f) return 0f;
+            if (value > 1f) return 1f;
+            return value;
         }
 
         private static bool IsInQueue(int catalogIndex, int[] queueIndices, int queueCount)

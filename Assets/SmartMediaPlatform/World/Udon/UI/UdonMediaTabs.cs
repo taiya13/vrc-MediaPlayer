@@ -113,6 +113,16 @@ namespace SmartMediaPlatform.World.Udon.UI
             Select(3);
         }
 
+        public void SelectTab4()
+        {
+            Select(4);
+        }
+
+        public void SelectTab5()
+        {
+            Select(5);
+        }
+
         public void Select(int index)
         {
             if (index < 0 || index >= TabCount) return;
