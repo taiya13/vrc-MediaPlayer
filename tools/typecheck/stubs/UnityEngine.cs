@@ -702,6 +702,7 @@ namespace UnityEngine.UI
         public Transition transition { get; set; }
         public ColorBlock colors { get; set; }
         public Graphic targetGraphic { get; set; }
+        public void Select() { }
     }
     public class Button : Selectable { public UnityEngine.Events.UnityEvent onClick { get; set; } }
     public class InputField : Selectable

@@ -315,7 +315,7 @@ namespace SmartMediaPlatform.World.Udon.UI
                 // 同じ曲だと分からなくなる。
                 wanted = PaletteSource != null
                     ? PaletteSource.GenreColor(genre)
-                    : new Color(0.18f, 0.20f, 0.26f, 1f);
+                    : new Color(0.902f, 0.902f, 0.918f, 1f);
 
                 fallback = genre != null && genre.Length > 0 ? genre : "♪";
             }

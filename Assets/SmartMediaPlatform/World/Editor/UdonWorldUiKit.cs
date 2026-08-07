@@ -58,7 +58,7 @@ namespace SmartMediaPlatform.World.EditorTools
         // 押した直後だけ一瞬出る。「使う」で押したときの手応えになる。
         public static readonly Color RowPressed = UdonMediaTheme.SurfacePressed;
 
-        public static readonly Color TrackBack = new Color(1f, 1f, 1f, 0.16f);
+        public static readonly Color TrackBack = new Color(0f, 0f, 0f, 0.12f);
         public static readonly Color TrackFill = UdonMediaTheme.Accent;
 
         public static readonly Color TextPrimary = UdonMediaTheme.TextPrimary;
@@ -263,8 +263,11 @@ namespace SmartMediaPlatform.World.EditorTools
         public static Color OnFace(Color face)
         {
             // 人の目が感じる明るさ。緑がいちばん効くので重みを変えてある。
+            //
+            // Phase7-6 で配色が明るくなり、<b>向きが逆になりました</b>。
+            // 白い面には濃い文字、色の付いた面(強調色)には白い文字です。
             float luminance = face.r * 0.2126f + face.g * 0.7152f + face.b * 0.0722f;
-            return luminance > 0.5f ? UdonMediaTheme.OnAccent : UdonMediaTheme.TextPrimary;
+            return luminance > 0.5f ? UdonMediaTheme.TextPrimary : UdonMediaTheme.OnAccent;
         }
 
         /// <summary>押せるボタン。見出しは子の <see cref="Text"/> に入る。</summary>
@@ -657,11 +660,17 @@ namespace SmartMediaPlatform.World.EditorTools
 
             var serialized = new UnityEditor.SerializedObject(udon);
 
-            // caption が空文字なら<b>空のまま書き込みます</b>(Phase7-6)。
-            // 既定の "Use" を残さず、何も出さないためです。
-            // 触ってほしくないときは null を渡してください。
+            // ── 文字を出したくないときは<b>空白 1 文字</b>を書き込みます(Phase7-6)。
+            //
+            //    空文字("")では消えませんでした。VRChat は空を
+            //    「何も設定していない」と見なして<b>既定の「使う」に戻す</b>ためです。
+            //    空白 1 文字なら「設定されている」と見なされ、中身は何もありません。
+            //    <b>手のアイコンは VRChat が描くので消せません</b>(文字だけ消えます)。
             var text = serialized.FindProperty("interactText");
-            if (text != null && caption != null) text.stringValue = caption;
+            if (text != null && caption != null)
+            {
+                text.stringValue = caption.Length == 0 ? " " : caption;
+            }
 
             var proximity = serialized.FindProperty("proximity");
             if (proximity != null) proximity.floatValue = InteractDistance;
@@ -773,6 +782,51 @@ namespace SmartMediaPlatform.World.EditorTools
             }
 
             return strip;
+        }
+
+        /// <summary>
+        /// <b>「使う」だけで押せる場所を置く。</b>Phase7-6。
+        ///
+        /// uGUI の <c>Button</c> を持ちません。<b>見た目のない当たり判定</b>だけです。
+        /// 検索欄のように、押させたい相手がすでに別の部品
+        /// (<c>InputField</c> など)であるときに、その上へ重ねて使います。
+        /// </summary>
+        public static UdonMediaControlButton InteractArea(
+            Transform parent, string name, float x, float y, float width, float height,
+            UdonSharpBehaviour target, string eventName, string caption)
+        {
+            RectTransform rect = Place(parent, name, x, y, width, height);
+
+            // 一段手前に出して、下にある部品との取り合いを避ける。
+            rect.localPosition = new Vector3(
+                rect.localPosition.x, rect.localPosition.y, -2f);
+
+            var box = rect.gameObject.AddComponent<BoxCollider>();
+            box.size = new Vector3(width, height, 4f);
+            box.center = new Vector3(width * 0.5f, -height * 0.5f, 0f);
+            box.isTrigger = true;
+
+            bool needsCompile;
+            var relay = UdonSharpSceneUtility.AddUdonSharpComponent(
+                rect.gameObject, typeof(UdonMediaControlButton), out needsCompile)
+                as UdonMediaControlButton;
+
+            if (needsCompile) InteractNeedsCompile = true;
+
+            if (relay == null)
+            {
+                InteractFailures++;
+                return null;
+            }
+
+            relay.Target = target;
+            relay.EventName = eventName;
+            relay.Label = null;
+            relay.LabelText = "";
+
+            ApplyInteractSettings(relay, caption);
+            InteractCount++;
+            return relay;
         }
 
         /// <summary>

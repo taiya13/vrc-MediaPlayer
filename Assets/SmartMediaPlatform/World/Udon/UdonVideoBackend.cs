@@ -153,6 +153,13 @@ namespace SmartMediaPlatform.World.Udon
             _endReported = false;
             _lastWatchedTime = 0f;
 
+            // ── 読み込む前に黙らせる(Phase7-6)。
+            //
+            //    次の URL を読み終わるまでの数秒、AVPro は
+            //    <b>前の曲を鳴らし続けます</b>。曲を選び直したのに
+            //    前の曲が流れているのは分かりにくいので、先に止めます。
+            Player.Pause();
+
             Player.LoadURL(url);
             return true;
         }
@@ -331,6 +338,15 @@ namespace SmartMediaPlatform.World.Udon
             _wantsPlay = false;
 
             Debug.Log("[UdonVideoBackend] " + why + "(index " + LoadedIndex + ")", gameObject);
+
+            // ── <b>先に黙らせてから次へ渡します。</b>Phase7-6。
+            //
+            //    終わりは<b>本当の終わりより少し手前</b>で見つけます
+            //    (見に行く間隔のぶん、行き過ぎてからでは遅いため)。
+            //    そのまま次へ渡すと、次の URL を読んでいる間ずっと
+            //    <b>前の曲の残り 0.5 秒ほどが鳴り続けます</b>。
+            //    曲が変わる瞬間に前の曲が一瞬鳴るのはこれです。
+            if (Player != null) Player.Pause();
 
             Session.NotifyEnded();
         }

@@ -45,10 +45,10 @@ namespace SmartMediaPlatform.World.Udon.UI
         public string[] FixedLabels;
 
         [Tooltip("選ばれているタブの文字色")]
-        public Color SelectedColor = new Color(1f, 1f, 1f, 1f);
+        public Color SelectedColor = new Color(0.114f, 0.114f, 0.122f, 1f);
 
         [Tooltip("選ばれていないタブの文字色")]
-        public Color NormalColor = new Color(0.66f, 0.70f, 0.78f, 1f);
+        public Color NormalColor = new Color(0.557f, 0.557f, 0.576f, 1f);
 
         [Header("状態")]
         [Tooltip("最初に開くタブ")]
@@ -90,6 +90,11 @@ namespace SmartMediaPlatform.World.Udon.UI
         public void SelectTab2()
         {
             Select(2);
+        }
+
+        public void SelectTab3()
+        {
+            Select(3);
         }
 
         public void Select(int index)
@@ -163,7 +168,7 @@ namespace SmartMediaPlatform.World.Udon.UI
                     continue;
                 }
 
-                string label = Lists[i].EffectiveHeader();
+                string label = Lists[i].TabLabel();
 
                 // 0 件のときは数を出さない。「おすすめ 0」は読んでいて気持ちが良くない。
                 int count = Lists[i].TotalCount();

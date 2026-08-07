@@ -52,9 +52,26 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>再生予定(これから流すものだけ。再生中は入らない)。</summary>
         public const int SourceQueue = 2;
 
+        /// <summary>アーティスト(チャンネル)の一覧。曲ではなく名前が並ぶ(Phase7-6)。</summary>
+        public const int SourceArtist = 3;
+
         [Header("何の一覧か")]
-        [Tooltip("0=Library / 1=関連 / 2=Queue")]
+        [Tooltip("0=Library / 1=関連 / 2=Queue / 3=アーティスト")]
         public int Source = SourceLibrary;
+
+        [Header("アーティストで絞る(Phase7-6)")]
+        [Tooltip("空でなければ、このアーティストの曲だけを出す。"
+                 + "アーティスト一覧から選ばれると書き換わる")]
+        public string ArtistFilter = "";
+
+        [Tooltip("アーティスト一覧の側だけ入れる。ここで選んだ結果を映す曲の一覧")]
+        public UdonMediaListView SongList;
+
+        [Tooltip("アーティスト一覧の側だけ入れる。選んだあとに開くタブ")]
+        public UdonMediaTabs Tabs;
+
+        [Tooltip("選んだあとに開くタブの番号")]
+        public int SongTabIndex = 1;
 
         [Tooltip("見出しに出す文字。空なら種類に合わせて「すべての曲 / おすすめ / 再生予定」")]
         public string HeaderLabel = "";
@@ -235,7 +252,8 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// </summary>
         public bool UsesView()
         {
-            return Source == SourceLibrary && Store != null;
+            if (Store == null) return false;
+            return Source == SourceLibrary || Source == SourceArtist;
         }
 
         /// <summary>検索欄が変わったとき。<c>InputField.onValueChanged</c> から呼ぶ。</summary>
@@ -278,6 +296,29 @@ namespace SmartMediaPlatform.World.Udon.UI
             return true;
         }
 
+        /// <summary>
+        /// <b>VRChat のキーボードを出す。</b>Phase7-6。
+        ///
+        /// 検索欄(<c>InputField</c>)は、<b>uGUI のポインターで選ばれたとき</b>に
+        /// VRChat がキーボードを出します。このワールドではそのポインターが
+        /// 届いていないので、いつまでも開きませんでした。
+        ///
+        /// <b>選ぶところだけ、こちらから代わりにやります。</b>
+        /// 枠のどこを「使う」でもここへ来て、キーボードが開きます。
+        /// 打った文字は今までどおり <see cref="PollSearchField"/> が拾うので、
+        /// 検索の仕組みには手を入れていません。
+        ///
+        /// Phase7-6 の前に置いていた<b>ワールド内キーボードは廃止しました</b>
+        /// (一覧に重なって邪魔になるうえ、日本語が打てないため)。
+        /// </summary>
+        public void OpenSearchKeyboard()
+        {
+            if (SearchField == null) return;
+
+            SearchField.Select();
+            SearchField.ActivateInputField();
+        }
+
         /// <summary>検索をやめる。「×」から呼ぶ。</summary>
         public void ClearSearch()
         {
@@ -304,11 +345,21 @@ namespace SmartMediaPlatform.World.Udon.UI
         private void EnsureView()
         {
             int catalogCount = Store != null ? Store.Count : 0;
-            if (_builtFor == catalogCount && _viewIndex != null) return;
+
+            // 曲数が同じでも、選んでいるアーティストが変わったら中身は別物です。
+            // ここを見ていないと、<b>前に選んだアーティストの曲が残ります</b>。
+            string filter = ArtistFilter != null ? ArtistFilter : "";
+            bool sameFilter = filter == _builtForArtist;
+
+            if (_builtFor == catalogCount && sameFilter && _viewIndex != null) return;
 
             _builtFor = catalogCount;
+            _builtForArtist = filter;
             BuildView(catalogCount);
         }
+
+        // 直前に組んだときのアーティスト絞り込み。
+        private string _builtForArtist = "";
 
         private void BuildView(int catalogCount)
         {
@@ -322,7 +373,18 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             string query = _query != null ? _query.Trim().ToLower() : "";
 
-            if (!GroupByChannel)
+            if (Source == SourceArtist)
+            {
+                FillArtists(catalogCount, query);
+                RefreshSearchChrome(query);
+                return;
+            }
+
+            // アーティストを 1 組に絞っているなら、まとめる必要はありません
+            // (見出しが 1 本だけ出て、そのぶん行が減るだけになります)。
+            bool filtered = ArtistFilter != null && ArtistFilter.Length > 0;
+
+            if (!GroupByChannel || filtered)
             {
                 FillFlat(catalogCount, query);
                 RefreshSearchChrome(query);
@@ -340,6 +402,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             {
                 int catalogIndex = Store.GetIndexAt(i);
                 if (catalogIndex < 0) continue;
+                if (!PassesArtistFilter(catalogIndex)) continue;
                 if (!Store.Matches(catalogIndex, query)) continue;
 
                 _viewIndex[_viewLength] = catalogIndex;
@@ -416,6 +479,74 @@ namespace SmartMediaPlatform.World.Udon.UI
                     _viewLength++;
                 }
             }
+        }
+
+        /// <summary>
+        /// <b>アーティスト(投稿チャンネル)の名前だけを並べる。</b>Phase7-6。
+        ///
+        /// 曲は 1 曲も出しません。<b>見出しだけの一覧</b>です
+        /// (行の描き方は、まとめたときの見出しと同じものを使い回します)。
+        /// 並びはカタログの順 —— <b>最初に出てきた順</b>です。
+        /// 名前順に並べ替えると、取り込んだ順(= 新しい順)が失われます。
+        /// </summary>
+        private void FillArtists(int catalogCount, string query)
+        {
+            for (int i = 0; i < catalogCount; i++)
+            {
+                int catalogIndex = Store.GetIndexAt(i);
+                if (catalogIndex < 0) continue;
+
+                string channel = ChannelOf(catalogIndex);
+
+                // すでに出したアーティストなら飛ばす。
+                bool already = false;
+                for (int j = 0; j < _viewLength; j++)
+                {
+                    if (_viewName[j] == channel) { already = true; break; }
+                }
+                if (already) continue;
+
+                // このアーティストで、検索に当たる曲が何曲あるか。
+                int matched = 0;
+                for (int j = 0; j < catalogCount; j++)
+                {
+                    int candidate = Store.GetIndexAt(j);
+                    if (candidate < 0) continue;
+                    if (ChannelOf(candidate) != channel) continue;
+                    if (Store.Matches(candidate, query)) matched++;
+                }
+
+                if (matched == 0) continue;
+
+                _viewIndex[_viewLength] = -1;      // -1 = 見出しの行
+                _viewName[_viewLength] = channel;
+                _viewSize[_viewLength] = matched;
+                _viewLength++;
+            }
+        }
+
+        /// <summary>選んでいるアーティストの曲か(選んでいなければ全部通す)。</summary>
+        private bool PassesArtistFilter(int catalogIndex)
+        {
+            if (ArtistFilter == null || ArtistFilter.Length == 0) return true;
+            return ChannelOf(catalogIndex) == ArtistFilter;
+        }
+
+        /// <summary>
+        /// <b>アーティストが選ばれた。</b>Phase7-6。
+        /// 曲の一覧をそのアーティストだけに絞って、そちらのタブへ移ります。
+        /// </summary>
+        public void PickArtist(string artist)
+        {
+            if (SongList == null) return;
+
+            SongList.ArtistFilter = artist == null ? "" : artist;
+
+            // 前に選んだアーティストの続きから見せない。
+            SongList.Offset = 0;
+            SongList.ClearSearch();
+
+            if (Tabs != null) Tabs.Select(SongTabIndex);
         }
 
         private string ChannelOf(int catalogIndex)
@@ -576,9 +707,13 @@ namespace SmartMediaPlatform.World.Udon.UI
                         {
                             _shown[row] = -1;
 
+                            // アーティスト一覧では、たたむ操作がありません。
+                            // 「開く」ことを示す ▶ のまま出します。
+                            bool expanded = Source != SourceArtist
+                                            && !IsCollapsed(_viewName[position]);
+
                             target.ShowHeader(
-                                _viewName[position], _viewSize[position],
-                                !IsCollapsed(_viewName[position]));
+                                _viewName[position], _viewSize[position], expanded);
                             continue;
                         }
                     }
@@ -632,12 +767,19 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (row < 0 || row >= rows) return;
             if (!Accept(0, row)) return;
 
-            // チャンネルの見出しを押したら、開け閉てするだけ。
+            // 見出しの行を押したとき。
             if (UsesView())
             {
                 int position = Offset + row;
                 if (position >= 0 && position < _viewLength && _viewIndex[position] < 0)
                 {
+                    // アーティスト一覧では、見出しがそのままアーティストです。
+                    if (Source == SourceArtist)
+                    {
+                        PickArtist(_viewName[position]);
+                        return;
+                    }
+
                     ToggleCollapsed(_viewName[position]);
                     Refresh();
                     return;
@@ -1008,14 +1150,32 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <b>すでに置いてある Prefab も、見出しの文字を消すだけで日本語になります</b>
         /// (作り直しも配線のやり直しも要りません)。
         /// </summary>
+        /// <summary>
+        /// <b>タブに出す短い名前。</b>Phase7-6。
+        /// 見出し(<see cref="EffectiveHeader"/>)と分けているのは、
+        /// アーティスト名がタブに入りきらないためです。
+        /// </summary>
+        public string TabLabel()
+        {
+            if (Source == SourceQueue) return "再生予定";
+            if (Source == SourceRelated) return "おすすめ";
+            if (Source == SourceArtist) return "アーティスト";
+            return "曲";
+        }
+
         public string EffectiveHeader()
         {
             if (HeaderLabel != null && HeaderLabel.Length > 0) return HeaderLabel;
 
             if (Source == SourceQueue) return "再生予定";
             if (Source == SourceRelated) return "おすすめ";
+            if (Source == SourceArtist) return "アーティスト";
 
-            return "すべての曲";
+            // アーティストを選んでいるなら、その名前をそのまま見出しにする。
+            // 「すべての曲」と出したまま 1 組しか並んでいないのは嘘になります。
+            if (ArtistFilter != null && ArtistFilter.Length > 0) return ArtistFilter;
+
+            return "曲";
         }
 
         /// <summary>
@@ -1182,40 +1342,28 @@ namespace SmartMediaPlatform.World.Udon.UI
         public Color[] GenrePalette;
 
         /// <summary>
-        /// ジャンルの色。絵が焼き込まれていないカタログでも、
-        /// <b>同じジャンルは必ず同じ色</b>になるので目印として使えます。
+        /// 絵が無いときに敷く色。<b>Phase7-6 で「ジャンルごとの色」をやめました。</b>
         ///
-        /// <b>ジャンルの表を持ちません。</b>文字から色を決めるので、
-        /// Phase6-6 の辞書にジャンルを足しても<b>ここは直さなくて済みます</b>。
-        ///
-        /// 色は<b>くすんだ 8 色</b>に絞ってあります。鮮やかにすると、
-        /// 絵が入っている行と入っていない行がちぐはぐに見えるためです。
+        /// 色でジャンルを描き分けると、一覧が<b>色の一覧</b>になります。
+        /// 明るい配色ではとくに強く出て、「色が付いている = いま鳴っている」
+        /// という手掛かりが埋もれます。<b>色は大事な操作と再生中にだけ</b>使い、
+        /// ここは薄い灰色 1 色にしました(<see cref="GenrePalette"/> に
+        /// 色を入れれば、今までどおり色分けに戻せます)。
         /// </summary>
         public Color GenreColor(string genre)
         {
-            if (genre == null || genre.Length == 0) return new Color(0.18f, 0.20f, 0.26f, 1f);
-
-            int hash = 0;
-            for (int i = 0; i < genre.Length; i++) hash = hash * 31 + genre[i];
-
-            if (hash < 0) hash = -hash;
-
             if (GenrePalette != null && GenrePalette.Length > 0)
             {
+                if (genre == null || genre.Length == 0) return GenrePalette[0];
+
+                int hash = 0;
+                for (int i = 0; i < genre.Length; i++) hash = hash * 31 + genre[i];
+                if (hash < 0) hash = -hash;
+
                 return GenrePalette[hash % GenrePalette.Length];
             }
 
-            // Inspector で色を入れていないときの組み込み。
-            int slot = hash % 8;
-
-            if (slot == 0) return new Color(0.26f, 0.35f, 0.50f, 1f);   // 藍
-            if (slot == 1) return new Color(0.42f, 0.30f, 0.48f, 1f);   // 藤
-            if (slot == 2) return new Color(0.22f, 0.42f, 0.42f, 1f);   // 青緑
-            if (slot == 3) return new Color(0.48f, 0.32f, 0.28f, 1f);   // 煉瓦
-            if (slot == 4) return new Color(0.30f, 0.40f, 0.28f, 1f);   // 苔
-            if (slot == 5) return new Color(0.46f, 0.38f, 0.24f, 1f);   // 芥子
-            if (slot == 6) return new Color(0.28f, 0.32f, 0.46f, 1f);   // 群青
-            return new Color(0.44f, 0.28f, 0.36f, 1f);                  // 葡萄
+            return new Color(0.902f, 0.902f, 0.918f, 1f);
         }
 
         private bool IsNowPlaying(int catalogIndex)

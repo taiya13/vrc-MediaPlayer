@@ -102,10 +102,10 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         [Header("文字の色")]
         [Tooltip("いま鳴っている行の見出しはこの色にする")]
-        public Color NowPlayingTitleColor = new Color(1f, 1f, 1f, 1f);
+        public Color NowPlayingTitleColor = new Color(0f, 0.478f, 1f, 1f);
 
         [Tooltip("ふだんの見出しの色")]
-        public Color TitleColor = new Color(0.86f, 0.88f, 0.92f, 1f);
+        public Color TitleColor = new Color(0.114f, 0.114f, 0.122f, 1f);
 
         /// <summary>いま空行か(診断用)。</summary>
         public bool IsEmpty { get { return _empty; } }
@@ -309,7 +309,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             _fallbackColor = color;
         }
 
-        private Color _fallbackColor = new Color(0.18f, 0.20f, 0.26f, 1f);
+        private Color _fallbackColor = new Color(0.902f, 0.902f, 0.918f, 1f);
 
         private void ShowEqualizer(bool visible)
         {

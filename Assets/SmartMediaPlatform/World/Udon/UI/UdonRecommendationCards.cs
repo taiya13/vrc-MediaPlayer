@@ -324,7 +324,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             image.sprite = null;
             image.color = PaletteSource != null
                 ? PaletteSource.GenreColor(Store != null ? Store.GetGenre(catalogIndex) : "")
-                : new Color(0.16f, 0.17f, 0.21f, 1f);
+                : new Color(0.902f, 0.902f, 0.918f, 1f);
 
             if (ArtworkFallbacks != null && card < ArtworkFallbacks.Length
                 && ArtworkFallbacks[card] != null)

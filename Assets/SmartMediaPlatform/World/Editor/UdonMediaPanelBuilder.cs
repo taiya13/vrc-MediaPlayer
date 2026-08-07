@@ -237,7 +237,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
             float titleHeight = Mathf.Round(titleSize * 1.32f);
             float artistHeight = Mathf.Round(artistSize * 1.32f);
-            float chipHeight = wide ? 32f : 26f;
+            float chipHeight = wide ? 26f : 22f;
             float metaHeight = Mathf.Round(metaSize * 1.6f);
 
             // つかめるバーは、見た目より当たり判定を広く取る。
@@ -289,15 +289,15 @@ namespace SmartMediaPlatform.World.EditorTools
             cursor += artistHeight + UdonMediaTheme.Space1;
 
             Image chip = UdonWorldUiKit.RoundedPlate(
-                section, "GenreChip", textLeft, cursor, 120f, chipHeight,
-                UdonMediaTheme.AccentWash, UdonMediaTheme.RadiusSmall);
+                section, "GenreChip", textLeft, cursor, 104f, chipHeight,
+                new Color(0f, 0f, 0f, 0.06f), UdonMediaTheme.RadiusSmall);
             chip.raycastTarget = false;
 
             view.GenreChip = chip.gameObject;
             view.GenreText = UdonWorldUiKit.Label(
-                chip.transform, "Genre", 0f, 0f, 120f, chipHeight,
-                wide ? UdonMediaTheme.TextCaption : 14,
-                TextAnchor.MiddleCenter, UdonMediaTheme.Accent);
+                chip.transform, "Genre", 0f, 0f, 104f, chipHeight,
+                wide ? 15 : 13,
+                TextAnchor.MiddleCenter, UdonMediaTheme.TextSecondary);
 
             // ── つかんで動かせる再生バー(Phase7-3)
             Image seekFill;
@@ -495,7 +495,7 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             const float TabHeight = 76f;
             const float TabGap = 9f;
-            const int TabCount = 3;
+            const int TabCount = 4;
 
             RectTransform section = UdonWorldUiKit.Place(body, "Browser", x, y, width, height);
 
@@ -509,14 +509,18 @@ namespace SmartMediaPlatform.World.EditorTools
             var marks = new GameObject[TabCount];
             var labels = new Text[TabCount];
 
+            // ── 並びは「アーティスト → 曲 → おすすめ → 再生予定」(Phase7-6)。
+            //    <b>最初に開くのはアーティスト</b>です。曲を全部並べても
+            //    どれを選べばよいか決められないので、まず誰を聴くかから入ります。
             int[] sources =
             {
+                UdonMediaListView.SourceArtist,
                 UdonMediaListView.SourceLibrary,
                 UdonMediaListView.SourceRelated,
                 UdonMediaListView.SourceQueue,
             };
 
-            string[] events = { "SelectTab0", "SelectTab1", "SelectTab2" };
+            string[] events = { "SelectTab0", "SelectTab1", "SelectTab2", "SelectTab3" };
 
             for (int i = 0; i < TabCount; i++)
             {
@@ -565,7 +569,24 @@ namespace SmartMediaPlatform.World.EditorTools
             tabs.Labels = labels;
 
             // おすすめはカードなので一覧を持たない。名前だけ決め打ちで渡す。
-            tabs.FixedLabels = new[] { "", "おすすめ", "" };
+            tabs.FixedLabels = new[] { "", "", "おすすめ", "" };
+
+            // ── アーティストを選んだら曲のタブへ移る(Phase7-6)。
+            UdonMediaListView artistList = lists[0];
+            UdonMediaListView songList = lists[1];
+
+            if (artistList != null)
+            {
+                artistList.SongList = songList;
+                artistList.Tabs = tabs;
+                artistList.SongTabIndex = 1;
+            }
+
+            // 曲のタブは、選ばれたアーティストのぶんだけ出す。
+            // まとめ直す必要はないので、チャンネルごとのまとめは切っておく。
+            if (songList != null) songList.GroupByChannel = false;
+
+            tabs.Selected = 0;
 
             tabs.SelectedColor = UdonMediaTheme.TextPrimary;
             tabs.NormalColor = UdonMediaTheme.TextMuted;
@@ -887,7 +908,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
             Image barBack = UdonWorldUiKit.RoundedPlate(
                 barRect, "Track", 0f, 0f, BarWidth, listHeight,
-                new Color(1f, 1f, 1f, 0.06f), Mathf.RoundToInt(BarWidth * 0.5f));
+                new Color(0f, 0f, 0f, 0.06f), Mathf.RoundToInt(BarWidth * 0.5f));
             barBack.raycastTarget = true;
 
             var bar = barRect.gameObject.AddComponent<Scrollbar>();
@@ -902,7 +923,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
             Image handle = UdonWorldUiKit.RoundedPlate(
                 sliding, "Handle", 0f, 0f, BarWidth, 120f,
-                new Color(1f, 1f, 1f, 0.34f), Mathf.RoundToInt(BarWidth * 0.5f));
+                new Color(0f, 0f, 0f, 0.26f), Mathf.RoundToInt(BarWidth * 0.5f));
             handle.raycastTarget = true;
 
             var handleRect = handle.GetComponent<RectTransform>();
@@ -953,7 +974,6 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             const float Height = 64f;
             const float ClearWidth = 56f;
-            const float TypeWidth = 108f;
 
             RectTransform bar = UdonWorldUiKit.Place(page, "Search", 0f, 0f, width, Height);
 
@@ -983,8 +1003,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 .raycastTarget = false;
 
             float fieldX = UdonMediaTheme.Space2 + 36f + UdonMediaTheme.Space1;
-            float fieldWidth = width - fieldX - ClearWidth - TypeWidth
-                               - UdonMediaTheme.Space1 * 2f;
+            float fieldWidth = width - fieldX - ClearWidth - UdonMediaTheme.Space1;
 
             RectTransform fieldRect = UdonWorldUiKit.Place(
                 bar, "Field", fieldX, 0f, fieldWidth, Height);
@@ -1024,118 +1043,17 @@ namespace SmartMediaPlatform.World.EditorTools
 
             clear.gameObject.SetActive(false);
 
-            // ── ワールド内キーボード(Phase7-6)。
-            //    検索欄そのものは uGUI のポインターでしか開けないので、
-            //    「使う」で押せる文字キーを別に用意します。
-            Button typeButton = UdonWorldUiKit.RoundedButton(
-                bar, "SearchType", width - ClearWidth - TypeWidth - UdonMediaTheme.Space1 * 2f,
-                (Height - 44f) * 0.5f, TypeWidth, 44f, "打つ", UdonMediaTheme.TextCaption,
-                UdonMediaTheme.SurfaceRaised, 22, out unused);
-
-            BuildKeyboard(page, view, field, typeButton, width, Height + UdonMediaTheme.Space2);
+            // ── 枠のどこを「使う」でも VRChat のキーボードが出るようにする(Phase7-6)。
+            //
+            //    InputField は uGUI のポインターで選ばれないと開きません。
+            //    そのポインターが実機で届いていないので、
+            //    <b>選ぶところだけ「使う」で肩代わり</b>します。
+            //    虫めがねから「×」の手前まで、枠ぜんぶが押せます。
+            UdonWorldUiKit.InteractArea(
+                bar, "SearchHit", 0f, 0f, width - ClearWidth - UdonMediaTheme.Space1, Height,
+                view, "OpenSearchKeyboard", "文字を打つ");
 
             return Height;
-        }
-
-        /// <summary>キーの並び。1 文字 = 1 キー。10 個ずつ折り返します。</summary>
-        private const string KeyboardKeys = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
-
-        /// <summary>1 行に並べるキーの数。</summary>
-        private const int KeyboardColumns = 10;
-
-        /// <summary>
-        /// <b>「使う」で打てるキーボード。</b>Phase7-6。
-        ///
-        /// <b>ふだんは隠してあります。</b>一覧の上に重なるので、
-        /// 出しっぱなしにすると曲が見えなくなるからです。
-        /// 「打つ」を押している間だけ出します。
-        /// </summary>
-        private static void BuildKeyboard(
-            RectTransform page, UdonMediaListView view, InputField field,
-            Button toggle, float width, float top)
-        {
-            const float Gap = 8f;
-            const float KeyHeight = 62f;
-            const float PreviewHeight = 46f;
-
-            float keyWidth = (width - Gap * (KeyboardColumns - 1)) / KeyboardColumns;
-            int rows = (KeyboardKeys.Length + KeyboardColumns - 1) / KeyboardColumns;
-            float sheetHeight = PreviewHeight + Gap + rows * (KeyHeight + Gap);
-
-            RectTransform sheet = UdonWorldUiKit.Place(
-                page, "Keyboard", 0f, top, width, sheetHeight);
-            sheet.SetAsLastSibling();
-
-            // ── ほんの少し手前に出す。
-            //    キーは一覧の行に重なります。当たり判定がぴったり同じ高さにあると、
-            //    「使う」がどちらを拾うか決まらず、<b>キーを押したのに曲が始まる</b>
-            //    ことがあります。1 枚ぶん手前に置いて、必ずキーが先に当たるようにします。
-            sheet.localPosition = new Vector3(
-                sheet.localPosition.x, sheet.localPosition.y, -3f);
-
-            // 一覧の上に重なるので、下地は塗りつぶす(透けると読めない)。
-            UdonWorldUiKit.RoundedPlate(
-                sheet, "Back", 0f, 0f, width, sheetHeight,
-                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusMedium).raycastTarget = false;
-
-            Text preview = UdonWorldUiKit.Label(
-                sheet, "Preview", UdonMediaTheme.Space2, 0f,
-                width - UdonMediaTheme.Space2 * 2f, PreviewHeight,
-                UdonMediaTheme.TextBody, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
-
-            var keyboard = Add<UdonSearchKeyboard>(sheet.gameObject);
-            if (keyboard == null) return;
-
-            keyboard.Field = field;
-            keyboard.Preview = preview;
-            keyboard.List = view;
-            keyboard.Sheet = sheet.gameObject;
-            keyboard.Keys = KeyboardKeys;
-
-            float rowTop = PreviewHeight + Gap;
-
-            for (int i = 0; i < KeyboardKeys.Length; i++)
-            {
-                int column = i % KeyboardColumns;
-                int row = i / KeyboardColumns;
-
-                string caption = KeyboardKeys.Substring(i, 1);
-                if (caption == " ") caption = "空白";
-
-                UdonWorldUiKit.KeyboardKey(
-                    sheet, "Key" + i,
-                    column * (keyWidth + Gap), rowTop + row * (KeyHeight + Gap),
-                    keyWidth, KeyHeight, caption, UdonMediaTheme.TextBody,
-                    UdonMediaTheme.Surface, UdonMediaTheme.RadiusSmall,
-                    keyboard, "PressKey", "PickedIndex", i);
-            }
-
-            // ── 最後の行の余りに、消す・閉じるを置く。
-            int used = KeyboardKeys.Length % KeyboardColumns;
-            if (used == 0) used = KeyboardColumns;
-
-            int lastRow = rows - 1;
-            float lastRowTop = rowTop + lastRow * (KeyHeight + Gap);
-
-            string[] captions = new string[] { "1字消", "全消し", "閉じる" };
-            string[] events = new string[] { "Backspace", "ClearAll", "Close" };
-
-            for (int i = 0; i < captions.Length; i++)
-            {
-                int column = used + i;
-                if (column >= KeyboardColumns) break;
-
-                UdonWorldUiKit.KeyboardKey(
-                    sheet, "Key" + events[i],
-                    column * (keyWidth + Gap), lastRowTop, keyWidth, KeyHeight,
-                    captions[i], UdonMediaTheme.TextCaption,
-                    UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusSmall,
-                    keyboard, events[i], "", 0);
-            }
-
-            UdonWorldUiKit.Wire(toggle, keyboard, "Toggle", "文字を打つ");
-
-            sheet.gameObject.SetActive(false);
         }
 
         /// <summary>
@@ -1175,17 +1093,23 @@ namespace SmartMediaPlatform.World.EditorTools
             float hitX = BarWidth + UdonMediaTheme.Space1;
             float hitWidth = width - hitX - SecondaryWidth - UdonMediaTheme.Space1;
 
-            // 面はほとんど背景と同じ濃さ。ここを透明にすると、
+            // ── 影。<b>明るい配色では、濃さの違いで段差を作れません</b>
+            //    (白の上の白は見えない)。1 枚だけ下にずらして敷きます。
+            UdonWorldUiKit.RoundedPlate(
+                content, "Shadow", hitX, 3f, hitWidth, height,
+                UdonMediaTheme.Shadow, UdonMediaTheme.RadiusMedium).raycastTarget = false;
+
+            // 面は白。ここを透明にすると、
             // 触れたときの明るさ変化(uGUI の ColorTint)が効かなくなります。
             Button hit = UdonWorldUiKit.HitArea(
-                content, "Hit", hitX, 0f, hitWidth, height, UdonMediaTheme.Surface);
+                content, "Hit", hitX, 0f, hitWidth, height, UdonMediaTheme.SurfaceRaised);
             UdonWorldUiKit.ApplyRadius(hit.targetGraphic as Image, UdonMediaTheme.RadiusMedium);
 
             // ── 絵
             float artY = (height - artHeight) * 0.5f;
             Image artwork = UdonWorldUiKit.RoundedPlate(
                 hit.transform, "Artwork", UdonMediaTheme.Space1, artY, artWidth, artHeight,
-                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusSmall);
+                UdonMediaTheme.Surface, UdonMediaTheme.RadiusSmall);
             artwork.raycastTarget = false;
             artwork.preserveAspect = true;
 
@@ -1254,7 +1178,10 @@ namespace SmartMediaPlatform.World.EditorTools
 
             // ── チャンネルの見出しとして使うときの帯。
             //    同じ行を曲としても見出しとしても使うので、重ねて置いて出し分ける。
-            if (source == UdonMediaListView.SourceLibrary)
+            //    アーティスト一覧は<b>見出しだけで出来ています</b>。
+            //    ここを通さないと 1 行も見えません。
+            if (source == UdonMediaListView.SourceLibrary
+                || source == UdonMediaListView.SourceArtist)
             {
                 BuildHeaderBand(rowRect, row, hit, width, height);
             }

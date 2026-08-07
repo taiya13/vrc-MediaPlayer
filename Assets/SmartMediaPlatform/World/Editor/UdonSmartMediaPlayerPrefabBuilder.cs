@@ -62,6 +62,24 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <summary>1 枚の画面に 2 系統を混ぜるシェーダー(Phase7-5)。</summary>
         private const string CrossfadeShaderName = "SmartMediaPlatform/Crossfade";
 
+        /// <summary>
+        /// <b>動画プレイヤーを 2 系統にして曲を混ぜるか。</b>Phase7-6 で false にしました。
+        ///
+        /// <b>なぜやめたのか</b><br/>
+        /// 2 系統にすると、1 枚の画面へ<b>専用のシェーダー</b>で
+        /// 2 つの映像を書き込むことになります。この作りは
+        /// <list type="bullet">
+        /// <item>画面が真っ白になる原因を作った(材質が絡む問題が増える)</item>
+        /// <item>音の出口が 2 つに増え、切り替えの前後で鳴り方が読みにくい</item>
+        /// </list>
+        /// という代償が大きく、得られる滑らかさに見合いませんでした。
+        /// <b>1 系統に戻すと、画面は Unlit 1 枚・音は AudioSource 1 つ</b>になります。
+        ///
+        /// <c>UdonCrossfadeCoordinator</c> は<b>消していません</b>。
+        /// ここを true に戻せば、また 2 系統で組み立てます。
+        /// </summary>
+        private const bool UseCrossfade = false;
+
         private const string ExtraPanelMenuPath =
             "Tools/Smart Media Platform/操作パネルを追加で作る (2 枚目以降・任意)";
 
@@ -286,20 +304,26 @@ namespace SmartMediaPlatform.World.EditorTools
             if (backend == null) { UnityEngine.Object.DestroyImmediate(root); return null; }
             if (_needsCompile) return root;
 
-            // B 系統の音は、同じ場所に置いた 2 つめの AudioSource から出す。
-            var speakerB = surface.AddComponent<AudioSource>();
-            speakerB.playOnAwake = false;
-            speakerB.spatialBlend = speaker.spatialBlend;
-            speakerB.maxDistance = speaker.maxDistance;
-            speakerB.volume = 0f;   // 裏は黙って始まる
+            UdonVideoBackend backendB = null;
 
-            var backendB = BuildPlayer(
-                root, "PlayerB", preference, renderer, speakerB, screen, "_SecondTex", log);
-            if (_needsCompile) return root;
+            if (UseCrossfade)
+            {
+                // B 系統の音は、同じ場所に置いた 2 つめの AudioSource から出す。
+                var speakerB = surface.AddComponent<AudioSource>();
+                speakerB.playOnAwake = false;
+                speakerB.spatialBlend = speaker.spatialBlend;
+                speakerB.maxDistance = speaker.maxDistance;
+                speakerB.volume = 0f;   // 裏は黙って始まる
+
+                backendB = BuildPlayer(
+                    root, "PlayerB", preference, renderer, speakerB, screen, "_SecondTex", log);
+                if (_needsCompile) return root;
+
+                if (backendB != null) backendB.SetFadeVolume(0f);
+            }
 
             // 表(A)の音は、人が決めた音量から始める。
             if (backend != null) backend.SetFadeVolume(1f);
-            if (backendB != null) backendB.SetFadeVolume(0f);
 
             // ── Catalog(焼き込み済みデータ)+ Store(表示用の窓口)
             var catalogObject = Child(root, "Catalog");
@@ -323,17 +347,24 @@ namespace SmartMediaPlatform.World.EditorTools
             if (recommendation != null) recommendation.Catalog = catalog;
             if (_needsCompile) return root;
 
-            // ── Crossfade(曲と曲を繋ぐ担当。Phase7-5)
+            // ── Crossfade(曲と曲を繋ぐ担当。Phase7-5 / Phase7-6 で既定はオフ)
             //    Session も Backend も、混ぜ方のことは知りません。
-            var crossfadeObject = Child(root, "Crossfade");
-            var crossfade = Add<UdonCrossfadeCoordinator>(crossfadeObject);
-            if (crossfade != null)
+            //    <see cref="UseCrossfade"/> が false のときは<b>置きません</b> —
+            //    置いておくだけで Session が「混ぜる道」を通ってしまうためです。
+            UdonCrossfadeCoordinator crossfade = null;
+
+            if (UseCrossfade)
             {
-                crossfade.Screen = screen;
-                crossfade.BackendA = backend;
-                crossfade.BackendB = backendB;
+                var crossfadeObject = Child(root, "Crossfade");
+                crossfade = Add<UdonCrossfadeCoordinator>(crossfadeObject);
+                if (crossfade != null)
+                {
+                    crossfade.Screen = screen;
+                    crossfade.BackendA = backend;
+                    crossfade.BackendB = backendB;
+                }
+                if (_needsCompile) return root;
             }
-            if (_needsCompile) return root;
 
             // ── Session(再生の判断)
             var sessionObject = Child(root, "Session");
@@ -500,21 +531,22 @@ namespace SmartMediaPlatform.World.EditorTools
             const string folder = "Assets/SmartMediaPlatform_Data";
             const string path = folder + "/SmartMediaScreen.mat";
 
-            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (existing != null)
-            {
-                renderer.sharedMaterial = existing;
-                log.AppendLine("  画面の材質   : " + path + "(すでにあるものを使いました)");
-                return;
-            }
-
-            // ── クロスフェード用のシェーダーを優先する(Phase7-5)。
+            // ── <b>毎回作り直します。</b>Phase7-6。
             //
-            //    1 枚の画面に 2 系統(_MainTex / _SecondTex)を書かせて混ぜます。
-            //    見つからなければ Unlit/Texture に落ちて、
-            //    <b>今までどおり 1 系統だけで動きます</b>(絵は A のまま)。
-            bool crossfadeReady = true;
-            Shader shader = Shader.Find(CrossfadeShaderName);
+            //    以前は「すでにあれば使い回す」でした。ところが
+            //    <b>作りを変えても古い材質が残り続ける</b>ので、
+            //    2 系統用の材質が 1 系統の構成に付いたままになり、
+            //    <b>画面が真っ白</b>のまま直りませんでした。
+            //    材質は組み立ての一部なので、組み立て直したら作り直します。
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (existing != null) AssetDatabase.DeleteAsset(path);
+
+            // ── 2 系統で混ぜるときだけ専用シェーダーを使う(Phase7-5)。
+            //
+            //    1 系統(既定)では Unlit/Texture です。<b>画面に絡む部品が
+            //    少ないほど、映らなくなったときに疑う所が減ります。</b>
+            bool crossfadeReady = UseCrossfade;
+            Shader shader = crossfadeReady ? Shader.Find(CrossfadeShaderName) : null;
 
             if (shader == null)
             {
@@ -556,9 +588,8 @@ namespace SmartMediaPlatform.World.EditorTools
             renderer.sharedMaterial = material;
 
             log.AppendLine(crossfadeReady
-                ? "  画面の材質   : " + path + " を作りました(クロスフェード対応 / ライト不要)"
-                : "  画面の材質   : " + path + " を作りました(Unlit / ライト不要)"
-                  + "  ※ クロスフェード用シェーダーが見つからないため、混ぜません");
+                ? "  画面の材質   : " + path + " を作り直しました(クロスフェード対応 / ライト不要)"
+                : "  画面の材質   : " + path + " を作り直しました(Unlit / ライト不要)");
         }
 
         /// <summary>

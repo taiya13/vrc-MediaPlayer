@@ -111,52 +111,71 @@ namespace SmartMediaPlatform.World.EditorTools
             return Mathf.RoundToInt(size * 0.78f);
         }
 
-        // ───────── 色 ─────────
+        // ───────── 色(Phase7-6 で明るい配色へ)─────────
         //
-        // 彩度を持つのは Accent だけ。あとは全部 無彩色に近い灰色です。
-        // 「色が付いている = いま」という手掛かりを壊さないための決まりです。
+        // <b>Apple Music / iOS の考え方</b>を借りています。
+        // <list type="bullet">
+        // <item>地はオフホワイト、カードは白。段差は<b>影だけ</b>で作る</item>
+        // <item>彩度を持つのは <see cref="Accent"/> ひとつだけ</item>
+        // <item>色は「区別」ではなく<b>「大事な操作」と「いま鳴っている」だけ</b>に使う</item>
+        // </list>
+        //
+        // <b>真っ白(#FFFFFF)を地にしません。</b>HMD の中では白い面が
+        // そのまま光源になり、長く見ていられません。地は #F5F5F7 相当まで
+        // 落として、白はカードにだけ使います。
 
-        /// <summary>いちばん奥。パネルの地。ほぼ黒だが黒ではない。</summary>
-        public static readonly Color Base = Gray(0.055f, 0.97f);
+        /// <summary>いちばん奥。パネルの地。#F5F5F7 相当のオフホワイト。</summary>
+        public static readonly Color Base = new Color(0.961f, 0.961f, 0.969f, 0.98f);
 
-        /// <summary>1 段手前。節の地。</summary>
-        public static readonly Color Surface = Gray(0.098f);
+        /// <summary>
+        /// 1 段手前。<b>ボタンの面・入力欄の地。</b>
+        /// 地(<see cref="Base"/>)より<b>わずかに濃く</b>します —— 明るい配色では、
+        /// 白の上に白を置いても段差が見えないためです。
+        /// </summary>
+        public static readonly Color Surface = new Color(0.925f, 0.925f, 0.941f, 1f);
 
-        /// <summary>2 段手前。カード・行・入力欄の地。</summary>
-        public static readonly Color SurfaceRaised = Gray(0.145f);
+        /// <summary>2 段手前。カード・行・入力欄の地。ここだけ白。</summary>
+        public static readonly Color SurfaceRaised = new Color(1f, 1f, 1f, 1f);
 
         /// <summary>触れたとき・選ばれているときの薄い塗り。</summary>
-        public static readonly Color SurfaceHover = new Color(1f, 1f, 1f, 0.07f);
+        public static readonly Color SurfaceHover = new Color(0f, 0f, 0f, 0.05f);
 
-        /// <summary>押した瞬間だけ出る白。手応えの代わり。</summary>
-        public static readonly Color SurfacePressed = new Color(1f, 1f, 1f, 0.16f);
+        /// <summary>押した瞬間だけ出る影。手応えの代わり。</summary>
+        public static readonly Color SurfacePressed = new Color(0f, 0f, 0f, 0.12f);
 
-        /// <summary>区切り線。ほとんど見えない濃さでよい。</summary>
-        public static readonly Color Outline = new Color(1f, 1f, 1f, 0.08f);
+        /// <summary>区切り線。iOS の separator と同じくらい薄く。</summary>
+        public static readonly Color Outline = new Color(0f, 0f, 0f, 0.09f);
+
+        /// <summary>
+        /// <b>カードの影。</b>明るい配色では、段差を<b>濃さの違いでは作れません</b>
+        /// (白の上の白は見えない)。カードの下に 1 枚だけ敷いて、
+        /// 浮いていることを影で伝えます。
+        /// </summary>
+        public static readonly Color Shadow = new Color(0f, 0f, 0f, 0.07f);
 
         /// <summary>
         /// <b>唯一の強調色。</b>「いま鳴っている」「いま選んでいる」にだけ使う。
         ///
-        /// 青緑にしてあるのは、<b>ジャンルの色(赤〜紫)と被らない</b>ためです。
-        /// 一覧のジャンル札と強調色が同じ色味だと、
-        /// 「色が付いている = いま」が読めなくなります。
+        /// iOS の system blue(#007AFF)です。ジャンルや状態を
+        /// 色で描き分けることはしません —— <b>色が付いている = いま</b>、
+        /// という手掛かりを 1 つに保つためです。
         /// </summary>
-        public static readonly Color Accent = new Color(0.20f, 0.78f, 0.72f, 1f);
+        public static readonly Color Accent = new Color(0f, 0.478f, 1f, 1f);
 
         /// <summary>強調色の上に乗せる文字。</summary>
-        public static readonly Color OnAccent = new Color(0.03f, 0.09f, 0.09f, 1f);
+        public static readonly Color OnAccent = new Color(1f, 1f, 1f, 1f);
 
         /// <summary>強調色をうっすら敷くとき(再生中の行など)。</summary>
-        public static readonly Color AccentWash = new Color(0.20f, 0.78f, 0.72f, 0.14f);
+        public static readonly Color AccentWash = new Color(0f, 0.478f, 1f, 0.10f);
 
-        /// <summary>主役の文字。曲名など。</summary>
-        public static readonly Color TextPrimary = Gray(0.96f);
+        /// <summary>主役の文字。曲名など。#1D1D1F 相当。</summary>
+        public static readonly Color TextPrimary = new Color(0.114f, 0.114f, 0.122f, 1f);
 
-        /// <summary>脇役の文字。アーティスト・時間・件数。</summary>
-        public static readonly Color TextSecondary = Gray(0.62f);
+        /// <summary>脇役の文字。アーティスト・時間・件数。#6E6E73 相当。</summary>
+        public static readonly Color TextSecondary = new Color(0.431f, 0.431f, 0.451f, 1f);
 
-        /// <summary>さらに弱い文字。説明書き・空のときの案内。</summary>
-        public static readonly Color TextMuted = Gray(0.42f);
+        /// <summary>さらに弱い文字。説明書き・空のときの案内。#8E8E93 相当。</summary>
+        public static readonly Color TextMuted = new Color(0.557f, 0.557f, 0.576f, 1f);
 
         // ───────── 大きさの目安 ─────────
 
