@@ -1290,7 +1290,14 @@ namespace SmartMediaPlatform.World.EditorTools
             view.SearchField = field;
             view.SearchClearButton = clear.gameObject;
 
-            UdonWorldUiKit.Bind(field, view, "OnSearchChanged");
+            // ── <b>onValueChanged は繋ぎません</b>(Phase7-10)。
+            //
+            //    <c>VRCUrlInputField</c> は <c>InputField</c> の仲間ではないので、
+            //    <c>Bind</c> の相手として渡せません。渡そうとしたせいで
+            //    <b>ビルドが止まりました</b>。
+            //    そもそも実機では uGUI のイベントが飛んでこないため、
+            //    打った文字は <c>PollSearchField</c> が書き直しのたびに読んでいます。
+            //    <b>繋がなくても検索は効きます</b>。
             UdonWorldUiKit.Wire(clear, view, "ClearSearch", "検索をやめる");
 
             clear.gameObject.SetActive(false);

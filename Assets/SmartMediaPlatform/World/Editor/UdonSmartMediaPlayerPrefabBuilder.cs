@@ -78,7 +78,10 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <c>UdonCrossfadeCoordinator</c> は<b>消していません</b>。
         /// ここを true に戻せば、また 2 系統で組み立てます。
         /// </summary>
-        private const bool UseCrossfade = false;
+        //  const ではなく変数にしてあります。const だと
+        //  「if (false) の中身」が到達不能として警告になり、
+        //  <b>本物のエラーを探すときに邪魔</b>だからです。
+        private static readonly bool UseCrossfade = false;
 
         private const string ExtraPanelMenuPath =
             "Tools/Smart Media Platform/操作パネルを追加で作る (2 枚目以降・任意)";

@@ -49,9 +49,20 @@ namespace VRC.SDK3.Components
     /// <summary>
     /// URL を人が打ち込むための入力欄。<b>実行時に VRCUrl を得られる唯一の道</b>。
     /// (Udon では文字列から VRCUrl を作れない)
+    ///
+    /// <b>InputField を継承していません。</b>Phase7-10 でここを
+    /// <c>: UnityEngine.UI.InputField</c> と書いていたせいで、
+    /// 検査は通るのに実機で <c>Bind(InputField, …)</c> ではなく
+    /// <c>Bind(Button, …)</c> が選ばれ、ビルドが止まりました。
+    /// <b>実物と同じ「似ているが別の型」</b>にしてあります。
     /// </summary>
-    public class VRCUrlInputField : UnityEngine.UI.InputField
+    public class VRCUrlInputField : UnityEngine.UI.Selectable
     {
+        public string text { get; set; }
+        public UnityEngine.UI.Text textComponent { get; set; }
+        public UnityEngine.UI.Graphic placeholder { get; set; }
+        public void ActivateInputField() { }
+        public void DeactivateInputField() { }
         public VRC.SDKBase.VRCUrl GetUrl() { return null; }
         public void SetUrl(VRC.SDKBase.VRCUrl url) { }
     }
