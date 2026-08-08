@@ -41,6 +41,38 @@ namespace SmartMediaPlatform.CatalogBuilder
         /// </summary>
         public string PublishedAt = "";
 
+        // ───────── API から取った原本(Phase8)─────────
+        //
+        // <b>Catalog には書き出しません。</b>書き出すのは上の Title / Artist /
+        // Genre / Tags —— <b>作者が確認・編集した側</b>だけです。
+        //
+        // ここを別に持つ理由は 2 つあります。
+        // <list type="number">
+        // <item>取り込み直したときに<b>何が変わったか</b>を見せられる</item>
+        // <item>API 由来のものだけを<b>期限で消せる</b>(30 日ルール)</item>
+        // </list>
+        //
+        // <b>「確定したら API Data ではなくなる」とは考えていません。</b>
+        // 原本は原本として、取得日時つきで別に管理し続けます。
+
+        /// <summary>API が返した見出し(そのまま)。</summary>
+        public string ApiTitle = "";
+
+        /// <summary>API が返した投稿チャンネル名。</summary>
+        public string ApiChannel = "";
+
+        /// <summary>API が返したタグ。</summary>
+        public string[] ApiTags = new string[0];
+
+        /// <summary>いつ API から取ったか。空なら「API 由来ではない」。</summary>
+        public string ApiFetchedAtUtc = "";
+
+        /// <summary>API から取ったものを持っているか。</summary>
+        public bool HasApiData
+        {
+            get { return !string.IsNullOrEmpty(ApiFetchedAtUtc); }
+        }
+
         /// <summary>
         /// <b>再生側に無い情報。</b><see cref="MediaItem"/> は
         /// ID・見出し・URL など<b>再生に要るものしか持ちません</b>。
@@ -133,6 +165,10 @@ namespace SmartMediaPlatform.CatalogBuilder
             copy.Source = Source;
             copy.ThumbnailPath = ThumbnailPath;
             copy.PublishedAt = PublishedAt;
+            copy.ApiTitle = ApiTitle;
+            copy.ApiChannel = ApiChannel;
+            copy.ApiTags = Clean(ApiTags);
+            copy.ApiFetchedAtUtc = ApiFetchedAtUtc;
             return copy;
         }
 

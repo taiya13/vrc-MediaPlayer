@@ -1624,6 +1624,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             }
 
             DrawThumbnailSetting();
+            DrawApiDataPanel();
 
             EditorGUILayout.BeginHorizontal();
 
@@ -1727,6 +1728,123 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                     "人気順で取り込んだなら「人気順」を選ぶと、おすすめが賢くなります。",
                     EditorStyles.miniLabel);
             }
+        }
+
+        /// <summary>
+        /// <b>API から取った原本の面倒を見る。</b>Phase8。
+        ///
+        /// YouTube API の規約は、API から取ったデータを<b>原則 30 日</b>までしか
+        /// 持たせません。ここは<b>Sidecar の JSON に置いてある原本</b>の話で、
+        /// <b>ワールドには入っていません</b>(ワールドに入るのは、作者が確認した側)。
+        ///
+        /// 期限が来たら、やることは 2 つのどちらかです。
+        /// <list type="bullet">
+        /// <item><b>取り込み直す</b> …… 原本を新しくする(曲のデータはそのまま)</item>
+        /// <item><b>消す</b> …… 原本だけ捨てる。<b>曲は消えません</b></item>
+        /// </list>
+        /// </summary>
+        private void DrawApiDataPanel()
+        {
+            if (_draft == null || _draft.Count == 0) return;
+
+            System.DateTime now = System.DateTime.UtcNow;
+
+            int withApi = 0;
+            int expired = 0;
+            int soon = 0;
+            int oldest = -1;
+
+            for (int i = 0; i < _draft.Count; i++)
+            {
+                CatalogDraftItem item = _draft.GetAt(i);
+                if (item == null || !item.HasApiData) continue;
+
+                withApi++;
+
+                if (CatalogApiDataPolicy.IsExpired(item.ApiFetchedAtUtc, now)) expired++;
+                else if (CatalogApiDataPolicy.IsExpiringSoon(item.ApiFetchedAtUtc, now)) soon++;
+
+                int age = CatalogApiDataPolicy.AgeInDays(item.ApiFetchedAtUtc, now);
+                if (age > oldest) oldest = age;
+            }
+
+            if (withApi == 0) return;
+
+            EditorGUILayout.Space(4f);
+            EditorGUILayout.LabelField(
+                "API から取ったデータ", EditorStyles.miniBoldLabel);
+
+            string summary = withApi + " 件が API 由来です";
+            if (oldest >= 0) summary += "(いちばん古いもので " + oldest + " 日前)";
+
+            if (expired > 0)
+            {
+                EditorGUILayout.HelpBox(
+                    summary + "。\n"
+                    + expired + " 件が 30 日を過ぎています。"
+                    + "取り込み直すか、原本を消してください。\n"
+                    + "※ 原本を消しても、曲・曲名・タグ(あなたが編集した側)は残ります。",
+                    MessageType.Warning);
+            }
+            else if (soon > 0)
+            {
+                EditorGUILayout.HelpBox(
+                    summary + "。\n" + soon + " 件がまもなく 30 日になります。",
+                    MessageType.Info);
+            }
+            else
+            {
+                EditorGUILayout.LabelField(summary + "。", EditorStyles.miniLabel);
+            }
+
+            EditorGUILayout.BeginHorizontal();
+
+            using (new EditorGUI.DisabledScope(expired == 0))
+            {
+                if (GUILayout.Button("期限切れの原本を消す (" + expired + ")",
+                        EditorStyles.miniButtonLeft))
+                {
+                    ForgetApiData(true);
+                }
+            }
+
+            if (GUILayout.Button("原本を全部消す (" + withApi + ")", EditorStyles.miniButtonRight))
+            {
+                ForgetApiData(false);
+            }
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// API 由来の原本を捨てる。<b>曲そのものは消しません。</b>
+        /// </summary>
+        /// <param name="expiredOnly">期限切れのものだけ消すか。</param>
+        private void ForgetApiData(bool expiredOnly)
+        {
+            System.DateTime now = System.DateTime.UtcNow;
+            int forgotten = 0;
+
+            for (int i = 0; i < _draft.Count; i++)
+            {
+                CatalogDraftItem item = _draft.GetAt(i);
+                if (item == null || !item.HasApiData) continue;
+
+                if (expiredOnly
+                    && !CatalogApiDataPolicy.IsExpired(item.ApiFetchedAtUtc, now)) continue;
+
+                item.ApiTitle = "";
+                item.ApiChannel = "";
+                item.ApiTags = new string[0];
+                item.ApiFetchedAtUtc = "";
+                forgotten++;
+            }
+
+            _importMessage = forgotten + " 件の API 由来データを消しました"
+                             + "(曲そのものは残っています)。保存すると確定します。";
+            _lastImportOk = true;
+
+            Repaint();
         }
 
         private void Bake()

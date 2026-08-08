@@ -1,4 +1,5 @@
 using System;
+using SmartMediaPlatform.CatalogBuilder;
 
 namespace SmartMediaPlatform.CatalogBuilder.YouTube
 {
@@ -153,6 +154,17 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
             // Phase6-5: 並べ替えの材料。
             item.PublishedAt = PublishedAt;
+
+            // ── API から取った原本を、取得日時つきで別に残す(Phase8)。
+            //
+            //    <b>Catalog(ワールド)には入りません。</b>入るのは上の
+            //    item.Title / item.Artist —— <b>作者が確認・編集する側</b>です。
+            //    原本は API 由来のままなので 30 日で期限切れになり、
+            //    取り込み直すか消すかを選ぶことになります。
+            item.ApiTitle = Title;
+            item.ApiChannel = ChannelTitle;
+            item.ApiTags = Tags != null ? Tags : new string[0];
+            item.ApiFetchedAtUtc = CatalogApiDataPolicy.NowStamp();
 
             // Phase6-6: ジャンルはこちらで決める。
             // YouTube のカテゴリは「音楽」しか返さないので、そのまま入れると

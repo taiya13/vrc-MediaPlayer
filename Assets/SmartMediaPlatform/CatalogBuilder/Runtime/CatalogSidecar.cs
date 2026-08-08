@@ -17,6 +17,47 @@ namespace SmartMediaPlatform.CatalogBuilder
         public string Source = "";
         public string ThumbnailPath = "";
         public string PublishedAt = "";
+
+        // ───────── API から取った原本(Phase8)─────────
+        //
+        // <b>ここはワールドに入りません。</b>Catalog に入るのは
+        // 作者が確認・編集した側(CatalogDraftItem.Title など)で、
+        // こちらは<b>取り込み直したときの比較用</b>に残す原本です。
+        //
+        // 原本は API 由来のままなので、<b>取得日時が付き、30 日で期限切れ</b>に
+        // なります(CatalogApiDataPolicy)。作者側のデータとは寿命が別です。
+
+        /// <summary>API が返した見出し(そのまま)。</summary>
+        public string ApiTitle = "";
+
+        /// <summary>API が返した投稿チャンネル名。</summary>
+        public string ApiChannel = "";
+
+        /// <summary>API が返したタグ。</summary>
+        public string[] ApiTags = new string[0];
+
+        /// <summary>いつ API から取ったか。<c>CatalogApiDataPolicy.TimeFormat</c>。</summary>
+        public string ApiFetchedAtUtc = "";
+
+        /// <summary>API 由来のものを持っているか。</summary>
+        public bool HasApiData
+        {
+            get
+            {
+                return !string.IsNullOrEmpty(ApiTitle)
+                       || !string.IsNullOrEmpty(ApiChannel)
+                       || (ApiTags != null && ApiTags.Length > 0);
+            }
+        }
+
+        /// <summary>API 由来のものだけを消す。作者が入力した側は残る。</summary>
+        public void ForgetApiData()
+        {
+            ApiTitle = "";
+            ApiChannel = "";
+            ApiTags = new string[0];
+            ApiFetchedAtUtc = "";
+        }
     }
 
     /// <summary>
@@ -69,6 +110,12 @@ namespace SmartMediaPlatform.CatalogBuilder
                     meta.ThumbnailPath = item.ThumbnailPath;
                     meta.PublishedAt = item.PublishedAt;
 
+                    // API 由来の原本と取得日時(Phase8)。ワールドには入らない。
+                    meta.ApiTitle = item.ApiTitle;
+                    meta.ApiChannel = item.ApiChannel;
+                    meta.ApiTags = item.ApiTags;
+                    meta.ApiFetchedAtUtc = item.ApiFetchedAtUtc;
+
                     metas.Add(meta);
                 }
             }
@@ -114,6 +161,11 @@ namespace SmartMediaPlatform.CatalogBuilder
                 if (!string.IsNullOrWhiteSpace(meta.Source)) item.Source = meta.Source;
                 if (!string.IsNullOrWhiteSpace(meta.ThumbnailPath)) item.ThumbnailPath = meta.ThumbnailPath;
                 if (!string.IsNullOrWhiteSpace(meta.PublishedAt)) item.PublishedAt = meta.PublishedAt;
+
+                item.ApiTitle = meta.ApiTitle;
+                item.ApiChannel = meta.ApiChannel;
+                item.ApiTags = meta.ApiTags != null ? meta.ApiTags : new string[0];
+                item.ApiFetchedAtUtc = meta.ApiFetchedAtUtc;
 
                 restored++;
             }
