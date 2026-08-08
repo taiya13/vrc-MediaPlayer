@@ -4,7 +4,8 @@
     "references": [
         "SmartMediaPlatform.Catalog",
         "SmartMediaPlatform.Catalog.Assets",
-        "SmartMediaPlatform.CatalogBuilder"
+        "SmartMediaPlatform.CatalogBuilder",
+        "SmartMediaPlatform.CatalogBuilder.YouTube"
     ],
     "includePlatforms": [
         "Editor"

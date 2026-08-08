@@ -83,7 +83,7 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
         // ───────── ICatalogImporter ─────────
 
-        public string DisplayName { get { return "YouTube"; } }
+        public string DisplayName { get { return "YouTube (API)"; } }
 
         public string InputHint
         {

@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using SmartMediaPlatform.Catalog;
 using SmartMediaPlatform.Catalog.Assets;
+using SmartMediaPlatform.CatalogBuilder.YouTube;
 using UnityEditor;
 using UnityEngine;
 
@@ -1623,6 +1624,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                     MessageType.Error);
             }
 
+            DrawAutoTagPanel();
             DrawThumbnailSetting();
             DrawApiDataPanel();
 
@@ -1728,6 +1730,68 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                     "人気順で取り込んだなら「人気順」を選ぶと、おすすめが賢くなります。",
                     EditorStyles.miniLabel);
             }
+        }
+
+        /// <summary>
+        /// <b>入力した曲名からタグを自動で付ける。</b>Phase8。
+        ///
+        /// <b>通信はしません。</b>見るのは<b>あなたが入力した曲名</b>だけで、
+        /// <see cref="YouTubeAutoTagger"/> がその中の言葉から
+        /// 「アニメ」「インスト」「2020年代」のような<b>曲どうしで重なる言葉</b>を
+        /// 足します。<b>「URL を貼る」で取り込んだ曲でも使えます</b> ——
+        /// API を一度も呼ばずにタグが付くのが、この経路の狙いです。
+        /// </summary>
+        private void DrawAutoTagPanel()
+        {
+            if (_draft == null || _draft.Count == 0) return;
+
+            EditorGUILayout.BeginHorizontal();
+
+            if (GUILayout.Button("曲名からタグを自動で付ける", EditorStyles.miniButton))
+            {
+                ApplyAutoTags();
+            }
+
+            EditorGUILayout.LabelField(
+                "通信しません", EditorStyles.miniLabel, GUILayout.Width(72f));
+
+            EditorGUILayout.EndHorizontal();
+        }
+
+        /// <summary>
+        /// 曲名(と、あれば公開日・長さ)からタグを作って足す。
+        /// <b>もとからあるタグは消しません。</b>
+        /// </summary>
+        private void ApplyAutoTags()
+        {
+            int touched = 0;
+
+            for (int i = 0; i < _draft.Count; i++)
+            {
+                CatalogDraftItem item = _draft.GetAt(i);
+                if (item == null) continue;
+                if (string.IsNullOrWhiteSpace(item.Title)) continue;
+
+                string[] generated = YouTubeAutoTagger.Generate(
+                    item.Title, "", item.Tags, item.DurationSeconds, item.PublishedAt);
+
+                if (generated.Length == 0) continue;
+
+                string[] merged = YouTubeAutoTagger.Merge(
+                    item.Tags, generated, YouTubeVideoInfo.MaxTagsWithAuto);
+
+                if (merged.Length == (item.Tags != null ? item.Tags.Length : 0)) continue;
+
+                item.Tags = merged;
+                touched++;
+            }
+
+            _importMessage = touched > 0
+                ? touched + " 件にタグを足しました(通信していません)。"
+                : "足せるタグはありませんでした。曲名が入っているか確かめてください。";
+
+            _lastImportOk = true;
+            Repaint();
         }
 
         /// <summary>
