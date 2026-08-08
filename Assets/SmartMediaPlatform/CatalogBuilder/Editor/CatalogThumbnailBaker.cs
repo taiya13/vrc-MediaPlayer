@@ -42,6 +42,25 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
         // ───────── 大きさの選択肢 ─────────
 
+        /// <summary>
+        /// <b>焼かない。</b>Phase8 からの既定。
+        ///
+        /// <b>なぜ既定を「焼かない」にしたのか</b><br/>
+        /// 焼いた絵は <c>UdonMediaCatalog.Thumbnails</c> としてシーンから参照され、
+        /// <b>ワールドのビルドに入って全世界へ配布</b>されます。
+        /// もとは YouTube から取った画像なので、
+        /// <list type="bullet">
+        /// <item>アーティスト / レコード会社 / YouTube の著作物である</item>
+        /// <item>YouTube API の規約が保存と再配布を制限している</item>
+        /// </list>
+        /// の 2 つに同時に触ります。<b>止めれば、この問題は根から消えます</b>。
+        ///
+        /// 絵の代わりは <c>UdonMediaListView.GenreColor</c> の
+        /// <b>ジャンル色 + 頭文字</b>です。「絵が無い」ではなく
+        /// <b>そういうデザイン</b>に見えるところまで作り込んであります。
+        /// </summary>
+        public const int SizeOff = 0;
+
         /// <summary>軽い。曲数が多いとき / Quest 向け。</summary>
         public const int SizeSmall = 128;
 
@@ -51,10 +70,11 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         /// <summary>きれい。曲数が少ないとき。</summary>
         public const int SizeLarge = 384;
 
-        public static readonly int[] Sizes = { SizeSmall, SizeMedium, SizeLarge };
+        public static readonly int[] Sizes = { SizeOff, SizeSmall, SizeMedium, SizeLarge };
 
         public static readonly string[] SizeLabels =
         {
+            "焼かない(推奨)",
             "軽い (128 px)", "標準 (256 px)", "きれい (384 px)",
         };
 

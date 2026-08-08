@@ -293,7 +293,7 @@ namespace SmartMediaPlatform.World.EditorTools
 
             Text artworkFallback = UdonWorldUiKit.Label(
                 artwork.transform, "Fallback", 0f, 0f, artWidth, artHeight,
-                wide ? 30 : 20, TextAnchor.MiddleCenter, UdonMediaTheme.TextMuted);
+                wide ? 44 : 26, TextAnchor.MiddleCenter, UdonMediaTheme.TextSecondary);
 
             view.Artwork = artwork;
             view.ArtworkFallbackText = artworkFallback;
@@ -883,7 +883,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 artworks[i] = art;
 
                 fallbacks[i] = UdonWorldUiKit.Label(
-                    art.transform, "Fallback", 0f, 0f, cardW, artH, 34,
+                    art.transform, "Fallback", 0f, 0f, cardW, artH, 46,
                     TextAnchor.MiddleCenter, UdonMediaTheme.TextMuted);
 
                 float textY = artH + UdonMediaTheme.Space1;
@@ -1378,7 +1378,10 @@ namespace SmartMediaPlatform.World.EditorTools
             artwork.preserveAspect = true;
 
             Text artworkFallback = UdonWorldUiKit.Label(
-                artwork.transform, "Fallback", 0f, 0f, artWidth, artHeight, 22,
+                // ── 頭文字は<b>絵として成立する大きさ</b>にする(Phase8)。
+                //    サムネイルを焼かなくなったので、ここがその曲の「顔」です。
+                //    小さいと「絵が無い枠」に見え、大きいと「そういうデザイン」に見えます。
+                artwork.transform, "Fallback", 0f, 0f, artWidth, artHeight, 38,
                 TextAnchor.MiddleCenter, UdonMediaTheme.TextMuted);
 
             row.Artwork = artwork;

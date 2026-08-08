@@ -369,9 +369,30 @@ namespace SmartMediaPlatform.World.Udon.UI
                 // 同じ曲だと分からなくなる。
                 wanted = PaletteSource != null
                     ? PaletteSource.GenreColor(genre)
-                    : new Color(0.902f, 0.902f, 0.918f, 1f);
+                    : new Color(0.898f, 0.906f, 0.925f, 1f);
 
-                fallback = genre != null && genre.Length > 0 ? genre : "♪";
+                // ── ここだけは<b>ジャンル名をそのまま</b>出します(Phase8)。
+                //    行やカードと違って面積が広いので、1 文字では間が抜けます。
+                //    ジャンルが分からないときだけ曲名の頭文字にします。
+                if (genre != null && genre.Length > 0)
+                {
+                    fallback = genre;
+                }
+                else
+                {
+                    string title = catalogIndex >= 0 && Store != null
+                        ? Store.GetTitle(catalogIndex)
+                        : "";
+
+                    fallback = title != null && title.Length > 0
+                        ? title.Substring(0, 1)
+                        : "♪";
+                }
+
+                if (ArtworkFallbackText != null && PaletteSource != null)
+                {
+                    ArtworkFallbackText.color = PaletteSource.GenreInkColor(genre);
+                }
             }
 
             if (Artwork.color != wanted) Artwork.color = wanted;

@@ -99,7 +99,9 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private bool _autoRelated = true;
         private bool _showRelatedOptions;
         private bool _showSetup;
-        private int _thumbnailSize = CatalogThumbnailBaker.SizeMedium;
+        // Phase8:既定は「焼かない」。YouTube のサムネイルをワールドへ
+        // 焼き込むと、著作物の再配布になるためです。
+        private int _thumbnailSize = CatalogThumbnailBaker.SizeOff;
         private int[] _visible = new int[0];
 
         // まとめて直す
@@ -1650,10 +1652,23 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             EditorGUILayout.BeginHorizontal();
 
             int picked = System.Array.IndexOf(CatalogThumbnailBaker.Sizes, _thumbnailSize);
-            if (picked < 0) picked = 1;
+            if (picked < 0) picked = 0;
 
             picked = EditorGUILayout.Popup("絵の大きさ", picked, CatalogThumbnailBaker.SizeLabels);
             _thumbnailSize = CatalogThumbnailBaker.Sizes[picked];
+
+            if (_thumbnailSize <= 0)
+            {
+                EditorGUILayout.LabelField(
+                    "ワールドに +0 MB", EditorStyles.miniLabel, GUILayout.Width(140f));
+
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.LabelField(
+                    "一覧はジャンル色 + 頭文字で表示します。",
+                    EditorStyles.miniLabel);
+                return;
+            }
 
             float megabytes = CatalogThumbnailBaker.EstimateMegabytes(
                 _draft.CompleteCount, _thumbnailSize);
@@ -1663,6 +1678,14 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 EditorStyles.miniLabel, GUILayout.Width(140f));
 
             EditorGUILayout.EndHorizontal();
+
+            // ── 焼くことを選んだ人にだけ、はっきり伝える。
+            EditorGUILayout.HelpBox(
+                "YouTube のサムネイルをワールドに焼き込みます。\n"
+                + "焼いた絵はワールドと一緒に配布されるため、"
+                + "著作物の再配布になります。公開ワールドでは「焼かない」を"
+                + "選ぶことを強く勧めます。",
+                MessageType.Warning);
         }
 
         private void Bake()

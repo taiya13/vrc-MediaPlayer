@@ -346,7 +346,19 @@ namespace SmartMediaPlatform.World.Udon.UI
             _fallbackColor = color;
         }
 
-        private Color _fallbackColor = new Color(0.902f, 0.902f, 0.918f, 1f);
+        /// <summary>
+        /// <b>頭文字の色。</b>Phase8。
+        /// 敷いた色と同じ色味の濃い版を渡します。灰色の文字を置くと
+        /// <b>色と文字が別々のもの</b>に見え、1 枚の絵になりません。
+        /// </summary>
+        public void SetFallbackInk(Color color)
+        {
+            _fallbackInk = color;
+            if (ArtworkFallbackText != null) ArtworkFallbackText.color = color;
+        }
+
+        private Color _fallbackColor = new Color(0.898f, 0.906f, 0.925f, 1f);
+        private Color _fallbackInk = new Color(0.341f, 0.345f, 0.352f, 1f);
 
         private void ShowEqualizer(bool visible)
         {

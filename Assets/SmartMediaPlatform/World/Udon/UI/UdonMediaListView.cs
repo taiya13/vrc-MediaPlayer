@@ -794,6 +794,7 @@ namespace SmartMediaPlatform.World.Udon.UI
                 // 絵が無いカタログでも穴が開かないよう、ジャンルの色を先に渡す。
                 string genre = Store != null ? Store.GetGenre(catalogIndex) : "";
                 target.SetFallbackColor(GenreColor(genre));
+                target.SetFallbackInk(GenreInkColor(genre));
 
                 target.ShowItem(
                     IndexLabel(position),
@@ -803,7 +804,8 @@ namespace SmartMediaPlatform.World.Udon.UI
                     IsNowPlaying(catalogIndex),
                     HasSecondary(position),
                     Store != null ? Store.GetThumbnail(catalogIndex) : null,
-                    FallbackInitial(genre),
+                    FallbackInitial(
+                        Store != null ? Store.GetTitle(catalogIndex) : "", genre),
                     SecondaryLabel());
 
                 // ♥ は「好み」を持っているときだけ出す(Phase7-8)。
@@ -1449,40 +1451,106 @@ namespace SmartMediaPlatform.World.Udon.UI
             return Source == SourceQueue ? "×" : "＋";
         }
 
-        /// <summary>絵が無いときに枠へ出す 1 文字。ジャンルの頭を取る。</summary>
-        private string FallbackInitial(string genre)
+        /// <summary>
+        /// <b>絵の代わりに出す 1 文字。</b>Phase8。
+        ///
+        /// <b>ジャンルではなく曲名の頭を取ります。</b>
+        /// ジャンルの頭だと、同じジャンルの曲が<b>全部おなじ文字</b>になり、
+        /// 並べたときに 1 枚も見分けられません。曲名の頭なら
+        /// <b>1 曲ずつ違う顔</b>になり、色と合わせて「その曲の絵」になります。
+        ///
+        /// 「Official髭男dism - Pretender」のような見出しでも、
+        /// 曲名だけが入っているので頭は曲名の 1 文字目です
+        /// (アーティスト名は取り込みのときに落としてあります)。
+        /// </summary>
+        private string FallbackInitial(string title, string genre)
         {
-            if (genre == null || genre.Length == 0) return "♪";
-            return genre.Substring(0, 1);
+            if (title != null)
+            {
+                // 記号や空白は「顔」にならないので飛ばす。
+                for (int i = 0; i < title.Length; i++)
+                {
+                    char c = title[i];
+                    if (c == ' ' || c == '　') continue;
+                    if (c == '「' || c == '『' || c == '"' || c == '\'') continue;
+                    if (c == '[' || c == '(' || c == '【') continue;
+
+                    return title.Substring(i, 1);
+                }
+            }
+
+            if (genre != null && genre.Length > 0) return genre.Substring(0, 1);
+            return "♪";
         }
 
-        [Header("絵が無いときの色(ジャンルごとに割り当てる)")]
-        [Tooltip("ジャンル名から 1 つ選ぶ。空なら組み込みの 8 色")]
+        [Header("絵の代わりの色(Phase8)")]
+        [Tooltip("ジャンル名から 1 つ選ぶ。空なら組み込みの 10 色")]
         public Color[] GenrePalette;
 
         /// <summary>
-        /// 絵が無いときに敷く色。<b>Phase7-6 で「ジャンルごとの色」をやめました。</b>
+        /// <b>絵の代わりに敷く色。</b>Phase8 で作り直しました。
         ///
-        /// 色でジャンルを描き分けると、一覧が<b>色の一覧</b>になります。
-        /// 明るい配色ではとくに強く出て、「色が付いている = いま鳴っている」
-        /// という手掛かりが埋もれます。<b>色は大事な操作と再生中にだけ</b>使い、
-        /// ここは薄い灰色 1 色にしました(<see cref="GenrePalette"/> に
-        /// 色を入れれば、今までどおり色分けに戻せます)。
+        /// <b>なぜ色を戻したのか</b><br/>
+        /// Phase7-6 では「色はいま鳴っているものにだけ使う」として、
+        /// ここを灰色 1 色にしていました。<b>サムネイルがあったから</b>成立していた
+        /// 判断です。焼き込みをやめた以上、灰色のままだと
+        /// <b>一覧が同じ四角の羅列</b>になり、どれがどの曲か目で追えません。
+        ///
+        /// <b>強調色とは絶対にぶつからない色にしてあります。</b>
+        /// どれも彩度を低く抑えた淡色で、シグナルブルー(#2F6BFF)のような
+        /// 鮮やかさは持ちません。<b>「色が付いている = いま」</b>という
+        /// 手掛かりは壊れません。
+        ///
+        /// <b>ジャンルが同じなら必ず同じ色</b>になるので、
+        /// 一覧を眺めるだけで「このあたりは J-POP」と分かります。
+        /// これは<b>サムネイルには無かった手掛かり</b>です。
         /// </summary>
         public Color GenreColor(string genre)
         {
             if (GenrePalette != null && GenrePalette.Length > 0)
             {
                 if (genre == null || genre.Length == 0) return GenrePalette[0];
-
-                int hash = 0;
-                for (int i = 0; i < genre.Length; i++) hash = hash * 31 + genre[i];
-                if (hash < 0) hash = -hash;
-
-                return GenrePalette[hash % GenrePalette.Length];
+                return GenrePalette[HashOf(genre) % GenrePalette.Length];
             }
 
-            return new Color(0.902f, 0.902f, 0.918f, 1f);
+            if (genre == null || genre.Length == 0)
+            {
+                return new Color(0.898f, 0.906f, 0.925f, 1f);   // 灰(ジャンル不明)
+            }
+
+            int slot = HashOf(genre) % 10;
+
+            // 明るい配色に乗る淡色。彩度は 0.12〜0.20 に抑えてある。
+            if (slot == 0) return new Color(0.831f, 0.878f, 0.953f, 1f);   // 空
+            if (slot == 1) return new Color(0.890f, 0.855f, 0.945f, 1f);   // 藤
+            if (slot == 2) return new Color(0.827f, 0.918f, 0.898f, 1f);   // 若草
+            if (slot == 3) return new Color(0.968f, 0.874f, 0.843f, 1f);   // 杏
+            if (slot == 4) return new Color(0.949f, 0.925f, 0.831f, 1f);   // 麦
+            if (slot == 5) return new Color(0.957f, 0.851f, 0.886f, 1f);   // 桜
+            if (slot == 6) return new Color(0.843f, 0.906f, 0.941f, 1f);   // 水
+            if (slot == 7) return new Color(0.886f, 0.910f, 0.839f, 1f);   // 苔
+            if (slot == 8) return new Color(0.925f, 0.886f, 0.847f, 1f);   // 砂
+            return new Color(0.874f, 0.867f, 0.925f, 1f);                  // 霞
+        }
+
+        /// <summary>
+        /// <b>頭文字の色。</b>敷いた色より 1 段濃くして、同じ色味で揃えます。
+        /// 灰色の文字を置くと<b>色と文字が別々のもの</b>に見えます。
+        /// </summary>
+        public Color GenreInkColor(string genre)
+        {
+            Color face = GenreColor(genre);
+
+            // そのままだと薄すぎるので、黒へ 62% 寄せる。
+            // 色味は保ったまま濃さだけ上がるので、面と文字が同じ「一枚の絵」に見える。
+            return new Color(face.r * 0.38f, face.g * 0.38f, face.b * 0.38f, 1f);
+        }
+
+        private int HashOf(string text)
+        {
+            int hash = 0;
+            for (int i = 0; i < text.Length; i++) hash = hash * 31 + text[i];
+            return hash < 0 ? -hash : hash;
         }
 
         private bool IsNowPlaying(int catalogIndex)

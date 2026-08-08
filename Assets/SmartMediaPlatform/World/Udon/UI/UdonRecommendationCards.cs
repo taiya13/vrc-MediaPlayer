@@ -321,16 +321,25 @@ namespace SmartMediaPlatform.World.Udon.UI
                 return;
             }
 
+            string genre = Store != null ? Store.GetGenre(catalogIndex) : "";
+
             image.sprite = null;
             image.color = PaletteSource != null
-                ? PaletteSource.GenreColor(Store != null ? Store.GetGenre(catalogIndex) : "")
-                : new Color(0.902f, 0.902f, 0.918f, 1f);
+                ? PaletteSource.GenreColor(genre)
+                : new Color(0.898f, 0.906f, 0.925f, 1f);
 
             if (ArtworkFallbacks != null && card < ArtworkFallbacks.Length
                 && ArtworkFallbacks[card] != null)
             {
                 string title = Store != null ? Store.GetTitle(catalogIndex) : "";
                 ArtworkFallbacks[card].text = title.Length > 0 ? title.Substring(0, 1) : "♪";
+
+                // 頭文字は敷いた色の濃い版。灰色を置くと
+                // 面と文字が別々のものに見えます(Phase8)。
+                if (PaletteSource != null)
+                {
+                    ArtworkFallbacks[card].color = PaletteSource.GenreInkColor(genre);
+                }
             }
         }
 
