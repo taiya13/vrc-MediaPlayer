@@ -65,6 +65,16 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         public static IReadOnlyList<CatalogDraftItem> ThumbnailSource;
 
         /// <summary>
+        /// <b>この並びは何順か。</b>Phase8。
+        /// 0 = 不明 / 1 = 人気順 / 2 = 新着順。
+        ///
+        /// 再生数を保存する代わりに、<b>並び順の意味だけ</b>を焼き込みます。
+        /// おすすめはこれを見て、人気順のときだけ位置を人気度として扱います。
+        /// <b>YouTube の数字はひとつも入りません</b>。
+        /// </summary>
+        public static int OrderKind;
+
+        /// <summary>
         /// シーンにある <c>UdonMediaCatalog</c> を全部探して、
         /// <paramref name="asset"/> の中身を焼き込む。
         ///
@@ -125,6 +135,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 {
                     bake.Invoke(null, new object[] { component, items });
                     AssignThumbnails(component, thumbnails);
+                    AssignOrderKind(component);
 
                     EditorUtility.SetDirty(component);
                     baked++;
@@ -177,6 +188,17 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             if (field == null) return;
 
             field.SetValue(catalog, thumbnails);
+        }
+
+        /// <summary>並びの意味を <c>UdonMediaCatalog.OrderKind</c> へ入れる。</summary>
+        private static void AssignOrderKind(Component catalog)
+        {
+            FieldInfo field = catalog.GetType().GetField(
+                "OrderKind", BindingFlags.Public | BindingFlags.Instance);
+
+            if (field == null) return;
+
+            field.SetValue(catalog, OrderKind);
         }
 
         // ───────── 焼き忘れの検出(Phase6-5)─────────

@@ -41,13 +41,33 @@ namespace SmartMediaPlatform.Catalog.Udon
         public VRCUrl[] Urls;          // 実行時生成不可のため編集時に焼き込む
         public int[] Durations;
 
+        // ───────── 並び順(Phase8)─────────
+
+        /// <summary>並びの意味が分からない。人気度を効かせない。<b>既定</b>。</summary>
+        public const int OrderUnknown = 0;
+
+        /// <summary>人気順で取り込んだ。前にあるものほど人気。</summary>
+        public const int OrderPopular = 1;
+
+        /// <summary>新着順で取り込んだ。前にあるものほど新しい。</summary>
+        public const int OrderLatest = 2;
+
         /// <summary>
-        /// 人気度(取り込み元での再生数)。分からなければ 0。
-        /// <b>int にしてあります</b> —— Udon は long の配列を素直に扱えないので、
-        /// 焼き込むときに 1000 で割った「千回単位」に丸めます。
-        /// 10 億回でも 100 万に収まるので、int で足ります。
+        /// <b>このカタログはどういう順で並んでいるか。</b>Phase8。
+        ///
+        /// <b>再生数(viewCount)を保存するのをやめた代わり</b>です。
+        /// 人気順で取り込むと、<b>並び順そのものに人気の情報が残ります</b>
+        /// —— 前にあるものほど再生数が多い、という形で。
+        /// おすすめはこの位置だけを見るので、
+        /// <b>YouTube の数字をひとつも持たずに</b>人気度を作れます。
+        ///
+        /// <b>既定は <see cref="OrderUnknown"/>(効かせない)</b>です。
+        /// 手で並べ替えたり、複数のチャンネルを混ぜたりすると
+        /// 並びの意味が失われるので、<b>作者が「これは人気順だ」と
+        /// 明示したときだけ</b>効かせます。
         /// </summary>
-        public int[] ViewCountsK;
+        [Range(0, 2)]
+        public int OrderKind = OrderUnknown;
 
         // タグ(CSR): item i のタグ = TagValues[TagOffsets[i] .. TagOffsets[i + 1])
         public string[] TagValues;
@@ -314,27 +334,10 @@ namespace SmartMediaPlatform.Catalog.Udon
         public int GetMediaType(int index) { return Types[index]; }
         public int GetDurationSeconds(int index) { return Durations[index]; }
 
-        /// <summary>人気度(千回単位)。分からなければ 0。</summary>
-        public int GetViewCountK(int index)
+        /// <summary>並び順から人気度を作ってよいか(人気順で取り込んだときだけ)。</summary>
+        public bool HasPopularityOrder()
         {
-            if (ViewCountsK == null || index < 0 || index >= ViewCountsK.Length) return 0;
-            return ViewCountsK[index];
-        }
-
-        /// <summary>
-        /// カタログの中でいちばん大きい人気度(千回単位)。
-        /// おすすめが 0〜1 に均すのに使います。
-        /// </summary>
-        public int MaxViewCountK()
-        {
-            if (ViewCountsK == null) return 0;
-
-            int max = 0;
-            for (int i = 0; i < ViewCountsK.Length; i++)
-            {
-                if (ViewCountsK[i] > max) max = ViewCountsK[i];
-            }
-            return max;
+            return OrderKind == OrderPopular;
         }
 
         public VRCUrl GetUrl(int index)

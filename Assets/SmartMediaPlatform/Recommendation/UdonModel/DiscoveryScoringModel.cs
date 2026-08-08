@@ -295,34 +295,30 @@ namespace SmartMediaPlatform.Recommendation.UdonModel
         }
 
         /// <summary>
-        /// <b>再生数を 0〜1 に均す。</b>Phase7-9。
+        /// <b>並び順から人気度を作る。</b>Phase8。
         ///
-        /// <b>そのまま割ってはいけません。</b>再生数の分布は極端に偏っていて、
-        /// 1 億回の曲が 1 本あると、10 万回の曲は <c>0.001</c> になります。
-        /// つまり<b>ほとんどの曲で人気度が効かなくなります</b>。
+        /// <b>再生数そのものは持ちません。</b>持つと
+        /// <list type="bullet">
+        /// <item>YouTube の数字をワールドへ恒久保存することになる</item>
+        /// <item>古い数字を表示し続けることになる</item>
+        /// </list>
+        /// の 2 つが避けられないためです。
         ///
-        /// 対数で潰すと「10 倍ごとに同じだけ上がる」ようになり、
-        /// 10 万回と 100 万回の差が、1000 万回と 1 億回の差と<b>同じ重み</b>になります。
-        /// 人が「人気」を感じる感覚もこちらに近いはずです。
+        /// 代わりに<b>「人気順で取り込んだ結果の並び」</b>を使います。
+        /// 前にあるものほど人気なので、位置だけで順序は復元できます。
+        /// <b>数字を 1 つも保存せずに、人気度の順序だけが残る</b>のが狙いです。
+        ///
+        /// <paramref name="rank"/> は 0 が先頭(いちばん人気)。
+        /// 先頭を 1.0、最後を 0.0 として、間はまっすぐ下がります。
+        /// 対数で潰す必要はありません —— 順位はすでに均された値だからです。
         /// </summary>
-        public static float PopularityOf(float views, float maxViews)
+        public static float PopularityFromRank(int rank, int count)
         {
-            if (views <= 0f || maxViews <= 0f) return 0f;
+            if (count <= 1) return 0f;
+            if (rank < 0) return 0f;
+            if (rank >= count) return 0f;
 
-            float top = Log10(1f + maxViews);
-            if (top <= 0f) return 0f;
-
-            float here = Log10(1f + views);
-            float ratio = here / top;
-
-            return Clamp01(ratio);
-        }
-
-        /// <summary>常用対数。テストでも Udon でも同じ結果になるよう自前で持つ。</summary>
-        private static float Log10(float value)
-        {
-            if (value <= 0f) return 0f;
-            return (float)System.Math.Log10(value);
+            return 1f - (float)rank / (float)(count - 1);
         }
 
         /// <summary>文字列を数に潰す。<b>同じ文字列なら必ず同じ数</b>になればよい。</summary>

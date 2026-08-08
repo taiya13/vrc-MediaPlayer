@@ -102,6 +102,17 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         // Phase8:既定は「焼かない」。YouTube のサムネイルをワールドへ
         // 焼き込むと、著作物の再配布になるためです。
         private int _thumbnailSize = CatalogThumbnailBaker.SizeOff;
+
+        // Phase8:この並びは何順か(0 = 不明 / 1 = 人気順 / 2 = 新着順)。
+        // 再生数を保存する代わりに、並びの意味だけを焼き込みます。
+        // <b>既定は「不明」</b>です。手で並べ替えたり混ぜたりすると
+        // 並びの意味が失われるので、作者が明示したときだけ効かせます。
+        private int _catalogOrderKind;
+
+        private static readonly string[] OrderKindLabels =
+        {
+            "不明(おすすめで使わない)", "人気順に並んでいる", "新着順に並んでいる",
+        };
         private int[] _visible = new int[0];
 
         // まとめて直す
@@ -1667,6 +1678,8 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 EditorGUILayout.LabelField(
                     "一覧はジャンル色 + 頭文字で表示します。",
                     EditorStyles.miniLabel);
+
+                DrawOrderKindSetting();
                 return;
             }
 
@@ -1679,6 +1692,8 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
 
             EditorGUILayout.EndHorizontal();
 
+            DrawOrderKindSetting();
+
             // ── 焼くことを選んだ人にだけ、はっきり伝える。
             EditorGUILayout.HelpBox(
                 "YouTube のサムネイルをワールドに焼き込みます。\n"
@@ -1688,11 +1703,38 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 MessageType.Warning);
         }
 
+        /// <summary>
+        /// <b>この並びは何順か。</b>Phase8。
+        ///
+        /// 再生数を焼き込むのをやめた代わりに、<b>並びの意味だけ</b>を渡します。
+        /// おすすめは「人気順」のときだけ、位置を人気度として扱います。
+        /// <b>YouTube の数字はひとつも保存しません。</b>
+        /// </summary>
+        private void DrawOrderKindSetting()
+        {
+            _catalogOrderKind = EditorGUILayout.Popup(
+                "並びの意味", _catalogOrderKind, OrderKindLabels);
+
+            if (_catalogOrderKind == 1)
+            {
+                EditorGUILayout.LabelField(
+                    "前にある曲ほど人気として、おすすめに使います。",
+                    EditorStyles.miniLabel);
+            }
+            else if (_catalogOrderKind == 0)
+            {
+                EditorGUILayout.LabelField(
+                    "人気順で取り込んだなら「人気順」を選ぶと、おすすめが賢くなります。",
+                    EditorStyles.miniLabel);
+            }
+        }
+
         private void Bake()
         {
             // 絵の URL を持っているのは編集中の中身だけ。焼く直前に渡す。
             CatalogUrlTableBridge.ThumbnailSize = _thumbnailSize;
             CatalogUrlTableBridge.ThumbnailSource = _draft.Items;
+            CatalogUrlTableBridge.OrderKind = _catalogOrderKind;
 
             CatalogUrlTableBridge.BakeReport report = CatalogUrlTableBridge.BakeIntoScene(_asset);
 

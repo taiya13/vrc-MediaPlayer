@@ -400,8 +400,11 @@ namespace SmartMediaPlatform.Recommendation.Udon
 
             int maxPlays = Profile != null ? Profile.MaxPlayCount() : 0;
 
-            // 取り込み時に焼き込んだ再生数(千回単位)。Phase7-9。
-            int maxViewsK = Catalog.MaxViewCountK();
+            // ── 人気度は<b>並び順</b>から作る(Phase8)。
+            //    人気順で取り込んだカタログでは、前にあるものほど人気です。
+            //    <b>YouTube の数字はひとつも保存していません</b>。
+            bool byRank = Catalog.HasPopularityOrder();
+            int total = Catalog.Count;
 
             int m = candidates.Length;
             float[] scores = new float[m];
@@ -443,13 +446,13 @@ namespace SmartMediaPlatform.Recommendation.Udon
                     }
                 }
 
-                // ── 世の中の人気(取り込み時の再生数)を主にする。
+                // ── 世の中の人気(取り込んだ並び順)を主にする。
                 //    このワールドでの再生回数は、まだ数が少ないうちは
                 //    <b>たまたま最初に押された曲</b>を指しているだけなので、
                 //    足しはしても主役にはしません。
-                if (maxViewsK > 0)
+                if (byRank)
                 {
-                    float world = PopularityOf(Catalog.GetViewCountK(cand), maxViewsK);
+                    float world = PopularityFromRank(cand, total);
                     popularity = world * 0.7f + popularity * 0.3f;
                 }
 
@@ -753,19 +756,15 @@ namespace SmartMediaPlatform.Recommendation.Udon
         }
 
         /// <summary>
-        /// 再生数を 0〜1 に均す。<b>対数で潰します</b> ——
-        /// そのまま割ると、飛び抜けた 1 本のせいで他が全部 0 になるためです。
-        /// 正典 DiscoveryScoringModel.PopularityOf の写しです。
+        /// 並び順から人気度を作る。前にあるものほど人気。
+        /// 正典 DiscoveryScoringModel.PopularityFromRank の写しです。
         /// </summary>
-        private float PopularityOf(float views, float maxViews)
+        private float PopularityFromRank(int rank, int count)
         {
-            if (views <= 0f || maxViews <= 0f) return 0f;
+            if (count <= 1) return 0f;
+            if (rank < 0 || rank >= count) return 0f;
 
-            // Log10 ではなく Log を使うのは、Udon で確実に呼べる側だからです。
-            float top = Mathf.Log(1f + maxViews);
-            if (top <= 0f) return 0f;
-
-            return Clamp01(Mathf.Log(1f + views) / top);
+            return 1f - (float)rank / (float)(count - 1);
         }
 
         private float Clamp01(float value)

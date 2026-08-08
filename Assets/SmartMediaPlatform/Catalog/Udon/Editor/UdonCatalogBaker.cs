@@ -46,7 +46,6 @@ namespace SmartMediaPlatform.Catalog.UdonEditor
             target.Genres = d.Genres;
             target.Types = d.Types;
             target.Durations = d.Durations;
-            target.ViewCountsK = d.ViewCountsK;
             target.TagValues = d.TagValues;
             target.TagOffsets = d.TagOffsets;
             target.RelatedIds = d.RelatedIds;

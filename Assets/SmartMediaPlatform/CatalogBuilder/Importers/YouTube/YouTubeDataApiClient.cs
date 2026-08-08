@@ -477,9 +477,12 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
                 int count = Math.Min(50, ids.Count - start);
                 string joined = string.Join(",", ids.GetRange(start, count).ToArray());
 
-                // statistics を足すのは人気度(viewCount)のためです(Phase7-9)。
-                // 1 回の呼び出しで一緒に取れるので、API の消費は増えません。
-                string query = "videos?part=snippet,contentDetails,statistics&id=" + Escape(joined);
+                // ── statistics(再生数)は<b>取りません</b>(Phase8)。
+                //
+                //    取ってしまうと、それを保存するか捨てるかの判断が要ります。
+                //    人気度は「人気順で取り込んだときの並び順」から作れるので、
+                //    そもそも数字を受け取らないのがいちばん確実です。
+                string query = "videos?part=snippet,contentDetails&id=" + Escape(joined);
 
                 string json;
                 if (!Get(query, out json, out error)) return false;
@@ -527,12 +530,6 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             if (item.contentDetails != null)
             {
                 info.DurationSeconds = YouTubeDurationParser.ToSeconds(item.contentDetails.duration);
-            }
-
-            if (item.statistics != null && !string.IsNullOrEmpty(item.statistics.viewCount))
-            {
-                long views;
-                if (long.TryParse(item.statistics.viewCount, out views)) info.ViewCount = views;
             }
 
             return info;
@@ -737,14 +734,6 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
             public string id;
             public VideoSnippet snippet;
             public VideoContentDetails contentDetails;
-            public VideoStatistics statistics;
-        }
-
-        [Serializable]
-        private sealed class VideoStatistics
-        {
-            // JSON では文字列で来る(64bit の数を JSON の数値で送らないため)。
-            public string viewCount;
         }
 
         [Serializable]

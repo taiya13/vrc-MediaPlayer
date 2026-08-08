@@ -28,12 +28,6 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
         public string Description = "";
 
         /// <summary>
-        /// <b>再生数。</b>おすすめの「人気度」に使います(Phase7-9)。
-        /// 取れなければ 0 のまま。
-        /// </summary>
-        public long ViewCount;
-
-        /// <summary>
         /// 動画に付いているタグ。Phase6-4 で足しました。
         /// <b>付いていない動画も多い</b>ので、空を前提に扱ってください。
         /// </summary>
@@ -159,9 +153,6 @@ namespace SmartMediaPlatform.CatalogBuilder.YouTube
 
             // Phase6-5: 並べ替えの材料。
             item.PublishedAt = PublishedAt;
-
-            // Phase7-9: おすすめの「人気度」に使う。
-            item.ViewCount = ViewCount;
 
             // Phase6-6: ジャンルはこちらで決める。
             // YouTube のカテゴリは「音楽」しか返さないので、そのまま入れると
