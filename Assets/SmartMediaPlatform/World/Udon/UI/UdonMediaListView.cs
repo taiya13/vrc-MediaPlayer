@@ -1550,7 +1550,11 @@ namespace SmartMediaPlatform.World.Udon.UI
         {
             int hash = 0;
             for (int i = 0; i < text.Length; i++) hash = hash * 31 + text[i];
-            return hash < 0 ? -hash : hash;
+
+            // -hash では足りない。int.MinValue は符号を反転しても負のままで、
+            // そのまま % すると添字が負になり配列の外を触る。
+            // 最上位ビットを落として必ず 0 以上にする。
+            return hash & 0x7FFFFFFF;
         }
 
         private bool IsNowPlaying(int catalogIndex)
