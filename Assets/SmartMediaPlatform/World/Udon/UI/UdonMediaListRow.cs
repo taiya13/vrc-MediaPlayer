@@ -37,7 +37,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         public int Row;
 
         [Header("文字(空でも動く)")]
-        [Tooltip("行番号 / ♪ などの印")]
+        [Tooltip("行番号。鳴っている行だけ、ここが動く 3 本の棒に入れ替わる")]
         public Text IndexText;
 
         [Tooltip("見出し")]
@@ -48,13 +48,6 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         [Tooltip("長さ")]
         public Text DurationText;
-
-        [Header("絵(Phase7)")]
-        [Tooltip("曲の絵。焼き込んでいなければジャンルの色で塗る")]
-        public Image Artwork;
-
-        [Tooltip("絵が無いときに出す文字(ジャンルの頭 1 文字など)")]
-        public Text ArtworkFallbackText;
 
         [Header("出し分け(空でも動く)")]
         [Tooltip("中身がある行だけ出す入れ物。必ず「子」を指すこと(この行自身は不可)")]
@@ -173,15 +166,19 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <b>「見出しが何個要るか」を先に知らないと行を用意できません</b>。
         /// 検索でチャンネルが減れば見出しも減るので、それは決められません。
         /// </summary>
-        public void ShowHeader(string channel, int count, bool expanded)
+        public void ShowHeader(string channel, int count, bool expanded, bool selected)
         {
             _empty = false;
             _nowPlaying = false;
             _header = true;
 
             SetActive(Content, false);
-            SetActive(Highlight, false);
-            SetActive(NowPlayingBar, false);
+
+            // ── 選ばれている見出しに印を出す(Phase8-2)。
+            //    レールでは<b>これが唯一「いまどれを見ているか」を示すもの</b>です。
+            //    曲の一覧側には手掛かりが無いので、ここを落とすと迷子になります。
+            SetActive(Highlight, selected);
+            SetActive(NowPlayingBar, selected);
             SetActive(PressedMarker, false);
             SetActive(SecondaryButton, false);
             SetActive(FavoriteButton, false);
@@ -221,25 +218,21 @@ namespace SmartMediaPlatform.World.Udon.UI
             ShowEqualizer(false);
         }
 
-        /// <summary>中身を書く。呼ぶのは <see cref="UdonMediaListView"/> だけ。</summary>
-        public void ShowItem(
-            string indexLabel, string title, string sub, string duration,
-            bool highlight, bool secondary)
-        {
-            ShowItem(indexLabel, title, sub, duration, highlight, secondary, null, "", "");
-        }
-
         /// <summary>
-        /// 中身を書く(絵つき)。Phase7。
+        /// 中身を書く。呼ぶのは <see cref="UdonMediaListView"/> だけ。
         ///
-        /// <b>絵が無くても穴が開きません。</b><paramref name="artwork"/> が
-        /// <c>null</c> なら、ジャンルの色で塗って頭 1 文字を出します。
-        /// 焼き込んでいないカタログでも、並びが崩れないようにするためです。
+        /// <b>絵は受け取りません。</b>Phase8-2。
+        /// 行の左端は <see cref="IndexText"/> の<b>番号</b>で、
+        /// 鳴っている行だけ、そこが<b>動く 3 本の棒</b>に入れ替わります
+        /// (<paramref name="highlight"/> が true のとき)。
+        ///
+        /// 番号と棒は<b>同じ場所に置いて、片方だけを出します</b>。
+        /// 別々の場所に置くと、鳴っている行だけ文字の開始位置がずれて、
+        /// 一覧の左端が<b>がたつきます</b>。
         /// </summary>
         public void ShowItem(
             string indexLabel, string title, string sub, string duration,
-            bool highlight, bool secondary,
-            Sprite artwork, string fallbackText, string secondaryLabel)
+            bool highlight, bool secondary, string secondaryLabel)
         {
             _empty = false;
             _nowPlaying = highlight;
@@ -251,13 +244,13 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetActive(NowPlayingBar, highlight);
             SetActive(SecondaryButton, secondary);
 
-            SetText(IndexText, indexLabel);
+            // 鳴っている行では番号を消す。棒と同じ場所に出しているので、
+            // 両方出すと重なって読めなくなる。
+            SetText(IndexText, highlight ? "" : indexLabel);
             SetText(TitleText, title);
             SetText(SubText, sub);
             SetText(DurationText, duration);
             SetText(SecondaryLabel, secondaryLabel);
-
-            ShowArtwork(artwork, fallbackText);
 
             // 鳴っている行だけ見出しを明るくする。
             // 色の差は、離れて見たときに縦棒より先に目に入る。
@@ -317,48 +310,6 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         private bool _nowPlaying;
         private bool _header;
-
-        /// <summary>
-        /// 絵を入れる。無ければジャンルの色で塗って頭 1 文字を出す。
-        /// <b>枠の大きさは変えません</b> — 絵の有無で行の高さが変わると、
-        /// 押す場所がずれてしまうためです。
-        /// </summary>
-        private void ShowArtwork(Sprite artwork, string fallbackText)
-        {
-            if (Artwork == null) return;
-
-            bool hasArtwork = artwork != null;
-
-            if (Artwork.sprite != artwork) Artwork.sprite = artwork;
-
-            // 絵があるときは白(素の色)、無いときは塗りつぶしの色を活かす。
-            Color wanted = hasArtwork ? Color.white : _fallbackColor;
-            if (Artwork.color != wanted) Artwork.color = wanted;
-
-            if (ArtworkFallbackText == null) return;
-
-            SetText(ArtworkFallbackText, hasArtwork ? "" : fallbackText);
-        }
-
-        /// <summary>絵が無いときの塗り色。一覧から渡します。</summary>
-        public void SetFallbackColor(Color color)
-        {
-            _fallbackColor = color;
-        }
-
-        /// <summary>
-        /// <b>頭文字の色。</b>Phase8。
-        /// 敷いた色と同じ色味の濃い版を渡します。灰色の文字を置くと
-        /// <b>色と文字が別々のもの</b>に見え、1 枚の絵になりません。
-        /// </summary>
-        public void SetFallbackInk(Color color)
-        {
-            _fallbackInk = color;
-            if (ArtworkFallbackText != null) ArtworkFallbackText.color = color;
-        }
-
-        private Color _fallbackColor = new Color(0.898f, 0.906f, 0.925f, 1f);
-        private Color _fallbackInk = new Color(0.341f, 0.345f, 0.352f, 1f);
 
         private void ShowEqualizer(bool visible)
         {

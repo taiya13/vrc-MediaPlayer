@@ -58,16 +58,6 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("ジャンルの札そのもの。ジャンルが無い曲では隠す")]
         public GameObject GenreChip;
 
-        [Header("絵(Phase7)")]
-        [Tooltip("いま鳴っている曲の絵。焼き込んでいなければジャンルの色で塗る")]
-        public Image Artwork;
-
-        [Tooltip("絵が無いときに枠へ出す文字")]
-        public Text ArtworkFallbackText;
-
-        [Tooltip("絵が無いときの塗り色を決める一覧(ジャンルの色を借りる)")]
-        public UdonMediaListView PaletteSource;
-
         [Header("進捗(空でも動く)")]
         [Tooltip("Image Type を Filled にしておくこと")]
         public Image ProgressFill;
@@ -109,8 +99,6 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// </summary>
         void Update()
         {
-            TickArtworkPop();
-
             if (Session == null) return;
             if (Session.CurrentIndex < 0) return;
 
@@ -142,58 +130,6 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetSeekSlider(backend.GetProgress());
             SetText(TimeText, FormatSeconds(elapsed) + " / " + FormatLength(length, Session.CurrentIndex));
             SetText(RemainingText, FormatRemaining(elapsed, length));
-        }
-
-        // ───────── 絵が入れ替わったときに弾ませる(Frost / Phase7-7)─────────
-
-        [Header("絵の動き(Frost / Phase7-7)")]
-        [Tooltip("弾ませる絵。空なら何も動かない")]
-        public RectTransform ArtworkRect;
-
-        [Tooltip("元の大きさに戻るまでの時間(秒)")]
-        public float ArtworkPopSeconds = 0.30f;
-
-        [Tooltip("入れ替わった瞬間の大きさ。1.04 なら 4% だけ大きく始まる")]
-        public float ArtworkPopScale = 1.04f;
-
-        // いまの倍率。1 に向かって毎フレーム戻る。
-        private float _artworkScale = 1f;
-        private int _poppedFor = -2;
-
-        /// <summary>
-        /// <b>曲が変わったら、絵をほんの少しだけ弾ませる。</b>
-        ///
-        /// <b>なぜ動かすのか</b><br/>
-        /// ワールドでは<b>視線が板の外にあることがふつう</b>です。
-        /// 絵が音もなく差し替わっても、次に見たときには終わっていて、
-        /// 「いつ変わったのか」が分かりません。<b>動きだけが、見ていない間にも
-        /// 気付かせられる合図</b>です。
-        ///
-        /// 4% しか変えないのは、大きく動かすと<b>安っぽく</b>なるからです。
-        /// 気付くが、邪魔にはならない —— その境目がこのあたりです。
-        /// </summary>
-        private void TickArtworkPop()
-        {
-            if (ArtworkRect == null) return;
-
-            int current = Session != null ? Session.CurrentIndex : -1;
-
-            if (current != _poppedFor)
-            {
-                _poppedFor = current;
-                _artworkScale = ArtworkPopScale;
-            }
-
-            if (_artworkScale <= 1.0005f && _artworkScale >= 0.9995f) return;
-
-            // 1 へ向かって指数的に戻る。時間で割るので、
-            // フレームレートが変わっても掛かる時間は同じ。
-            float k = ArtworkPopSeconds <= 0f
-                ? 1f
-                : Mathf.Clamp01(Time.deltaTime / ArtworkPopSeconds);
-
-            _artworkScale = Mathf.Lerp(_artworkScale, 1f, k);
-            ArtworkRect.localScale = new Vector3(_artworkScale, _artworkScale, 1f);
         }
 
         // ───────── 動かせる再生バー(Phase7-3)─────────
@@ -280,7 +216,6 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetText(ArtistText, Store != null ? Store.GetArtist(current) : "");
 
             ShowGenre(Store != null ? Store.GetGenre(current) : "");
-            ShowArtwork(current);
 
             // Phase7-3 から QueueCount は「これから流すもの」だけの数。
             // 鳴っているものは入っていないので、引き算は要らない。
@@ -330,7 +265,6 @@ namespace SmartMediaPlatform.World.Udon.UI
             SetFill(0f);
 
             ShowGenre("");
-            ShowArtwork(-1);
         }
 
         /// <summary>ジャンルの札。無い曲では札ごと隠す(空の丸が残らないように)。</summary>
@@ -340,63 +274,6 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             SetActive(GenreChip, has);
             SetText(GenreText, has ? genre : "");
-        }
-
-        /// <summary>
-        /// 絵を入れる。<b>枠は必ず残します</b> —
-        /// 曲が変わるたびに大きさが変わると、目が落ち着きません。
-        /// </summary>
-        private void ShowArtwork(int catalogIndex)
-        {
-            if (Artwork == null) return;
-
-            Sprite sprite = catalogIndex >= 0 && Store != null
-                ? Store.GetThumbnail(catalogIndex)
-                : null;
-
-            if (Artwork.sprite != sprite) Artwork.sprite = sprite;
-
-            Color wanted = Color.white;
-            string fallback = "";
-
-            if (sprite == null)
-            {
-                string genre = catalogIndex >= 0 && Store != null
-                    ? Store.GetGenre(catalogIndex)
-                    : "";
-
-                // 一覧と同じ色の決め方を借りる。行と大きい絵で色が違うと、
-                // 同じ曲だと分からなくなる。
-                wanted = PaletteSource != null
-                    ? PaletteSource.GenreColor(genre)
-                    : new Color(0.898f, 0.906f, 0.925f, 1f);
-
-                // ── ここだけは<b>ジャンル名をそのまま</b>出します(Phase8)。
-                //    行やカードと違って面積が広いので、1 文字では間が抜けます。
-                //    ジャンルが分からないときだけ曲名の頭文字にします。
-                if (genre != null && genre.Length > 0)
-                {
-                    fallback = genre;
-                }
-                else
-                {
-                    string title = catalogIndex >= 0 && Store != null
-                        ? Store.GetTitle(catalogIndex)
-                        : "";
-
-                    fallback = title != null && title.Length > 0
-                        ? title.Substring(0, 1)
-                        : "♪";
-                }
-
-                if (ArtworkFallbackText != null && PaletteSource != null)
-                {
-                    ArtworkFallbackText.color = PaletteSource.GenreInkColor(genre);
-                }
-            }
-
-            if (Artwork.color != wanted) Artwork.color = wanted;
-            SetText(ArtworkFallbackText, fallback);
         }
 
         private void SetActive(GameObject target, bool value)

@@ -50,8 +50,6 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         [Header("カード(順番どおりに挿すこと)")]
         public GameObject[] Cards;
-        public Image[] Artworks;
-        public Text[] ArtworkFallbacks;
         public Text[] Titles;
         public Text[] Artists;
         public Text[] Reasons;
@@ -60,9 +58,6 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Header("何も無いとき")]
         public GameObject EmptyMessage;
         public Text EmptyText;
-
-        [Tooltip("絵が無いときの色を借りる一覧(ジャンルの色)")]
-        public UdonMediaListView PaletteSource;
 
         [Tooltip("押したしるしを出しておく時間(秒)")]
         public float TouchFeedbackSeconds = 0.25f;
@@ -291,55 +286,6 @@ namespace SmartMediaPlatform.World.Udon.UI
                 Reasons[card].text = Recommendation != null
                     ? Recommendation.DescribeReason(reason)
                     : "おすすめ";
-            }
-
-            ShowArtwork(card, catalogIndex);
-        }
-
-        /// <summary>
-        /// 絵を出す。焼き込んでいなければ、ジャンルの色で塗って頭文字を出します。
-        /// <b>空白のままにしない</b>のは、抜けているのか読み込み中なのかが
-        /// 分からないと不安になるためです。
-        /// </summary>
-        private void ShowArtwork(int card, int catalogIndex)
-        {
-            if (Artworks == null || card >= Artworks.Length || Artworks[card] == null) return;
-
-            Sprite art = Store != null ? Store.GetThumbnail(catalogIndex) : null;
-            Image image = Artworks[card];
-
-            if (art != null)
-            {
-                image.sprite = art;
-                image.color = Color.white;
-
-                if (ArtworkFallbacks != null && card < ArtworkFallbacks.Length
-                    && ArtworkFallbacks[card] != null)
-                {
-                    ArtworkFallbacks[card].text = "";
-                }
-                return;
-            }
-
-            string genre = Store != null ? Store.GetGenre(catalogIndex) : "";
-
-            image.sprite = null;
-            image.color = PaletteSource != null
-                ? PaletteSource.GenreColor(genre)
-                : new Color(0.898f, 0.906f, 0.925f, 1f);
-
-            if (ArtworkFallbacks != null && card < ArtworkFallbacks.Length
-                && ArtworkFallbacks[card] != null)
-            {
-                string title = Store != null ? Store.GetTitle(catalogIndex) : "";
-                ArtworkFallbacks[card].text = title.Length > 0 ? title.Substring(0, 1) : "♪";
-
-                // 頭文字は敷いた色の濃い版。灰色を置くと
-                // 面と文字が別々のものに見えます(Phase8)。
-                if (PaletteSource != null)
-                {
-                    ArtworkFallbacks[card].color = PaletteSource.GenreInkColor(genre);
-                }
             }
         }
 

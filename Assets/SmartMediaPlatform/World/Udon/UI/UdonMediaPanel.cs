@@ -184,17 +184,6 @@ namespace SmartMediaPlatform.World.Udon.UI
                 {
                     Cards.Recommendation = Core.Recommendation;
                 }
-
-                // 絵が無いときの色は一覧から借りる(同じ色の決め方を 2 か所に書かない)。
-                if (Cards.PaletteSource == null && Lists != null && Lists.Length > 0)
-                {
-                    for (int i = 0; i < Lists.Length; i++)
-                    {
-                        if (Lists[i] == null) continue;
-                        Cards.PaletteSource = Lists[i];
-                        break;
-                    }
-                }
             }
 
             if (Tabs != null) Tabs.EnsureInitialized();
