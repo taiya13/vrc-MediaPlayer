@@ -102,7 +102,6 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private bool _showSetup;
         // Phase8:既定は「焼かない」。YouTube のサムネイルをワールドへ
         // 焼き込むと、著作物の再配布になるためです。
-        private int _thumbnailSize = CatalogThumbnailBaker.SizeOff;
 
         // Phase8:この並びは何順か(0 = 不明 / 1 = 人気順 / 2 = 新着順)。
         // 再生数を保存する代わりに、並びの意味だけを焼き込みます。
@@ -1625,7 +1624,7 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             }
 
             DrawAutoTagPanel();
-            DrawThumbnailSetting();
+            DrawOrderKindSetting();
             DrawApiDataPanel();
 
             EditorGUILayout.BeginHorizontal();
@@ -1655,57 +1654,16 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         }
 
         /// <summary>
-        /// <b>絵の大きさ。</b>Phase7。
+        /// <b>絵は焼きません。</b>Phase8-2 で焼き込みそのものを捨てました。
         ///
-        /// VR の見え方から逆算した目安を出します。2 m 先の壁パネルでは、
-        /// 一覧の絵は <b>120 px 程度しか画面に映りません</b>ので、
-        /// 128 px でもほぼ足ります。大きくして効くのは<b>再生中の大きな絵</b>だけです。
+        /// プレイヤーの側に絵を出す場所がもう無いので、
+        /// 焼く選択肢を残しても<b>ワールドが重くなるだけ</b>です。
+        /// 「YouTube の画像をワールドに同梱する」構造が
+        /// <b>コードから消えた</b>ので、配る前に確かめることも要らなくなりました。
+        ///
+        /// この窓の一覧に出ている絵は<b>編集中の Unity の中だけ</b>のもので、
+        /// ワールドには入りません(取り違えていないか確かめるためのものです)。
         /// </summary>
-        private void DrawThumbnailSetting()
-        {
-            EditorGUILayout.BeginHorizontal();
-
-            int picked = System.Array.IndexOf(CatalogThumbnailBaker.Sizes, _thumbnailSize);
-            if (picked < 0) picked = 0;
-
-            picked = EditorGUILayout.Popup("絵の大きさ", picked, CatalogThumbnailBaker.SizeLabels);
-            _thumbnailSize = CatalogThumbnailBaker.Sizes[picked];
-
-            if (_thumbnailSize <= 0)
-            {
-                EditorGUILayout.LabelField(
-                    "ワールドに +0 MB", EditorStyles.miniLabel, GUILayout.Width(140f));
-
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.LabelField(
-                    "一覧はジャンル色 + 頭文字で表示します。",
-                    EditorStyles.miniLabel);
-
-                DrawOrderKindSetting();
-                return;
-            }
-
-            float megabytes = CatalogThumbnailBaker.EstimateMegabytes(
-                _draft.CompleteCount, _thumbnailSize);
-
-            EditorGUILayout.LabelField(
-                "ワールドに +" + megabytes.ToString("0.0") + " MB",
-                EditorStyles.miniLabel, GUILayout.Width(140f));
-
-            EditorGUILayout.EndHorizontal();
-
-            DrawOrderKindSetting();
-
-            // ── 焼くことを選んだ人にだけ、はっきり伝える。
-            EditorGUILayout.HelpBox(
-                "YouTube のサムネイルをワールドに焼き込みます。\n"
-                + "焼いた絵はワールドと一緒に配布されるため、"
-                + "著作物の再配布になります。公開ワールドでは「焼かない」を"
-                + "選ぶことを強く勧めます。",
-                MessageType.Warning);
-        }
-
         /// <summary>
         /// <b>この並びは何順か。</b>Phase8。
         ///
@@ -1914,8 +1872,6 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
         private void Bake()
         {
             // 絵の URL を持っているのは編集中の中身だけ。焼く直前に渡す。
-            CatalogUrlTableBridge.ThumbnailSize = _thumbnailSize;
-            CatalogUrlTableBridge.ThumbnailSource = _draft.Items;
             CatalogUrlTableBridge.OrderKind = _catalogOrderKind;
 
             CatalogUrlTableBridge.BakeReport report = CatalogUrlTableBridge.BakeIntoScene(_asset);

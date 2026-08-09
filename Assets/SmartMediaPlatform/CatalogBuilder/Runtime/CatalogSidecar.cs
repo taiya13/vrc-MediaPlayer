@@ -57,6 +57,15 @@ namespace SmartMediaPlatform.CatalogBuilder
             ApiChannel = "";
             ApiTags = new string[0];
             ApiFetchedAtUtc = "";
+
+            // ── 絵の URL も API から来たものです(Phase8-2)。
+            //
+            //    Api… の名前が付いていないので見落としそうになりますが、
+            //    <c>snippet.thumbnails</c> から取った文字列なので、
+            //    <b>期限の対象は同じ</b>です。焼き込みをやめたいまは
+            //    Unity の窓で「取り違えていないか」を確かめるためだけに使うので、
+            //    忘れて困るものでもありません。
+            ThumbnailPath = "";
         }
     }
 

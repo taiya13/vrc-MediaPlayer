@@ -51,18 +51,8 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             public bool Ok;
             public int Targets;
             public int Items;
-            public int Thumbnails;
             public string Message = "";
         }
-
-        /// <summary>
-        /// 絵も一緒に焼くときの大きさ。0 なら絵は焼かない。Phase7。
-        /// 窓が <see cref="CatalogThumbnailBaker.Sizes"/> から選ばせます。
-        /// </summary>
-        public static int ThumbnailSize;
-
-        /// <summary>焼くときに使う編集中の中身(絵の URL を持っているのは Draft 側だけ)。</summary>
-        public static IReadOnlyList<CatalogDraftItem> ThumbnailSource;
 
         /// <summary>
         /// <b>この並びは何順か。</b>Phase8。
@@ -122,9 +112,6 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 return report;
             }
 
-            // 絵は URL から作るので、アセットではなく編集中の中身から取る。
-            Sprite[] thumbnails = BakeThumbnails(asset, report);
-
             int baked = 0;
             for (int i = 0; i < found.Length; i++)
             {
@@ -134,7 +121,6 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
                 try
                 {
                     bake.Invoke(null, new object[] { component, items });
-                    AssignThumbnails(component, thumbnails);
                     AssignOrderKind(component);
 
                     EditorUtility.SetDirty(component);
@@ -155,39 +141,8 @@ namespace SmartMediaPlatform.CatalogBuilder.EditorTools
             report.Items = items.Count;
             report.Message = baked + " 個の Catalog へ " + items.Count + " 件を焼きました。";
 
-            if (report.Thumbnails > 0)
-            {
-                report.Message += "\n絵も " + report.Thumbnails + " 枚 焼きました。";
-            }
-
             report.Message += "\nシーンを保存してから Build & Test してください。";
             return report;
-        }
-
-        /// <summary>絵を焼く。<see cref="ThumbnailSize"/> が 0 なら何もしない。</summary>
-        private static Sprite[] BakeThumbnails(MediaCatalogAsset asset, BakeReport report)
-        {
-            if (ThumbnailSize <= 0 || ThumbnailSource == null) return null;
-
-            CatalogThumbnailBaker.BakeReport thumbs;
-            Sprite[] baked = CatalogThumbnailBaker.Bake(
-                asset, ThumbnailSource, ThumbnailSize, out thumbs);
-
-            report.Thumbnails = thumbs.Baked;
-            return baked;
-        }
-
-        /// <summary>焼いた絵を <c>UdonMediaCatalog.Thumbnails</c> へ入れる。</summary>
-        private static void AssignThumbnails(Component catalog, Sprite[] thumbnails)
-        {
-            if (thumbnails == null) return;
-
-            FieldInfo field = catalog.GetType().GetField(
-                "Thumbnails", BindingFlags.Public | BindingFlags.Instance);
-
-            if (field == null) return;
-
-            field.SetValue(catalog, thumbnails);
         }
 
         /// <summary>並びの意味を <c>UdonMediaCatalog.OrderKind</c> へ入れる。</summary>

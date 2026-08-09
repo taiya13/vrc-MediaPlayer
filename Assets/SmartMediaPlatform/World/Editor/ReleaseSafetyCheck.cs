@@ -1,6 +1,5 @@
 #if UNITY_EDITOR
 using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
 using System.Text;
 using UnityEditor;
@@ -21,11 +20,14 @@ namespace SmartMediaPlatform.World.EditorTools
     /// ところが、開発中のプロジェクトには
     /// <list type="bullet">
     /// <item>1000 曲入りのカタログ</item>
-    /// <item>焼き込んだサムネイル</item>
     /// <item>API キー</item>
     /// </list>
     /// が入っています。<b>これを混ぜたまま配ると、
     /// 第三者のコンテンツと自分の鍵を一緒に配ることになります</b>。
+    ///
+    /// <b>サムネイルはこの一覧から消えました。</b>Phase8-2 で
+    /// 焼き込みの仕組みごと捨てたので、<b>焼かれている状態が作れません</b>。
+    /// 調べる項目を減らせたのではなく、<b>危ない状態そのものが無くなりました</b>。
     ///
     /// ───────────────────────────────────────────────
     /// <b>「開発中は好きにしてよい」</b>
@@ -101,7 +103,6 @@ namespace SmartMediaPlatform.World.EditorTools
             CheckApiKey(findings);
             CheckDataFolder(findings);
             CheckBakedCatalog(findings);
-            CheckBakedThumbnails(findings);
 
             return findings;
         }
@@ -164,9 +165,7 @@ namespace SmartMediaPlatform.World.EditorTools
         private static void CheckBakedCatalog(List<Finding> findings)
         {
             int songs;
-            int thumbnails;
-
-            if (!InspectSceneCatalog(out songs, out thumbnails)) return;
+            if (!InspectSceneCatalog(out songs)) return;
 
             if (songs > 0)
             {
@@ -181,36 +180,18 @@ namespace SmartMediaPlatform.World.EditorTools
             }
         }
 
-        // ───────── 焼き込まれたサムネイル ─────────
-
-        private static void CheckBakedThumbnails(List<Finding> findings)
-        {
-            int songs;
-            int thumbnails;
-
-            if (!InspectSceneCatalog(out songs, out thumbnails)) return;
-
-            if (thumbnails > 0)
-            {
-                findings.Add(new Finding
-                {
-                    Blocking = true,
-                    What = "シーンのカタログにサムネイルが " + thumbnails + " 枚焼き込まれています。",
-                    Fix = "YouTube の画像をワールドと一緒に配ることになります。"
-                          + "Catalog Builder の「絵の大きさ」を「焼かない」にして、"
-                          + "もう一度焼き込んでください。",
-                });
-            }
-        }
-
         /// <summary>
-        /// シーンの <c>UdonMediaCatalog</c> を見て、曲数とサムネイル枚数を数える。
+        /// シーンの <c>UdonMediaCatalog</c> を見て、焼かれている曲数を数える。
         /// <b>型を名前で探します</b> —— このクラスは U# の有無に関係なく動きます。
+        ///
+        /// <b>サムネイルはもう調べません。</b>Phase8-2 で焼き込みの仕組みごと
+        /// 消したので、<b>焼かれている状態が作れなくなりました</b>。
+        /// 起こりえないことを調べ続けると、読む人に
+        /// 「起こりうること」だと誤解させます。
         /// </summary>
-        private static bool InspectSceneCatalog(out int songs, out int thumbnails)
+        private static bool InspectSceneCatalog(out int songs)
         {
             songs = 0;
-            thumbnails = 0;
 
             System.Type type = FindTypeByName("UdonMediaCatalog");
             if (type == null) return false;
@@ -219,31 +200,12 @@ namespace SmartMediaPlatform.World.EditorTools
             if (found == null || found.Length == 0) return false;
 
             FieldInfo ids = type.GetField("Ids", BindingFlags.Public | BindingFlags.Instance);
-            FieldInfo thumbs = type.GetField(
-                "Thumbnails", BindingFlags.Public | BindingFlags.Instance);
+            if (ids == null) return false;
 
             for (int i = 0; i < found.Length; i++)
             {
-                if (ids != null)
-                {
-                    var array = ids.GetValue(found[i]) as System.Array;
-                    if (array != null && array.Length > songs) songs = array.Length;
-                }
-
-                if (thumbs != null)
-                {
-                    var array = thumbs.GetValue(found[i]) as System.Array;
-                    if (array == null) continue;
-
-                    // null が並んでいるだけのこともあるので、中身を数える。
-                    int filled = 0;
-                    for (int k = 0; k < array.Length; k++)
-                    {
-                        if (array.GetValue(k) != null) filled++;
-                    }
-
-                    if (filled > thumbnails) thumbnails = filled;
-                }
+                var array = ids.GetValue(found[i]) as System.Array;
+                if (array != null && array.Length > songs) songs = array.Length;
             }
 
             return true;
