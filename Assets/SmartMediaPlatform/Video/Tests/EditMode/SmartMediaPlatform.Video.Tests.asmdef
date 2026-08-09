@@ -1,0 +1,31 @@
+{
+    "name": "SmartMediaPlatform.Video.Tests",
+    "rootNamespace": "SmartMediaPlatform.Video.Tests",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Recommendation",
+        "SmartMediaPlatform.Queue",
+        "SmartMediaPlatform.Backend",
+        "SmartMediaPlatform.Player",
+        "SmartMediaPlatform.Session",
+        "SmartMediaPlatform.Adapter",
+        "SmartMediaPlatform.Video",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
