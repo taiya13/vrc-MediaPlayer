@@ -81,6 +81,21 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <summary>帯の右側、操作(前 / 再生 / 次 / …)と音量に渡す幅。</summary>
         private const float BandControlWidth = 430f;
 
+        // ───────── 帯の中の縦の積み方 ─────────
+        //
+        // <b>ここは名前を付けてあります。</b>数を直に書くと、
+        // <c>tools/typecheck/panel_layout.py</c> が読み取れなくなり、
+        // 重なりを見つけられなくなります。積むと必ず <see cref="BandHeight"/>。
+
+        private const float BandTitleTop = 24f;
+        private const float BandKickerHeight = 18f;
+        private const float BandTitleHeight = 44f;
+        private const float BandArtistHeight = 26f;
+        private const float BandMetaHeight = 20f;
+
+        /// <summary>シークバーの当たり判定の高さ。<b>4.5 cm(35 px)を割らないこと</b>。</summary>
+        private const float BandSeekTouch = 36f;
+
         /// <summary>探す欄とタブの高さ。どちらも 4.5 cm 以上。</summary>
         private const float SearchHeight = 60f;
         private const float TabHeight = 60f;
@@ -162,7 +177,10 @@ namespace SmartMediaPlatform.World.EditorTools
                 band, "Back", 0f, 0f, inner, BandHeight,
                 UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusLarge).raycastTarget = false;
 
-            float textWidth = inner - BandControlWidth - UdonMediaTheme.Space4;
+            // ── 右の列の位置を<b>先に</b>決めて、文字の段はその手前までにします。
+            //    逆に決めると、丸めの差で 16 px ぶん重なります(実際に重なりました)。
+            float controlX = inner - BandControlWidth - UdonMediaTheme.Space3;
+            float textWidth = controlX - UdonMediaTheme.Space3 - UdonMediaTheme.Space4;
 
             float bandHeightUsed;
             var nowPlaying = BuildNowPlaying(
@@ -170,15 +188,16 @@ namespace SmartMediaPlatform.World.EditorTools
                 inner - UdonMediaTheme.Space3 * 2f, true, out bandHeightUsed);
             if (NeedsCompile) return panel;
 
-            // ── 帯の右:操作と音量。
-            //    <b>いちばん押すもの</b>なので、いちばん上に置きます。
-            float controlX = inner - BandControlWidth - UdonMediaTheme.Space3;
-
+            // ── 右の列の縦の割り当て。
+            //      6〜58    操作(前 / 再生 / 次 / …)
+            //      60〜82   音量の見出し(「音量 70%」)
+            //      84〜120  音量バー
+            //      124〜156 シークバー(ここだけ全幅なので、右の列は 120 で止める)
             var transport = BuildTransport(
-                band, controlX, 12f, BandControlWidth, 72f, true);
+                band, controlX, 6f, BandControlWidth, 52f, true);
             if (NeedsCompile) return panel;
 
-            BuildVolume(band, transport, controlX, 88f, BandControlWidth, 40f);
+            BuildVolume(band, transport, controlX, 84f, BandControlWidth, 36f);
 
             // ── 中:探す → 選ぶ → 一覧。
             //    探すのは<b>タブを選ぶより前</b>の行動なので、この順に積みます。
@@ -188,17 +207,29 @@ namespace SmartMediaPlatform.World.EditorTools
                 body, panel, Pad, browserTop, inner, H - Pad - browserTop);
             if (NeedsCompile) return panel;
 
-            // ── 状態と「誰が操作しているか」は帯の中に小さく。
-            //    別の行を作ると、そのぶん一覧が 1 行減ります。
+            // ── 状態と「誰が操作しているか」は<b>時刻の行に相乗り</b>させます。
+            //    専用の行を作ると、そのぶん帯が高くなって一覧が 1 行減ります。
+            //    どちらもふだんは空なので、混んで見えることはありません。
+            //
+            //    時刻の行の割り当て。<b>文字の段の幅までで畳みます</b>
+            //    —— その右は音量バーの領分です:
+            //      24〜174 経過 / 180〜420 再生の状態 /
+            //      434〜684 操作の結果 / 700〜850 残り
+            float metaRowTop = BandTitleTop + BandTitleHeight + 2f
+                               + BandArtistHeight + 2f;
+
             Text status = UdonWorldUiKit.Label(
-                band, "Status", UdonMediaTheme.Space3, BandHeight - 34f,
-                textWidth, 24f, UdonMediaTheme.TextCaption,
+                band, "Status", UdonMediaTheme.Space3 + 410f, metaRowTop,
+                250f, BandMetaHeight, UdonMediaTheme.TextCaption,
                 TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
 
+            // ── 「誰が操作しているか」は<b>いちばん上の行</b>の右端へ。
+            //    時刻の行はもう空きがありません。ふだんは空の文字なので、
+            //    「いま流れている」と同じ行にいても混みません。
             Text syncOwner = UdonWorldUiKit.Label(
-                band, "SyncOwner", controlX, BandHeight - 34f,
-                BandControlWidth, 24f, UdonMediaTheme.TextCaption,
-                TextAnchor.MiddleRight, UdonMediaTheme.TextMuted);
+                band, "SyncOwner", UdonMediaTheme.Space3 + 400f, 4f,
+                textWidth - 400f, 18f, UdonMediaTheme.TextCaption,
+                TextAnchor.LowerRight, UdonMediaTheme.TextMuted);
 
             if (nowPlaying != null) nowPlaying.SyncText = syncOwner;
 
@@ -291,19 +322,19 @@ namespace SmartMediaPlatform.World.EditorTools
                 ? UdonMediaTheme.TextCaption
                 : UdonMediaTheme.ForRemote(UdonMediaTheme.TextCaption);
 
-            float kickerHeight = wide ? 18f : 0f;
-            float titleHeight = wide ? 48f : Mathf.Round(titleSize * 1.34f);
-            float artistHeight = wide ? 26f : Mathf.Round(artistSize * 1.34f);
-            float metaHeight = wide ? 20f : Mathf.Round(metaSize * 1.6f);
+            float kickerHeight = wide ? BandKickerHeight : 0f;
+            float titleHeight = wide ? BandTitleHeight : Mathf.Round(titleSize * 1.34f);
+            float artistHeight = wide ? BandArtistHeight : Mathf.Round(artistSize * 1.34f);
+            float metaHeight = wide ? BandMetaHeight : Mathf.Round(metaSize * 1.6f);
 
             // つかめるバーは、見た目より当たり判定を広く取る。
-            float seekTouch = wide ? 28f : 34f;
+            float seekTouch = wide ? BandSeekTouch : 34f;
             float seekBar = wide ? 8f : 7f;
 
-            float titleTop = wide ? 12f + kickerHeight + 2f : 0f;
+            float titleTop = wide ? BandTitleTop : 0f;
             float artistTop = titleTop + titleHeight + 2f;
-            float metaTop = artistTop + artistHeight + (wide ? 0f : UdonMediaTheme.Space2);
-            float barTop = metaTop + metaHeight + (wide ? 0f : UdonMediaTheme.Space1);
+            float metaTop = artistTop + artistHeight + (wide ? 2f : UdonMediaTheme.Space2);
+            float barTop = metaTop + metaHeight + (wide ? 2f : UdonMediaTheme.Space1);
 
             float total = barTop + seekTouch;
             consumedHeight = total;
@@ -318,8 +349,10 @@ namespace SmartMediaPlatform.World.EditorTools
             //    大きくすると曲名と competing して、どちらが曲名か分かりません。
             if (wide)
             {
+                // 幅は 400 で足ります。ここを textWidth いっぱいにすると、
+                // 同じ行の右端に置く「操作している人」と枠が重なります。
                 UdonWorldUiKit.Label(
-                    section, "Kicker", 0f, 12f, textWidth, kickerHeight,
+                    section, "Kicker", 0f, 4f, 400f, kickerHeight,
                     UdonMediaTheme.TextCaption, TextAnchor.LowerLeft,
                     UdonMediaTheme.TextMuted).text = "い ま 流 れ て い る";
             }
@@ -360,12 +393,18 @@ namespace SmartMediaPlatform.World.EditorTools
                 section, "Time", 0f, metaTop, 150f, metaHeight, metaSize,
                 TextAnchor.MiddleLeft, UdonMediaTheme.TextSecondary);
 
+            // 壁パネルでは、この右に「操作の結果」と「操作している人」が並びます
+            // (BuildWallPanel が帯へ直接置いています)。幅を広げないこと。
             view.StateText = UdonWorldUiKit.Label(
                 section, "State", 156f, metaTop, 240f, metaHeight, metaSize,
                 TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
 
+            // ── 残りは<b>文字の段の右端</b>にそろえます。
+            //    バーの幅いっぱいまで送ると、帯では<b>音量バーの下に潜り込みます</b>。
+            //    右の列は操作のもので、文字の段ではありません。
             view.RemainingText = UdonWorldUiKit.Label(
-                section, "Remaining", barWidth - 150f, metaTop, 150f, metaHeight, metaSize,
+                section, "Remaining", (wide ? textWidth : barWidth) - 150f, metaTop,
+                150f, metaHeight, metaSize,
                 TextAnchor.MiddleRight, UdonMediaTheme.TextSecondary);
 
             // ── シークバー。<b>この画面でいちばん大きい図形</b>です。
@@ -674,9 +713,12 @@ namespace SmartMediaPlatform.World.EditorTools
                 VolumeSegments, volume, null, null, false,
                 view, "OnVolumeSliderChanged", "");
 
+            // ── 「音量 70%」は<b>バーの上</b>に出します(Phase8-2)。
+            //    下に出していた頃は帯の中でシークバーと重なっていました。
+            //    帯のいちばん下は、全幅のシークバーのために空けておきます。
             Text volumeLabel = UdonWorldUiKit.Label(
-                section, "VolumeText", barX, height, barWidth, 24f,
-                UdonMediaTheme.TextCaption, TextAnchor.UpperCenter, UdonMediaTheme.TextMuted);
+                section, "VolumeText", barX, -24f, barWidth, 22f,
+                UdonMediaTheme.TextCaption, TextAnchor.LowerCenter, UdonMediaTheme.TextMuted);
 
             view.VolumeText = volumeLabel;
 
@@ -882,7 +924,7 @@ namespace SmartMediaPlatform.World.EditorTools
         private static UdonMediaListView BuildArtistRail(RectTransform page, float height)
         {
             const float HeaderHeight = 30f;
-            const float RowHeight = 50f;
+            const float RowHeight = 48f;      // ≒ 6.2 cm。4.5 cm の下限は割らない
             const float RowGap = 6f;
             const int RowCount = 7;
             const float FooterHeight = 48f;
