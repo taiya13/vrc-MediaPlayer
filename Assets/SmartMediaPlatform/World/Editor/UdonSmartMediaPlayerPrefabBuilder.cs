@@ -101,6 +101,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 typeof(UdonMediaControlButton),
                 typeof(UdonSyncCoordinator),
                 typeof(UdonCrossfadeCoordinator),
+                typeof(UdonTrackFader),
                 typeof(UdonUserProfile),
                 typeof(UdonSmartMediaPlayer),
             };
@@ -385,6 +386,24 @@ namespace SmartMediaPlatform.World.EditorTools
                 if (_needsCompile) return root;
             }
 
+            // ── Fade(曲の終わりで下げ、次を 0 から上げる担当。Phase8-3)
+            //    <b>重ねない方式</b>なので、動画プレイヤーは 1 つのままです。
+            //    2 系統のクロスフェードを使う組み立てのときは置きません
+            //    (どちらも音量を動かすので、両方あると打ち消し合います)。
+            UdonTrackFader fader = null;
+
+            if (!UseCrossfade)
+            {
+                var fadeObject = Child(root, "Fade");
+                fader = Add<UdonTrackFader>(fadeObject);
+                if (fader != null)
+                {
+                    fader.Backend = backend;
+                    fader.Screen = screen;
+                }
+                if (_needsCompile) return root;
+            }
+
             // ── Session(再生の判断)
             var sessionObject = Child(root, "Session");
             var session = Add<UdonPlayerSession>(sessionObject);
@@ -447,6 +466,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 smartPlayer.Controller = controller;
                 smartPlayer.Sync = sync;
                 smartPlayer.Crossfade = crossfade;
+                smartPlayer.Fader = fader;
             }
 
             return root;

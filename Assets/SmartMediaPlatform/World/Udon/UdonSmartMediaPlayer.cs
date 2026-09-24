@@ -81,6 +81,10 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("曲と曲を繋ぐ担当(Phase7-5)。空なら今までどおり即切り替え")]
         public UdonCrossfadeCoordinator Crossfade;
 
+        [Tooltip("曲の終わりで音を下げ、次の曲を 0 から上げる担当(Phase8-3)。"
+                 + "空なら今までどおり、音量を変えずに切り替える")]
+        public UdonTrackFader Fader;
+
         [Header("困ったとき")]
         [Tooltip("配線の結果を Console に出す。「パネル N 枚」が 0 なら Core の挿し忘れ")]
         public bool LogWiring = true;
@@ -131,6 +135,20 @@ namespace SmartMediaPlatform.World.Udon
                 if (Crossfade.Session == null) Crossfade.Session = Session;
                 if (Crossfade.Screen == null) Crossfade.Screen = Screen;
                 if (Crossfade.BackendA == null) Crossfade.BackendA = Backend;
+            }
+
+            if (Fader != null)
+            {
+                if (Fader.Backend == null) Fader.Backend = Backend;
+                if (Fader.Screen == null) Fader.Screen = Screen;
+
+                // ── 2 系統のクロスフェードと同時には動かしません。
+                //    どちらも音量を動かすので、両方あると互いに打ち消し合います。
+                if (Crossfade != null)
+                {
+                    Fader.Suspended = true;
+                    Fader.ResetFade();
+                }
             }
 
             if (Controller != null)
@@ -207,7 +225,8 @@ namespace SmartMediaPlatform.World.Udon
             string sync = Sync == null ? "同期なし"
                 : (Sync.Enabled ? "同期あり" : "同期オフ");
 
-            string fade = Crossfade == null ? "混ぜない" : Crossfade.Describe();
+            string fade = Crossfade != null ? Crossfade.Describe()
+                : (Fader != null ? Fader.Describe() : "フェードなし");
 
             return "カタログ " + items + " 件 / 一覧 " + visible + " 件 / "
                    + backend + " / " + screen + " / " + panels + " / " + sync

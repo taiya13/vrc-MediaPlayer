@@ -30,16 +30,46 @@ namespace SmartMediaPlatform.World.Udon
         [Range(0f, 1f)]
         public float Volume = 0.6f;
 
+        // 曲の切り替わりで一時的に掛ける倍率(0〜1)。Phase8-3。
+        // <see cref="Volume"/>(人が決めた音量)とは別に持ち、スピーカーへは掛け算で出す。
+        private float _fadeLevel = 1f;
+
         void Start()
         {
             ApplyVolume();
         }
 
-        /// <summary>いまの <see cref="Volume"/> をスピーカーへ反映する。</summary>
+        /// <summary>
+        /// いまの音量をスピーカーへ反映する。
+        ///
+        /// <b>スピーカーの音量を書くのはここだけです</b>(Phase8-3)。
+        /// 書く所が複数あると、どれかが倍率を無視して上書きします。
+        /// 以前のクロスフェードでは、読み込み完了の合図で呼ばれるたびに
+        /// 人が決めた音量へ戻され、<b>フェードインせずいきなり全開で鳴る</b>原因になっていました。
+        /// </summary>
         public void ApplyVolume()
         {
             if (Speaker == null) return;
-            Speaker.volume = Volume;
+            Speaker.volume = Mathf.Clamp01(Volume) * _fadeLevel;
+        }
+
+        /// <summary>
+        /// <b>曲の切り替わりで掛ける倍率を変える。</b><c>UdonTrackFader</c> から呼ばれます。
+        /// 人が決めた <see cref="Volume"/> は変えないので、音量バーの表示は動きません。
+        /// </summary>
+        public void SetFadeLevel(float level)
+        {
+            float clamped = Mathf.Clamp01(level);
+            if (clamped == _fadeLevel) return;
+
+            _fadeLevel = clamped;
+            ApplyVolume();
+        }
+
+        /// <summary>いま掛けている倍率(診断用)。</summary>
+        public float FadeLevel
+        {
+            get { return _fadeLevel; }
         }
 
         /// <summary>音量を変える(0〜1)。</summary>
