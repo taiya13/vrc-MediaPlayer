@@ -377,7 +377,10 @@ namespace SmartMediaPlatform.World.EditorTools
             }
 
             string shaderName = material.shader != null ? material.shader.name : "(不明)";
-            bool unlit = shaderName.Contains("Unlit") || shaderName.Contains("unlit");
+            // SmartMediaPlatform/ のシェーダー(画面用・クロスフェード用)も Unlit です。
+            // 名前に "Unlit" が入っていないだけで、ライトは使いません。
+            bool unlit = shaderName.Contains("Unlit") || shaderName.Contains("unlit")
+                         || shaderName.StartsWith("SmartMediaPlatform/");
 
             sb.AppendLine("     映像            : " + shaderName
                           + (unlit ? "" : "  ← ライトが要るシェーダー。暗い場所では真っ黒になります"));

@@ -39,6 +39,9 @@ Shader "SmartMediaPlatform/Crossfade"
 
         // 0 = A だけ / 1 = B だけ。Udon が毎フレーム書き換えます。
         _Blend ("混ざり具合", Range(0, 1)) = 0
+
+        // 1 = ミラーの中では左右を反転する(字幕が読めるように。Phase8-3)
+        [ToggleUI] _MirrorFlip ("ミラーの中では左右を反転する", Float) = 1
     }
 
     SubShader
@@ -74,6 +77,10 @@ Shader "SmartMediaPlatform/Crossfade"
             sampler2D _SecondTex;
             float4 _SecondTex_ST;
             float _Blend;
+            float _MirrorFlip;
+
+            // VRChat が配る値(0 = ふつう / 1・2 = ミラーが描いている)。
+            float _VRChatMirrorMode;
 
             v2f vert (appdata v)
             {
@@ -84,7 +91,13 @@ Shader "SmartMediaPlatform/Crossfade"
                 UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(o);
 
                 o.vertex = UnityObjectToClipPos(v.vertex);
-                o.uv = TRANSFORM_TEX(v.uv, _MainTex);
+
+                // ミラーの中でだけ左右を反転する(SmartMediaVideoScreen.shader と同じ)。
+                float flip = step(0.5, _MirrorFlip) * step(0.5, _VRChatMirrorMode);
+                float2 uv = v.uv;
+                uv.x = lerp(uv.x, 1.0 - uv.x, flip);
+
+                o.uv = TRANSFORM_TEX(uv, _MainTex);
                 return o;
             }
 

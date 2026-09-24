@@ -86,6 +86,19 @@ TextScriptImporter:
   assetBundleVariant:
 """
 
+# シェーダーは ShaderImporter でないと、Unity が「シェーダーではない何か」として
+# 取り込みかねない(Phase8-3 で .shader を足したときに気付いた)。
+SHADER_META = """fileFormatVersion: 2
+guid: {guid}
+ShaderImporter:
+  externalObjects: {{}}
+  defaultTextures: []
+  nonModifiableTextures: []
+  userData:
+  assetBundleName:
+  assetBundleVariant:
+"""
+
 DEFAULT_META = """fileFormatVersion: 2
 guid: {guid}
 DefaultImporter:
@@ -105,6 +118,8 @@ def template_for(path, is_dir):
         return ASMDEF_META
     if path.endswith((".md", ".txt", ".json", ".xml")):
         return TEXT_META
+    if path.endswith((".shader", ".cginc", ".hlsl")):
+        return SHADER_META if path.endswith(".shader") else TEXT_META
     return DEFAULT_META
 
 

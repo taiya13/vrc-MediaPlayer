@@ -181,7 +181,7 @@ namespace UnityEngine
         public float GetFloat(string name) { return 0f; }
         public bool HasProperty(string name) { return false; }
     }
-    public class Shader : Object { public static Shader Find(string name) { return null; } }
+    public class Shader : Object { public static Shader Find(string name) { return null; } public bool isSupported { get { return true; } } }
     public class Texture : Object { public int width { get; set; } public int height { get; set; } }
     public class Texture2D : Texture
     {

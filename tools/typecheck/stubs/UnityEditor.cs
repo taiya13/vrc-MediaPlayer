@@ -32,6 +32,7 @@ namespace UnityEditor
         public static void StopAssetEditing() { }
     }
 
+    public static class ShaderUtil { public static bool ShaderHasError(UnityEngine.Shader shader) { return false; } }
     public static class EditorUtility
     {
         public static void SetDirty(UnityEngine.Object target) { }

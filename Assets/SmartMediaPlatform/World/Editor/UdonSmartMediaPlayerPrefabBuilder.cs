@@ -63,6 +63,12 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string CrossfadeShaderName = "SmartMediaPlatform/Crossfade";
 
         /// <summary>
+        /// ふつうの画面のシェーダー(Phase8-3)。見え方は Unlit/Texture と同じで、
+        /// <b>ミラーの中でだけ左右を反転</b>します(鏡越しでも字幕が読めるように)。
+        /// </summary>
+        private const string ScreenShaderName = "SmartMediaPlatform/VideoScreen";
+
+        /// <summary>
         /// <b>動画プレイヤーを 2 系統にして曲を混ぜるか。</b>Phase7-6 で false にしました。
         ///
         /// <b>なぜやめたのか</b><br/>
@@ -582,17 +588,25 @@ namespace SmartMediaPlatform.World.EditorTools
             if (existing != null) AssetDatabase.DeleteAsset(path);
 
             // ── 2 系統で混ぜるときだけ専用シェーダーを使う(Phase7-5)。
-            //
-            //    1 系統(既定)では Unlit/Texture です。<b>画面に絡む部品が
-            //    少ないほど、映らなくなったときに疑う所が減ります。</b>
             bool crossfadeReady = UseCrossfade;
-            Shader shader = crossfadeReady ? Shader.Find(CrossfadeShaderName) : null;
+            Shader shader = crossfadeReady ? UsableShader(CrossfadeShaderName, log) : null;
 
+            if (shader == null) crossfadeReady = false;
+
+            // ── 1 系統(既定)は、ミラー対応の画面シェーダー(Phase8-3)。
+            //
+            //    中身は Unlit/Texture と同じで、ミラーの中でだけ左右を反転します。
+            //    <b>コンパイルに失敗していたら使いません。</b>失敗したシェーダーを当てると
+            //    画面が紫(エラーの色)になり、動画が映らなくなります。
+            //    そのときは今までの Unlit/Texture に戻します(反転だけが効かなくなる)。
+            bool mirrorReady = false;
             if (shader == null)
             {
-                crossfadeReady = false;
-                shader = Shader.Find("Unlit/Texture");
+                shader = UsableShader(ScreenShaderName, log);
+                mirrorReady = shader != null;
             }
+
+            if (shader == null) shader = Shader.Find("Unlit/Texture");
 
             if (shader == null)
             {
@@ -629,7 +643,33 @@ namespace SmartMediaPlatform.World.EditorTools
 
             log.AppendLine(crossfadeReady
                 ? "  画面の材質   : " + path + " を作り直しました(クロスフェード対応 / ライト不要)"
-                : "  画面の材質   : " + path + " を作り直しました(Unlit / ライト不要)");
+                : mirrorReady
+                    ? "  画面の材質   : " + path + " を作り直しました(ミラーで反転 / ライト不要)"
+                    : "  画面の材質   : " + path + " を作り直しました(Unlit / ライト不要)");
+        }
+
+        /// <summary>
+        /// <b>使えるシェーダーだけを返す。</b>見つからない・コンパイルに失敗している・
+        /// この環境で動かない、のどれかなら null(理由を log に残します)。
+        /// </summary>
+        private static Shader UsableShader(string name, StringBuilder log)
+        {
+            Shader shader = Shader.Find(name);
+
+            if (shader == null)
+            {
+                log.AppendLine("  ※ シェーダー " + name + " が見つかりません。Unlit/Texture で代わりにします。");
+                return null;
+            }
+
+            if (ShaderUtil.ShaderHasError(shader) || !shader.isSupported)
+            {
+                log.AppendLine("  ※ シェーダー " + name + " を使えません(コンパイルエラー、"
+                               + "またはこの環境で非対応)。Unlit/Texture で代わりにします。");
+                return null;
+            }
+
+            return shader;
         }
 
         /// <summary>
