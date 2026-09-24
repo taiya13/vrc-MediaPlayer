@@ -107,8 +107,8 @@ def main() -> int:
     add("GenreChip", sx + artistW + Space2,
         artistTop + (artistH - chipH) / 2, chipW, chipH)
     add("Time", sx, metaTop, 150, metaH)
-    add("State", sx + 156, metaTop, 240, metaH)
-    add("Status", sx + 410, metaTop, 250, metaH)
+    add("State", sx + 156, metaTop, 150, metaH)
+    add("Status", sx + 316, metaTop, 352, metaH)
     add("Remaining", sx + textWidth - 150, metaTop, 150, metaH)
     add("Seek", sx, barTop, barWidth, seekTouch, touch=True)
     add("Transport", controlX, 6, ControlW, 52, touch=True)

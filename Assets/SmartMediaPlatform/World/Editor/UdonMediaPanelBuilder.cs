@@ -213,14 +213,18 @@ namespace SmartMediaPlatform.World.EditorTools
             //
             //    時刻の行の割り当て。<b>文字の段の幅までで畳みます</b>
             //    —— その右は音量バーの領分です:
-            //      24〜174 経過 / 180〜420 再生の状態 /
-            //      434〜684 操作の結果 / 700〜850 残り
+            //      24〜174 経過 / 180〜330 再生の状態 /
+            //      340〜692 操作の結果 / 700〜850 残り
+            //
+            //    操作の結果は「夜に駆ける を 再生予定に追加しました。」のように
+            //    <b>曲名が入るぶん長くなります</b>。250px では途中で切れていたので、
+            //    再生の状態(短い)から幅を回し、さらに入り切らなければ縮めます。
             float metaRowTop = BandTitleTop + BandTitleHeight + 2f
                                + BandArtistHeight + 2f;
 
-            Text status = UdonWorldUiKit.Label(
-                band, "Status", UdonMediaTheme.Space3 + 410f, metaRowTop,
-                250f, BandMetaHeight, UdonMediaTheme.TextCaption,
+            Text status = UdonWorldUiKit.FittedLabel(
+                band, "Status", UdonMediaTheme.Space3 + 316f, metaRowTop,
+                352f, BandMetaHeight, UdonMediaTheme.TextCaption, 13,
                 TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
 
             // ── 「誰が操作しているか」は<b>いちばん上の行</b>の右端へ。
@@ -396,7 +400,7 @@ namespace SmartMediaPlatform.World.EditorTools
             // 壁パネルでは、この右に「操作の結果」と「操作している人」が並びます
             // (BuildWallPanel が帯へ直接置いています)。幅を広げないこと。
             view.StateText = UdonWorldUiKit.Label(
-                section, "State", 156f, metaTop, 240f, metaHeight, metaSize,
+                section, "State", 156f, metaTop, 150f, metaHeight, metaSize,
                 TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
 
             // ── 残りは<b>文字の段の右端</b>にそろえます。
@@ -464,10 +468,16 @@ namespace SmartMediaPlatform.World.EditorTools
             // ── 唯一の強調色をここに置く。
             //    画面の中で「色が付いている押せるもの」がこれ 1 つだけなので、
             //    初めて見た人でも、どこを押せば始まるかが色だけで分かる。
+            // ── 文字の大きさは<b>ボタンの幅で決めます</b>(Phase8-2)。
+            //    帯に移って幅が 196 → 156px になり、27px のままだと
+            //    「‖  一時停止」が枠ぎりぎりで、折り返すと下半分が切れます。
+            int playSize = wide && main >= 180f
+                ? UdonMediaTheme.TextTitle
+                : UdonMediaTheme.TextBody;
+
             Button playPause = UdonWorldUiKit.RoundedButton(
                 section, "PlayPause", side + Gap, 0f, main, height, "▶  再生",
-                wide ? UdonMediaTheme.TextTitle : UdonMediaTheme.TextBody,
-                UdonMediaTheme.Accent, radius, out playPauseLabel);
+                playSize, UdonMediaTheme.Accent, radius, out playPauseLabel);
 
             Button next = UdonWorldUiKit.RoundedButton(
                 section, "Next", side + Gap + main + Gap, 0f, side, height, "▶▶",
@@ -540,6 +550,30 @@ namespace SmartMediaPlatform.World.EditorTools
                 UdonMediaTheme.Outline, 3).raycastTarget = false;
 
             var options = Add<UdonPlayerOptions>(sheet.gameObject);
+
+            // ── 隙間をふさぐ(Phase8-2)。
+            //
+            //    シートの当たり判定はボタンにしか無く、背景は素通しでした。
+            //    ボタンとボタンの間(1〜2 cm)を「使う」で押すと、
+            //    レーザーが<b>奥にある曲の行やタブまで抜けて</b>、
+            //    シートを見ているつもりで曲が変わってしまいます。
+            //    帯を組み直してシートが一覧とタブの上に重なるようになったので、
+            //    ここで止めます。
+            //
+            //    押しても何もしない(イベント名が空)当たり判定を、
+            //    <b>シートのボタンより奥・一覧より手前</b>に全面へ敷きます。
+            //    InteractArea は既定で 2 だけ手前に出るので、逆に奥へ戻します。
+            if (options != null)
+            {
+                UdonMediaControlButton blocker = UdonWorldUiKit.InteractArea(
+                    sheet, "GapBlocker", 0f, 0f, width, sheetHeight, options, "", "");
+
+                if (blocker != null)
+                {
+                    Transform t = blocker.transform;
+                    t.localPosition = new Vector3(t.localPosition.x, t.localPosition.y, 2f);
+                }
+            }
 
             float y = pad + 20f;
             Text unused;
@@ -1673,16 +1707,33 @@ namespace SmartMediaPlatform.World.EditorTools
                 band, "Back", 0f, 0f, width, BandHeight,
                 UdonMediaTheme.Surface, UdonMediaTheme.RadiusMedium).raycastTarget = false;
 
-            Text arrow = UdonWorldUiKit.Label(
-                band, "Arrow", UdonMediaTheme.Space2, 0f, 32f, BandHeight, 18,
-                TextAnchor.MiddleCenter, UdonMediaTheme.TextMuted);
+            // ── 幅で組み方を変えます(Phase8-2)。
+            //    レール(230px)に曲一覧用の寸法をそのまま当てると、
+            //    アーティスト名の枠が <b>30px</b> しか残らず、「YOASOBI」すら入りませんでした。
+            //    レールには「開く / たたむ」が無いので ▶ も置きません。
+            bool narrow = width < 400f;
+
+            float countWidth = narrow ? 72f : 112f - UdonMediaTheme.Space2;   // 「1043 曲」が入る幅
+            float channelX = narrow ? UdonMediaTheme.Space2 : UdonMediaTheme.Space2 + 40f;
+            float countX = narrow
+                ? width - countWidth - UdonMediaTheme.Space2
+                : width - 130f;
+            float channelWidth = countX - channelX - UdonMediaTheme.Space1;
+
+            Text arrow = null;
+            if (!narrow)
+            {
+                arrow = UdonWorldUiKit.Label(
+                    band, "Arrow", UdonMediaTheme.Space2, 0f, 32f, BandHeight, 18,
+                    TextAnchor.MiddleCenter, UdonMediaTheme.TextMuted);
+            }
 
             Text channel = UdonWorldUiKit.FittedLabel(
-                band, "Channel", UdonMediaTheme.Space2 + 40f, 0f, width - 200f, BandHeight,
+                band, "Channel", channelX, 0f, channelWidth, BandHeight,
                 UdonMediaTheme.TextBody, 13, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
 
             Text count = UdonWorldUiKit.Label(
-                band, "Count", width - 130f, 0f, 112f - UdonMediaTheme.Space2, BandHeight,
+                band, "Count", countX, 0f, countWidth, BandHeight,
                 UdonMediaTheme.TextCaption, TextAnchor.MiddleRight, UdonMediaTheme.TextMuted);
 
             row.HeaderBand = band.gameObject;
@@ -1763,6 +1814,54 @@ namespace SmartMediaPlatform.World.EditorTools
             {
                 if (panel.Lists[i] != null) panel.Lists[i].Panel = panel;
             }
+
+            // ── 「…」シートは<b>いちばん最後に描く</b>(Phase8-2)。
+            if (transport != null && transport.MoreSheet != null)
+            {
+                BringToFront(body, transport.MoreSheet);
+            }
+        }
+
+        /// <summary>
+        /// <b>その部品を、板のいちばん手前に描かれるようにする。</b>見た目の位置は変えません。
+        ///
+        /// <b>uGUI は z(手前 / 奥)では重なりを決めません。</b>
+        /// 同じ Canvas の中では<b>階層の順(後に作ったものが上)</b>で塗ります。
+        /// シートは z を -30 にして浮かせていますが、それが効くのは
+        /// 「使う」の当たり判定だけで、<b>見た目には効いていませんでした</b>。
+        ///
+        /// 帯を組み直してシートが検索欄・タブ・一覧の上に開くようになり、
+        /// それらが<b>シートの上に描かれる</b>(後から作られている)ことが分かりました。
+        /// そこで最後に、シートを板の直下・いちばん後ろの子へ移します。
+        ///
+        /// 移すときは、<b>途中の親の位置を足し合わせて</b>同じ場所に置き直します。
+        /// ここで作る部品はすべて左上基準(<see cref="UdonWorldUiKit.Place"/>)なので、
+        /// 足し算だけで正しい位置になります。z(-30)はそのまま残ります。
+        /// </summary>
+        private static void BringToFront(RectTransform body, GameObject target)
+        {
+            var rect = target.GetComponent<RectTransform>();
+            if (rect == null || body == null) return;
+
+            float x = 0f;
+            float y = 0f;
+            Transform walk = rect;
+
+            while (walk != null && walk != body)
+            {
+                var r = walk as RectTransform;
+                if (r == null) return;      // 左上基準でない親をまたぐなら、動かさない
+
+                x += r.anchoredPosition.x;
+                y += r.anchoredPosition.y;
+                walk = walk.parent;
+            }
+
+            if (walk != body) return;
+
+            rect.SetParent(body, false);
+            rect.anchoredPosition = new Vector2(x, y);
+            rect.SetAsLastSibling();
         }
 
         private static GameObject NewChild(GameObject parent, string name)
