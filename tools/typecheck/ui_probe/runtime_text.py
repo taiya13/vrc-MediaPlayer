@@ -7,8 +7,13 @@ SAMPLES = [
     (r"/Browser/Tab0/Label$", "曲  1043"),
     (r"/Browser/Tab1/Label$", "おすすめ"),
     (r"/Browser/Tab2/Label$", "お気に入り  128"),
-    (r"/Browser/Tab3/Label$", "履歴  100"),
-    (r"/Browser/Tab4/Label$", "再生予定  12"),
+    (r"/Browser/Tab3/Label$", "プレイリスト  20"),
+    (r"/Browser/Tab4/Label$", "履歴  100"),
+    (r"/Browser/Tab5/Label$", "再生予定  64"),
+    # プレイリスト(Phase8-3)。名前は 24 文字まで。保存ボタンは縮めて収める(14px まで)。
+    (r"/SaveBar/Save/Label$", "「" + "あ" * 24 + "」に上書き保存"),
+    (r"/Page3/Row0/Content/Hit/Duration$", "10:23:45"),
+    (r"/Page3/Row0/Content/Favorite/Label$", "消す"),
     (r"/Transport/PlayPause/Label$", "‖  一時停止"),
     (r"/Volume/VolumeText$", "音量 100%"),
     (r"/NowPlaying/Time$", "12:34 / 58:07"),
@@ -38,6 +43,8 @@ def check():
                 have = n["R"] - n["L"]
                 name = n["p"].rsplit("/", 1)[-1]
                 size = 13 if name in FITTED else n["fontSize"]
+                if re.search(r"/SaveBar/Save/Label$", n["p"]): size = 14      # 縮めて 14px まで
+                if re.search(r"/Page3/Row\d+/Content/Favorite/Label$", n["p"]): size = 16
                 if text_width(s, size) > have:
                     problems.append(f"[文字が枠に入らない] {kind} {n['p']} 「{s}」 "
                                     f"必要≈{text_width(s, size):.0f}px / 枠 {have:.0f}px")

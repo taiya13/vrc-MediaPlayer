@@ -598,13 +598,19 @@ namespace SmartMediaPlatform.World.EditorTools
                 target = row;
 
                 bool queue = false;
+                bool playlist = false;
                 var owner = button.GetComponentInParent<UdonMediaListView>();
-                if (owner != null) queue = owner.Source == UdonMediaListView.SourceQueue;
+                if (owner != null)
+                {
+                    queue = owner.Source == UdonMediaListView.SourceQueue;
+                    playlist = owner.Source == UdonMediaListView.SourcePlaylist;
+                }
 
                 if (name == "Hit")
                 {
                     eventName = "Click";
-                    caption = queue ? "この曲へ移動" : "再生";
+                    caption = queue ? "この曲へ移動"
+                        : (playlist ? "このプレイリストを再生(再生予定を置き換え)" : "再生");
                 }
                 else if (name == "HeaderHit")
                 {
@@ -616,7 +622,14 @@ namespace SmartMediaPlatform.World.EditorTools
                 else if (name == "Secondary")
                 {
                     eventName = "ClickSecondary";
-                    caption = queue ? "再生予定から外す" : "再生予定に追加";
+                    caption = queue ? "再生予定から外す"
+                        : (playlist ? "再生予定の後ろに足す" : "再生予定に追加");
+                }
+                else if (name == "Favorite")
+                {
+                    // Phase7-8 の ♥。プレイリストの一覧では「消す」(Phase8-3)。
+                    eventName = "ClickFavorite";
+                    caption = playlist ? "このプレイリストを消す(2 回押す)" : "お気に入り";
                 }
                 return eventName != null;
             }
@@ -642,6 +655,17 @@ namespace SmartMediaPlatform.World.EditorTools
                     eventName = "ClearSearch";
                     caption = "検索をやめる";
                 }
+                else if (name == "Sort")
+                {
+                    eventName = "CycleSort";
+                    caption = "並べ替え";
+                }
+                else if (name == "Save")
+                {
+                    // Phase8-3: プレイリストの保存ボタン。
+                    eventName = "SavePlaylist";
+                    caption = "いま鳴っている曲と再生予定を保存";
+                }
                 else if (name == "ScrollHome" || name == "FirstPage")
                 {
                     // Phase6-4 で足した「迷子からの復帰」。
@@ -661,6 +685,9 @@ namespace SmartMediaPlatform.World.EditorTools
                 if (name == "Tab0") eventName = "SelectTab0";
                 else if (name == "Tab1") eventName = "SelectTab1";
                 else if (name == "Tab2") eventName = "SelectTab2";
+                else if (name == "Tab3") eventName = "SelectTab3";
+                else if (name == "Tab4") eventName = "SelectTab4";
+                else if (name == "Tab5") eventName = "SelectTab5";
 
                 return eventName != null;
             }

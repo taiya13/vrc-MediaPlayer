@@ -64,7 +64,7 @@ def main():
     import analyze2, runtime_text
 
     problems = 0
-    for t in range(5):
+    for t in range(6):
         problems += report(analyze2.run, "wall", t, False, f"タブ{t}")
     problems += report(analyze2.run, "remote", None, False, "リモコン")
 

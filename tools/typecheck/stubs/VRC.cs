@@ -40,6 +40,17 @@ namespace VRC.SDKBase
     public enum VRC_EventHandler_VrcBroadcastType { Always, Master, Owner, Local }
 }
 
+namespace VRC.SDK3.Persistence
+{
+    // SDK 3.7.0 以降。ローカルのプレイヤーの分だけ書ける。
+    public static class PlayerData
+    {
+        public static bool HasKey(VRC.SDKBase.VRCPlayerApi player, string key) { return false; }
+        public static string GetString(VRC.SDKBase.VRCPlayerApi player, string key) { return null; }
+        public static void SetString(string key, string value) { }
+    }
+}
+
 namespace VRC.SDK3.Components
 {
     public class VRCSceneDescriptor : VRC.SDKBase.VRC_SceneDescriptor { }
@@ -254,6 +265,7 @@ namespace UdonSharp
         public virtual void Interact() { }
         public virtual void OnPlayerJoined(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnPlayerLeft(VRC.SDKBase.VRCPlayerApi player) { }
+        public virtual void OnPlayerRestored(VRC.SDKBase.VRCPlayerApi player) { }
         public virtual void OnDeserialization() { }
         public virtual void OnPreSerialization() { }
         public virtual void OnPostSerialization(VRC.Udon.Common.SerializationResult result) { }

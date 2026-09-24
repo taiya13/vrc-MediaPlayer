@@ -153,6 +153,26 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (FavoriteLabel.color != wanted) FavoriteLabel.color = wanted;
         }
 
+        [Tooltip("♥ の場所を「消す」に使うとき、確かめている間の色(Phase8-3)")]
+        public Color WarningColor = new Color(0.843f, 0.188f, 0.157f, 1f);
+
+        /// <summary>
+        /// <b>♥ の場所を、別の操作のボタンとして使う。</b>Phase8-3。
+        /// プレイリストの一覧では、ここが「消す」になります。
+        /// <paramref name="warning"/> が true の間は、押すと本当に消える状態です。
+        /// </summary>
+        public void ShowAction(string label, bool warning, bool visible)
+        {
+            SetActive(FavoriteButton, visible);
+
+            if (FavoriteLabel == null) return;
+
+            SetText(FavoriteLabel, label);
+
+            Color wanted = warning ? WarningColor : FavoriteOffColor;
+            if (FavoriteLabel.color != wanted) FavoriteLabel.color = wanted;
+        }
+
         public void ClickSecondary()
         {
             if (List != null) List.OnRowSecondary(Row);

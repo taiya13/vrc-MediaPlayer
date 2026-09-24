@@ -777,7 +777,7 @@ namespace SmartMediaPlatform.World.EditorTools
             float x, float y, float width, float height)
         {
             const float TabGap = 9f;
-            const int TabCount = 5;
+            const int TabCount = 6;
 
             RectTransform section = UdonWorldUiKit.Place(body, "Browser", x, y, width, height);
 
@@ -796,21 +796,24 @@ namespace SmartMediaPlatform.World.EditorTools
             var tabRects = new RectTransform[TabCount];
             var labels = new Text[TabCount];
 
-            // ── 並びは「曲 → おすすめ → お気に入り → 履歴 → 再生予定」。
+            // ── 並びは「曲 → おすすめ → お気に入り → プレイリスト → 履歴 → 再生予定」。
             //    <b>おすすめを 2 番目</b>に置いたのは、
             //    「曲を見る → そのまま次を選ぶ」が<b>隣どうし</b>になるからです。
+            //    プレイリスト(Phase8-3)は「自分で選んで取っておいたもの」なので、
+            //    同じく自分で選んだお気に入りの隣に置きます。
             int[] sources =
             {
                 UdonMediaListView.SourceLibrary,
                 UdonMediaListView.SourceRelated,
                 UdonMediaListView.SourceFavorite,
+                UdonMediaListView.SourcePlaylist,
                 UdonMediaListView.SourceHistory,
                 UdonMediaListView.SourceQueue,
             };
 
             string[] events =
             {
-                "SelectTab0", "SelectTab1", "SelectTab2", "SelectTab3", "SelectTab4",
+                "SelectTab0", "SelectTab1", "SelectTab2", "SelectTab3", "SelectTab4", "SelectTab5",
             };
 
             float pageTop = searchHeight + TabHeight + UdonMediaTheme.Space2;
@@ -866,7 +869,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 }
                 else
                 {
-                    // ── <b>お気に入り・履歴・再生予定にレールは付けません</b>。
+                    // ── <b>お気に入り・プレイリスト・履歴・再生予定にレールは付けません</b>。
                     //    どれも曲数が絞られていて、そこからさらにアーティストで
                     //    絞りたくなる場面がほとんどないためです。
                     //    全幅を一覧に渡したほうが、1 行ぶん多く見えます。
@@ -893,7 +896,7 @@ namespace SmartMediaPlatform.World.EditorTools
             tabs.Labels = labels;
 
             // おすすめはカードなので一覧を持たない。名前だけ決め打ちで渡す。
-            tabs.FixedLabels = new[] { "", "おすすめ", "", "", "" };
+            tabs.FixedLabels = new[] { "", "おすすめ", "", "", "", "" };
 
             UdonMediaListView songList = lists[0];
 
@@ -935,7 +938,7 @@ namespace SmartMediaPlatform.World.EditorTools
             //    (順に舐めて Store などを挿すだけ)。
             panel.Lists = new[]
             {
-                lists[0], lists[1], lists[2], lists[3], lists[4], rail,
+                lists[0], lists[1], lists[2], lists[3], lists[4], lists[5], rail,
             };
 
             return tabs;
@@ -1212,6 +1215,12 @@ namespace SmartMediaPlatform.World.EditorTools
                 listTop = SortHeight + UdonMediaTheme.Space1;
             }
 
+            // ── プレイリストの名前欄と保存ボタン(Phase8-3)
+            if (source == UdonMediaListView.SourcePlaylist)
+            {
+                listTop = BuildPlaylistSaveBar(page, view, width) + UdonMediaTheme.Space1;
+            }
+
             // ── 上に貼り付くチャンネルの帯は<b>置きません</b>(Phase8-2)。
             //    まとめをやめたので見出しそのものが出ず、
             //    「いま誰を見ているか」はレールの選択が示します。
@@ -1290,6 +1299,90 @@ namespace SmartMediaPlatform.World.EditorTools
             UdonWorldUiKit.Wire(down, view, "ScrollDown", "下へ(続けて押すと速い)");
 
             return view;
+        }
+
+        /// <summary>
+        /// <b>プレイリストの名前欄と保存ボタン。</b>Phase8-3。
+        ///
+        /// <code>
+        /// ┌──────────────────────────────┬──────────────────────┐
+        /// │ 名前(空なら自動で付けます)    │ 「夜」に上書き保存   │
+        /// └──────────────────────────────┴──────────────────────┘
+        /// </code>
+        /// 保存ボタンの文字は<b>押したら何が起きるか</b>で変わります
+        /// (新しく作る / 上書きする)。上書きは取り消せないので、押す前に分かるようにします。
+        /// 名前欄は検索欄と同じ <c>VRCUrlInputField</c> で、枠のどこを「使う」でもキーボードが出ます。
+        /// </summary>
+        /// <returns>使った高さ。</returns>
+        private static float BuildPlaylistSaveBar(
+            RectTransform page, UdonMediaListView view, float width)
+        {
+            const float Height = 56f;
+            const float SaveWidth = 500f;
+
+            float fieldWidth = width - SaveWidth - UdonMediaTheme.Space2;
+
+            RectTransform bar = UdonWorldUiKit.Place(page, "SaveBar", 0f, 0f, width, Height);
+
+            Image back = UdonWorldUiKit.GlassPlate(
+                bar, "NameBack", 0f, 0f, fieldWidth, Height,
+                UdonMediaTheme.SurfaceRaised, Mathf.RoundToInt(Height * 0.5f));
+            back.raycastTarget = false;
+
+            float textX = UdonMediaTheme.Space3;
+            float textWidth = fieldWidth - textX * 2f;
+
+            RectTransform fieldRect = UdonWorldUiKit.Place(
+                bar, "NameField", textX, 0f, textWidth, Height);
+
+            Image fieldBack = fieldRect.gameObject.AddComponent<Image>();
+            fieldBack.color = new Color(0f, 0f, 0f, 0.001f);
+
+            var field = fieldRect.gameObject.AddComponent<VRCUrlInputField>();
+
+            Text typed = UdonWorldUiKit.Label(
+                fieldRect, "Text", 0f, 0f, textWidth, Height, UdonMediaTheme.TextBody,
+                TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
+            typed.raycastTarget = false;
+
+            Text placeholder = UdonWorldUiKit.Label(
+                fieldRect, "Placeholder", 0f, 0f, textWidth, Height, UdonMediaTheme.TextBody,
+                TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
+            placeholder.text = "名前(空なら自動で付けます)";
+            placeholder.raycastTarget = false;
+
+            field.textComponent = typed;
+            field.placeholder = placeholder;
+            field.targetGraphic = fieldBack;
+
+            view.NameField = field;
+
+            // ── 枠のどこを「使う」でもキーボードが出るように(検索欄と同じ)。
+            UdonWorldUiKit.InteractArea(
+                bar, "NameHit", 0f, 0f, fieldWidth, Height,
+                view, "OpenNameKeyboard", "名前を打つ");
+
+            // ── 保存ボタン。文字は実行中に「「名前」に上書き保存」などへ変わるので、
+            //    長い名前でも入るよう、縮めて収まる文字にします。
+            Button save = UdonWorldUiKit.HitArea(
+                bar, "Save", width - SaveWidth, 0f, SaveWidth, Height, UdonMediaTheme.Accent);
+            UdonWorldUiKit.ApplyRadius(save.targetGraphic as Image, Mathf.RoundToInt(Height * 0.5f));
+            UdonWorldUiKit.AddGlassEdge(
+                save.targetGraphic as Image, SaveWidth, Mathf.RoundToInt(Height * 0.5f));
+
+            Text saveLabel = UdonWorldUiKit.FittedLabel(
+                save.transform, "Label", UdonMediaTheme.Space2, 0f,
+                SaveWidth - UdonMediaTheme.Space2 * 2f, Height,
+                UdonMediaTheme.TextBody, 14, TextAnchor.MiddleCenter,
+                UdonMediaTheme.OnAccent);
+            saveLabel.text = "新しいプレイリストとして保存";
+
+            view.SaveLabel = saveLabel;
+
+            UdonWorldUiKit.Wire(save, view, "SavePlaylist",
+                                "いま鳴っている曲と再生予定を保存");
+
+            return Height;
         }
 
         /// <summary>
@@ -1534,6 +1627,10 @@ namespace SmartMediaPlatform.World.EditorTools
 
             bool queue = source == UdonMediaListView.SourceQueue;
 
+            // プレイリストの行は「曲」ではなく「取っておいた並び」。
+            // ボタンの意味が変わるので、案内の文字も変える(Phase8-3)。
+            bool playlist = source == UdonMediaListView.SourcePlaylist;
+
             // ── アーティストのレールは<b>見出ししか出しません</b>。
             //    ♥ と「＋」を作っても一度も見えないうえ、
             //    幅 230 px の中に置くと中身の幅が 60 px を切ります。
@@ -1620,7 +1717,8 @@ namespace SmartMediaPlatform.World.EditorTools
                 row.SecondaryButton = secondaryButton.gameObject;
 
                 UdonWorldUiKit.Wire(secondaryButton, row, "ClickSecondary",
-                                    queue ? "再生予定から外す" : "再生予定に追加");
+                                    queue ? "再生予定から外す"
+                                    : (playlist ? "再生予定の後ろに足す" : "再生予定に追加"));
 
                 // ── ♥(Phase7-8)。「好き」と「いま聴く」は別なので、別のボタンにする。
                 //    形(♥ / ♡)ではなく<b>色</b>で入っているかを示します —— 組み込み
@@ -1630,7 +1728,7 @@ namespace SmartMediaPlatform.World.EditorTools
                     content, "Favorite",
                     width - SecondaryWidth * 2f - UdonMediaTheme.Space1,
                     (height - SecondaryWidth) * 0.5f,
-                    SecondaryWidth, SecondaryWidth, "♥", 28,
+                    SecondaryWidth, SecondaryWidth, playlist ? "×" : "♥", 28,
                     UdonMediaTheme.Surface,
                     Mathf.RoundToInt(SecondaryWidth * 0.5f), out favoriteLabel);
 
@@ -1639,7 +1737,17 @@ namespace SmartMediaPlatform.World.EditorTools
                 row.FavoriteOnColor = UdonMediaTheme.Accent;
                 row.FavoriteOffColor = UdonMediaTheme.TextMuted;
 
-                UdonWorldUiKit.Wire(favoriteButton, row, "ClickFavorite", "お気に入り");
+                // プレイリストでは、ここが「消す」になる。確かめ中は「消す」と 2 文字出るので、
+                // 丸の中に収まるよう縮めて出す。
+                if (playlist && favoriteLabel != null)
+                {
+                    favoriteLabel.resizeTextForBestFit = true;
+                    favoriteLabel.resizeTextMaxSize = 28;
+                    favoriteLabel.resizeTextMinSize = 16;
+                }
+
+                UdonWorldUiKit.Wire(favoriteButton, row, "ClickFavorite",
+                                    playlist ? "このプレイリストを消す(2 回押す)" : "お気に入り");
             }
 
             // ── 印は中身より後に置く(半透明でかぶせる)。
@@ -1677,7 +1785,9 @@ namespace SmartMediaPlatform.World.EditorTools
             row.TitleColor = UdonWorldUiKit.TextPrimary;
             row.NowPlayingTitleColor = UdonWorldUiKit.TextNowPlaying;
 
-            UdonWorldUiKit.Wire(hit, row, "Click", queue ? "この曲へ移動" : "再生");
+            UdonWorldUiKit.Wire(hit, row, "Click",
+                                queue ? "この曲へ移動"
+                                : (playlist ? "このプレイリストを再生(再生予定を置き換え)" : "再生"));
 
             return row;
         }

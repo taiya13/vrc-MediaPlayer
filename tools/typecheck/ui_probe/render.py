@@ -8,12 +8,17 @@ ARTISTS = [("すべて",1043),("Ado",38),("YOASOBI",31),("Official髭男dism",27
 CARDS = [("アイドル","YOASOBI","よく聴くアーティスト"),("Subtitle","Official髭男dism","お気に入りと同じジャンル"),
          ("残響散歌","Aimer","まだ聴いたことがない"),("Lemon","米津玄師","この中でよく再生されている"),
          ("怪物","YOASOBI","さっき聴いた曲と似ている"),("ドライフラワー","優里","しばらく聴いていない")]
+PLAYLISTS = [("作業用","12 曲 · 夜に駆ける / アイドル / 群青 / …","48:12"),
+             ("夜のドライブ","8 曲(1 曲は見つかりません) · Lemon / 怪物 / …","31:05"),
+             ("プレイリスト 3","3 曲 · 残響散歌 / Subtitle / ドライフラワー","12:40"),
+             ("カラオケ候補","20 曲 · マリーゴールド / 115万キロのフィルム / …","1:22:18")]
 FIXED = {
  r"/NowPlaying/Title$":"夜に駆ける", r"/NowPlaying/Artist$":"YOASOBI", r"/GenreChip/Genre$":"J-POP",
  r"/NowPlaying/Time$":"1:48 / 4:23", r"/NowPlaying/State$":"▶ 再生中", r"/NowPlaying/Remaining$":"残り 2:35",
  r"/NowPlayingBand/Status$":"アイドル を 再生予定に追加しました。",
  r"/Tab0/Label$":"曲  31", r"/Tab1/Label$":"おすすめ", r"/Tab2/Label$":"お気に入り  12",
- r"/Tab3/Label$":"履歴  48", r"/Tab4/Label$":"再生予定  3",
+ r"/Tab3/Label$":"プレイリスト  4", r"/Tab4/Label$":"履歴  48", r"/Tab5/Label$":"再生予定  3",
+ r"/SaveBar/Save/Label$":"「作業用」に上書き保存",
  r"/PlayPause/Label$":"‖  一時停止", r"/Volume/VolumeText$":"音量 80%", r"/Range$":"1〜6 / 31 件",
 }
 
@@ -21,7 +26,14 @@ def fill(n):
     p = n["p"]
     for pat, s in FIXED.items():
         if re.search(pat, p): return s
-    m = re.search(r"/(?:Songs|Page[234])/Row(\d)/Content/Hit/(Index|Title|Sub|Duration)$", p)
+    m = re.search(r"/Page3/Row(\d)/Content/Hit/(Index|Title|Sub|Duration)$", p)
+    if m:
+        i = int(m.group(1))
+        if i >= len(PLAYLISTS): return ""
+        t, s, d = PLAYLISTS[i]
+        return {"Index": str(i + 1), "Title": t, "Sub": s, "Duration": d}[m.group(2)]
+    if re.search(r"/Page3/Row(\d)/Content/Favorite/Label$", p): return "消す" if "/Row1/" in p else "×"
+    m = re.search(r"/(?:Songs|Page[245])/Row(\d)/Content/Hit/(Index|Title|Sub|Duration)$", p)
     if m:
         i = int(m.group(1)); t, s, d = SONGS[i % len(SONGS)]
         k = m.group(2)
@@ -91,7 +103,7 @@ def render(kind, tab, sheet, out):
     open(out, "w", encoding="utf-8").write(doc)
 
 if __name__ == "__main__":
-    for t in range(5): render("wall", t, False, f"wall_tab{t}.html")
+    for t in range(6): render("wall", t, False, f"wall_tab{t}.html")
     render("wall", 0, True, "wall_sheet.html")
     render("remote", None, False, "remote.html")
     print("ok")

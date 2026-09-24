@@ -2,3 +2,4 @@ out/
 out-tests/
 __pycache__/
 out-ui-probe/
+out-behaviour-sim/

@@ -168,6 +168,9 @@ namespace SmartMediaPlatform.World.Udon.UI
                     // 好み(お気に入り・履歴)は Session が持っている所から借りる。
                     // パネルは何枚でも置けるので、各自が別々に持つと食い違います。
                     if (list.Profile == null && Session != null) list.Profile = Session.Profile;
+
+                    // プレイリストの棚は Core が 1 つだけ持つ(パネルが何枚あっても同じ棚を見る)。
+                    if (list.Shelf == null && Core != null) list.Shelf = Core.Playlists;
                     if (list.Panel == null) list.Panel = this;
 
                     BindRows(list);

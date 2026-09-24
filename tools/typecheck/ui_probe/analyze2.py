@@ -9,6 +9,7 @@ def intended(a, b):
     if pa.endswith("/Text") and pb.endswith("/Placeholder") or pb.endswith("/Text") and pa.endswith("/Placeholder"): return True
     if "/Empty" in both: return True                         # 空の案内は行が空のときだけ
     if "UrlField" in both and "UrlHit" in both: return True
+    if "/SaveBar/NameField" in both and "NameHit" in both: return True   # 名前欄の上に「使う」を重ねる設計
     return False
 
 def text_width(s, size):
@@ -57,6 +58,6 @@ def run(kind, tab=None, sheet=False, label=""):
     return vis
 
 if __name__ == "__main__":
-    for t in range(5): run("wall", tab=t, label=f"タブ{t}")
+    for t in range(6): run("wall", tab=t, label=f"タブ{t}")
     run("wall", tab=0, sheet=True, label="タブ0 + 「…」シート")
     run("remote", label="リモコン")

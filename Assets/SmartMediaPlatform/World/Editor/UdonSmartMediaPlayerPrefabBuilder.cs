@@ -109,6 +109,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 typeof(UdonCrossfadeCoordinator),
                 typeof(UdonTrackFader),
                 typeof(UdonUserProfile),
+                typeof(UdonPlaylistShelf),
                 typeof(UdonSmartMediaPlayer),
             };
 
@@ -459,6 +460,17 @@ namespace SmartMediaPlatform.World.EditorTools
             if (controller != null) controller.Sync = sync;
             if (_needsCompile) return root;
 
+            // ── Playlists(名前を付けて取っておくプレイリスト。Phase8-3)
+            //    中身は VRChat の PlayerData に、その人の分だけ残ります(同期しません)。
+            var playlistsObject = Child(root, "Playlists");
+            var playlists = Add<UdonPlaylistShelf>(playlistsObject);
+            if (playlists != null)
+            {
+                playlists.Catalog = catalog;
+                playlists.Session = session;
+            }
+            if (_needsCompile) return root;
+
             // ── 根っこ(配線だけ)
             var smartPlayer = Add<UdonSmartMediaPlayer>(root);
             if (smartPlayer != null)
@@ -473,6 +485,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 smartPlayer.Sync = sync;
                 smartPlayer.Crossfade = crossfade;
                 smartPlayer.Fader = fader;
+                smartPlayer.Playlists = playlists;
             }
 
             return root;

@@ -85,6 +85,10 @@ namespace SmartMediaPlatform.World.Udon
                  + "空なら今までどおり、音量を変えずに切り替える")]
         public UdonTrackFader Fader;
 
+        [Tooltip("名前を付けて取っておくプレイリストの棚(Phase8-3)。"
+                 + "空ならプレイリストのタブは空のまま(ほかは今までどおり動く)")]
+        public UdonPlaylistShelf Playlists;
+
         [Header("困ったとき")]
         [Tooltip("配線の結果を Console に出す。「パネル N 枚」が 0 なら Core の挿し忘れ")]
         public bool LogWiring = true;
@@ -149,6 +153,12 @@ namespace SmartMediaPlatform.World.Udon
                     Fader.Suspended = true;
                     Fader.ResetFade();
                 }
+            }
+
+            if (Playlists != null)
+            {
+                if (Playlists.Catalog == null) Playlists.Catalog = Catalog;
+                if (Playlists.Session == null) Playlists.Session = Session;
             }
 
             if (Controller != null)
@@ -228,9 +238,11 @@ namespace SmartMediaPlatform.World.Udon
             string fade = Crossfade != null ? Crossfade.Describe()
                 : (Fader != null ? Fader.Describe() : "フェードなし");
 
+            string playlists = Playlists != null ? Playlists.Describe() : "プレイリストなし";
+
             return "カタログ " + items + " 件 / 一覧 " + visible + " 件 / "
                    + backend + " / " + screen + " / " + panels + " / " + sync
-                   + " / " + fade;
+                   + " / " + fade + " / " + playlists;
         }
     }
 }

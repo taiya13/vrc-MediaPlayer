@@ -61,8 +61,11 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>最近聴いたもの(Phase7-8)。</summary>
         public const int SourceHistory = 5;
 
+        /// <summary>名前を付けて取っておいたプレイリスト(Phase8-3)。曲ではなく棚の中身が並ぶ。</summary>
+        public const int SourcePlaylist = 6;
+
         [Header("何の一覧か")]
-        [Tooltip("0=Library / 1=関連 / 2=Queue / 3=アーティスト / 4=お気に入り / 5=履歴")]
+        [Tooltip("0=Library / 1=関連 / 2=Queue / 3=アーティスト / 4=お気に入り / 5=履歴 / 6=プレイリスト")]
         public int Source = SourceLibrary;
 
         [Header("アーティストで絞る(Phase7-6)")]
@@ -97,6 +100,20 @@ namespace SmartMediaPlatform.World.Udon.UI
 
         [Tooltip("見出しに出す文字。空なら種類に合わせて「すべての曲 / おすすめ / 再生予定」")]
         public string HeaderLabel = "";
+
+        [Header("プレイリスト(Phase8-3。プレイリストの一覧だけ)")]
+        [Tooltip("取っておいたプレイリストの棚。UdonMediaPanel が Core から入れる")]
+        public SmartMediaPlatform.World.Udon.UdonPlaylistShelf Shelf;
+
+        [Tooltip("保存するときの名前を打つ欄。空でも動く(そのときは自動で名前が付く)")]
+        public VRC.SDK3.Components.VRCUrlInputField NameField;
+
+        [Tooltip("保存ボタンの文字。「〜に上書き保存」のように、押す前に何が起きるかを書く")]
+        public Text SaveLabel;
+
+        [Tooltip("「消す」を 1 回押してから、もう一度押せば消える状態でいる秒数")]
+        [Range(1f, 10f)]
+        public float DeleteConfirmSeconds = 3f;
 
         [Header("つなぎ先(UdonMediaPanel が自動で入れる)")]
         [Tooltip("状態の 1 行を出す先")]
@@ -242,6 +259,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             _initialized = true;
 
             _shown = new int[RowCount()];
+            _shownNames = new string[RowCount()];
         }
 
         /// <summary>1 ページの行数。</summary>
@@ -256,6 +274,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Source == SourceQueue) return Session != null ? Session.QueueCount : 0;
             if (Source == SourceFavorite) return Profile != null ? Profile.FavoriteCount : 0;
             if (Source == SourceHistory) return Profile != null ? Profile.HistoryCount : 0;
+            if (Source == SourcePlaylist) return Shelf != null ? Shelf.Count : 0;
             if (Source == SourceRelated) return ResolveRelated().Length;
 
             if (UsesView())
@@ -756,7 +775,8 @@ namespace SmartMediaPlatform.World.Udon.UI
             {
                 total = Session != null ? Session.QueueCount : 0;
             }
-            else if (Source == SourceFavorite || Source == SourceHistory)
+            else if (Source == SourceFavorite || Source == SourceHistory
+                     || Source == SourcePlaylist)
             {
                 total = TotalCount();
             }
@@ -796,6 +816,14 @@ namespace SmartMediaPlatform.World.Udon.UI
 
                 int position = first + row;
                 int catalogIndex = -1;
+
+                // プレイリストの行は曲ではないので、別に描く(Phase8-3)。
+                if (Source == SourcePlaylist)
+                {
+                    ShowPlaylistRow(target, row, position);
+                    target.SetPressed(pressedStillOn && position == _touchedPosition);
+                    continue;
+                }
 
                 if (Source == SourceRelated)
                 {
@@ -886,6 +914,13 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (row < 0 || row >= rows) return;
             if (!Accept(0, row)) return;
 
+            if (Source == SourcePlaylist)
+            {
+                MarkTouched(Offset + row);
+                PlayPlaylist(row, true);
+                return;
+            }
+
             // 見出しの行を押したとき。
             if (UsesView())
             {
@@ -936,6 +971,14 @@ namespace SmartMediaPlatform.World.Udon.UI
             int rows = RowCount();
             if (row < 0 || row >= rows) return;
             if (!Accept(1, row)) return;
+
+            if (Source == SourcePlaylist)
+            {
+                MarkTouched(Offset + row);
+                PlayPlaylist(row, false);
+                return;
+            }
+
             if (_shown != null && row < _shown.Length && _shown[row] < 0) return;
 
             string title = TitleAt(row);
@@ -964,6 +1007,17 @@ namespace SmartMediaPlatform.World.Udon.UI
         public void OnRowFavorite(int row)
         {
             EnsureInitialized();
+
+            // プレイリストの一覧では、この場所が「消す」(Phase8-3)。
+            if (Source == SourcePlaylist)
+            {
+                if (row < 0 || row >= RowCount()) return;
+                if (!Accept(2, row)) return;
+
+                DeletePlaylist(row);
+                return;
+            }
+
             if (Profile == null) return;
 
             int rows = RowCount();
@@ -995,6 +1049,323 @@ namespace SmartMediaPlatform.World.Udon.UI
             Offset = 0;
             _builtFor = -1;
             Refresh();
+        }
+
+        // ───────── プレイリスト(Phase8-3)─────────
+        //
+        // 棚(UdonPlaylistShelf)の中身を行に写し、押されたら窓口へ中継するだけです。
+        // 何をどう積むかは UdonMediaController.LoadList → UdonPlayerSession が決めます。
+
+        // 行 → そこに描いたプレイリストの名前。
+        // 押された時点で位置から引き直すと、その間に 1 本消えていたときに
+        // <b>隣のプレイリストを流して(消して)しまう</b>ので、描いた名前で探し直します。
+        private string[] _shownNames;
+
+        // 「消す」を 1 回押されたもの。もう一度押されたら消す。
+        private string _armedName = "";
+        private float _armedAt = -999f;
+
+        // 最後に保存した / 流したプレイリストの名前。名前欄が空なら、ここへ上書き保存する。
+        private string _rememberedName = "";
+
+        // 保存に使い終わった名前欄の文字。打ち直されるまでは「空」とみなす
+        // (VRCUrlInputField の中身は Udon から消せないため。検索の「×」と同じ考え方)。
+        private string _clearedName;
+
+        // 「消す」を 1 回目に押してから、2 回目として受け付けるまでの最短の間(秒)。
+        // 「使う」と uGUI の両方から同じ押下が届いても、1 回で消えないようにする。
+        private const float DeleteMinimumGap = 0.4f;
+
+        private void ShowPlaylistRow(UdonMediaListRow target, int row, int position)
+        {
+            int count = Shelf != null ? Shelf.Count : 0;
+
+            if (position < 0 || position >= count)
+            {
+                _shown[row] = -1;
+                _shownNames[row] = "";
+                target.ShowEmpty();
+                return;
+            }
+
+            string name = Shelf.NameAt(position);
+
+            _shown[row] = position;
+            _shownNames[row] = name;
+
+            target.ShowItem(
+                IndexLabel(position), name, Shelf.SummaryAt(position),
+                Shelf.TotalDurationAt(position),
+                false, true, "＋");
+
+            bool armed = IsArmed(name);
+            target.ShowAction(armed ? "消す" : "×", armed, true);
+        }
+
+        private bool IsArmed(string name)
+        {
+            if (_armedName.Length == 0 || name != _armedName) return false;
+            return Time.time - _armedAt < DeleteConfirmSeconds;
+        }
+
+        /// <summary>行に描いたプレイリストが、いま棚の何番目か。消されていれば -1。</summary>
+        private int PlaylistAtRow(int row)
+        {
+            if (Shelf == null || _shownNames == null) return -1;
+            if (row < 0 || row >= _shownNames.Length) return -1;
+
+            string name = _shownNames[row];
+            if (name == null || name.Length == 0) return -1;
+
+            return Shelf.FindByName(name);
+        }
+
+        /// <summary>
+        /// <b>プレイリストを流す。</b>
+        /// <paramref name="replace"/> = true(行を押した)なら再生予定を置き換えて 1 曲目から、
+        /// false(「＋」)なら再生予定の後ろに足します。
+        /// </summary>
+        private void PlayPlaylist(int row, bool replace)
+        {
+            if (Controller == null) return;
+
+            int at = PlaylistAtRow(row);
+            if (at < 0)
+            {
+                Refresh();
+                return;
+            }
+
+            string name = Shelf.NameAt(at);
+            int[] songs = Shelf.Resolve(at);
+            int missing = Shelf.LastMissing;
+
+            if (songs.Length == 0)
+            {
+                SetPanelStatus("「" + name + "」の曲はどれもカタログに見つかりません。");
+                return;
+            }
+
+            bool ok = Controller.LoadList(songs, replace);
+
+            if (!ok)
+            {
+                if (Controller.LastDenied)
+                {
+                    Report(false, "", "");
+                    return;
+                }
+
+                SetPanelStatus(replace
+                    ? "「" + name + "」を再生できませんでした。"
+                    : "再生予定がいっぱいか、もう全部入っています。");
+                return;
+            }
+
+            // 名前欄が空のまま「保存」したら、ここへ上書きされる。
+            // 「流す → 再生予定を直す → 保存」で、そのプレイリストを直せるようにするため。
+            _rememberedName = name;
+
+            int added = Controller.LastAdded;
+            string message = replace
+                ? "「" + name + "」を再生します(" + added + " 曲)。"
+                : "「" + name + "」の " + added + " 曲を再生予定に追加しました。";
+
+            int skipped = songs.Length - added;
+            if (skipped > 0) message += skipped + " 曲は入りませんでした(再生予定の上限か、すでに入っています)。";
+            if (missing > 0) message += missing + " 曲はカタログに見つかりません。";
+
+            SetPanelStatus(message);
+            Refresh();
+        }
+
+        /// <summary>
+        /// <b>「消す」が押された。</b>1 回目は確かめるだけ、
+        /// <see cref="DeleteConfirmSeconds"/> 秒以内にもう一度押されたら消します。
+        /// 消したものは戻せないので、1 回の押し間違いでは消えないようにしています。
+        /// </summary>
+        private void DeletePlaylist(int row)
+        {
+            if (Shelf == null) return;
+
+            if (!Shelf.IsReady)
+            {
+                SetPanelStatus(Shelf.NotReadyMessage());
+                return;
+            }
+
+            int at = PlaylistAtRow(row);
+            if (at < 0)
+            {
+                Refresh();
+                return;
+            }
+
+            string name = Shelf.NameAt(at);
+            MarkTouched(Offset + row);
+
+            bool confirmed = IsArmed(name) && Time.time - _armedAt >= DeleteMinimumGap;
+
+            if (!confirmed)
+            {
+                // 同じ行への 2 回目が早すぎたときは、確かめ中のまま待つ(時計は巻き戻さない)。
+                if (!IsArmed(name))
+                {
+                    _armedName = name;
+                    _armedAt = Time.time;
+                }
+
+                SetPanelStatus("もう一度「消す」を押すと「" + name + "」を消します。");
+                Refresh();
+                return;
+            }
+
+            _armedName = "";
+            _armedAt = -999f;
+
+            bool removed = Shelf.Remove(at);
+            if (removed && _rememberedName == name) _rememberedName = "";
+
+            SetPanelStatus(removed
+                ? "「" + name + "」を消しました。"
+                : "「" + name + "」を消せませんでした。");
+
+            Refresh();
+        }
+
+        /// <summary>
+        /// <b>いま鳴っている曲と再生予定を、名前を付けて取っておく。</b>保存ボタンから呼ぶ。
+        ///
+        /// 名前欄に打った名前があればその名前で、無ければ最後に流した / 保存したものへ上書き、
+        /// それも無ければ「プレイリスト N」で新しく作ります。
+        /// どれになるかは、押す前からボタンの文字に出ています(<see cref="RefreshSaveLabel"/>)。
+        /// </summary>
+        public void SavePlaylist()
+        {
+            EnsureInitialized();
+            if (Shelf == null) return;
+            if (!Accept(3, 0)) return;
+
+            if (!Shelf.IsReady)
+            {
+                SetPanelStatus(Shelf.NotReadyMessage());
+                return;
+            }
+
+            string typed = ReadNameField();
+            string target = Shelf.SaveTargetName(TypedName(typed), _rememberedName);
+            bool overwrite = target.Length > 0 && Shelf.FindByName(target) >= 0;
+
+            int result = Shelf.SaveCurrent(target);
+
+            if (result < 0)
+            {
+                SetPanelStatus(SaveFailureMessage(result));
+                return;
+            }
+
+            string name = Shelf.NameAt(result);
+            _rememberedName = name;
+
+            // 使い終わった名前は、打ち直されるまで空とみなす。
+            // 残したままだと、次に別のものを保存しようとしたときに、うっかり同じ名前へ上書きします。
+            _clearedName = typed;
+
+            string message = "「" + name + "」" + (overwrite ? "に上書き保存しました" : "を保存しました")
+                             + "(" + Shelf.LastSavedSongs + " 曲)。";
+            if (Shelf.LastTruncated)
+            {
+                message += "入るのは " + SmartMediaPlatform.World.Udon.UdonPlaylistShelf.MaxSongs
+                           + " 曲までなので、残りは入れていません。";
+            }
+
+            SetPanelStatus(message);
+
+            // 保存したものが見えるところまで動かす。
+            RevealPosition(result);
+            Refresh();
+        }
+
+        /// <summary>名前欄を押したとき。VRChat のキーボードを出す(検索欄と同じ理由)。</summary>
+        public void OpenNameKeyboard()
+        {
+            if (NameField == null) return;
+
+            NameField.Select();
+            NameField.ActivateInputField();
+        }
+
+        private string SaveFailureMessage(int result)
+        {
+            if (result == SmartMediaPlatform.World.Udon.UdonPlaylistShelf.ResultNothingToSave)
+            {
+                return "保存する曲がありません。曲を再生するか、再生予定に入れてから押してください。";
+            }
+
+            if (result == SmartMediaPlatform.World.Udon.UdonPlaylistShelf.ResultFull)
+            {
+                return "プレイリストは " + SmartMediaPlatform.World.Udon.UdonPlaylistShelf.MaxPlaylists
+                       + " 本までです。どれかを消すか、同じ名前で上書きしてください。";
+            }
+
+            if (result == SmartMediaPlatform.World.Udon.UdonPlaylistShelf.ResultTooLarge)
+            {
+                return "保存できる量を超えます。曲を減らしてから保存してください。";
+            }
+
+            if (result == SmartMediaPlatform.World.Udon.UdonPlaylistShelf.ResultNotReady)
+            {
+                return Shelf != null ? Shelf.NotReadyMessage() : "";
+            }
+
+            return "保存できませんでした。";
+        }
+
+        /// <summary>保存ボタンの文字を、いま押したら起きることに合わせる。</summary>
+        private void RefreshSaveLabel()
+        {
+            if (Source != SourcePlaylist || SaveLabel == null || Shelf == null) return;
+
+            string label = Shelf.IsReady
+                ? Shelf.SaveLabel(Shelf.SaveTargetName(TypedName(ReadNameField()), _rememberedName))
+                : "読み込み中…";
+
+            if (SaveLabel.text != label) SaveLabel.text = label;
+        }
+
+        /// <summary>名前欄の文字。使い終わった文字のままなら空とみなす。</summary>
+        private string TypedName(string typed)
+        {
+            if (_clearedName != null && typed == _clearedName) return "";
+            return typed;
+        }
+
+        /// <summary>名前欄を読む。検索欄と同じく <c>GetUrl()</c> しか読めません。</summary>
+        private string ReadNameField()
+        {
+            if (NameField == null) return "";
+
+            VRC.SDKBase.VRCUrl url = NameField.GetUrl();
+            if (url == null) return "";
+
+            string text = url.Get();
+            return text == null ? "" : text;
+        }
+
+        /// <summary><paramref name="position"/> 番目が見えるところまで動かす。</summary>
+        private void RevealPosition(int position)
+        {
+            int rows = RowCount();
+            if (rows <= 0 || position < 0) return;
+            if (position >= Offset && position < Offset + rows) return;
+
+            if (position < Offset) ScrollBy(position - Offset);
+            else ScrollBy(position - (Offset + rows - 1));
+        }
+
+        private void SetPanelStatus(string message)
+        {
+            if (Panel != null) Panel.SetStatus(message);
         }
 
         // ───────── スクロール(ボタンからそのまま呼べる)─────────
@@ -1327,6 +1698,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Source == SourceArtist) return "アーティスト";
             if (Source == SourceFavorite) return "お気に入り";
             if (Source == SourceHistory) return "履歴";
+            if (Source == SourcePlaylist) return "プレイリスト";
             return "曲";
         }
 
@@ -1339,6 +1711,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (Source == SourceArtist) return "アーティスト";
             if (Source == SourceFavorite) return "お気に入り";
             if (Source == SourceHistory) return "さっき聴いた曲";
+            if (Source == SourcePlaylist) return "プレイリスト";
 
             // アーティストを選んでいるなら、その名前をそのまま見出しにする。
             // 「すべての曲」と出したまま 1 組しか並んでいないのは嘘になります。
@@ -1370,6 +1743,14 @@ namespace SmartMediaPlatform.World.Udon.UI
             // 何もしなければ空なのがふつうなので、入れ方を書いておきます。
             if (Source == SourceQueue) return "再生予定はありません(一覧の ＋ で追加)";
 
+            if (Source == SourcePlaylist)
+            {
+                if (Shelf != null && !Shelf.IsReady) return "保存してあるプレイリストを読み込み中です…";
+
+                // 何をすれば入るのかを書く。「ありません」だけでは次の手が分からない。
+                return "まだありません。曲を再生予定に入れて「保存」を押すと、ここに残ります";
+            }
+
             // 検索で 0 件なのと、そもそも 1 曲も無いのは別のこと。
             // 前者は打ち直せばよく、後者は Catalog Builder で入れる話になる。
             if (_query != null && _query.Trim().Length > 0)
@@ -1389,6 +1770,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             }
 
             RefreshStickyChannel();
+            RefreshSaveLabel();
 
             // 並べ替えのボタンに、いまの並びを書く(お気に入りタブだけ)。
             if (SortLabel != null && Profile != null)

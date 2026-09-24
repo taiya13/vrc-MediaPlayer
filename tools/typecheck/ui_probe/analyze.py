@@ -93,6 +93,6 @@ def report(kind, tab=None, sheet=False, label=""):
     return probs
 
 if __name__ == "__main__":
-    for t in range(5): report("wall", tab=t, label=f"タブ{t}")
+    for t in range(6): report("wall", tab=t, label=f"タブ{t}")
     report("wall", tab=0, sheet=True, label="タブ0 + 「…」シート")
     report("remote", label="リモコン")

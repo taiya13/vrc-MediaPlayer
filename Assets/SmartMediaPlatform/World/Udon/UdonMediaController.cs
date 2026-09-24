@@ -261,6 +261,67 @@ namespace SmartMediaPlatform.World.Udon
             return ok;
         }
 
+        /// <summary>
+        /// <b>曲の並びをまとめて流す。</b>Phase8-3(保存したプレイリストから)。
+        ///
+        /// <paramref name="replace"/> が true なら、再生予定を空にして 1 曲目を鳴らし、
+        /// 残りを再生予定に積みます。false なら、全部を再生予定の後ろに足します(いま鳴っている曲はそのまま)。
+        ///
+        /// <b>1 回の操作として通します。</b>1 曲ずつ窓口を呼ぶと、そのたびに同期が走り、
+        /// 他の人の画面で再生予定が 1 曲ずつ増えていくのが見えてしまいます。
+        /// 積み方そのものは今までどおり <see cref="UdonPlayerSession"/> が決めます
+        /// (同じ曲は 2 回積まない・上限を超えたぶんは入らない)。
+        /// </summary>
+        /// <returns>1 曲でも鳴らせた / 積めたら true。</returns>
+        public bool LoadList(int[] catalogIndices, bool replace)
+        {
+            LastAdded = 0;
+            if (catalogIndices == null || catalogIndices.Length == 0) return false;
+            if (!Begin()) return false;
+
+            bool ok = false;
+
+            if (Session != null)
+            {
+                int next = 0;
+
+                if (replace)
+                {
+                    // 1 曲目が鳴らせなければ、鳴らせる曲まで進む。
+                    while (next < catalogIndices.Length && !ok)
+                    {
+                        ok = Session.PlayAt(catalogIndices[next]);
+                        next++;
+                    }
+
+                    // ── 再生予定を空にするのは、<b>鳴らせてから</b>です。
+                    //    先に空にすると、1 曲も鳴らせなかったときに再生予定だけが消えます。
+                    if (!ok)
+                    {
+                        Done(false);
+                        return false;
+                    }
+
+                    Session.ClearUpcoming();
+                    LastAdded = 1;
+                }
+
+                for (int i = next; i < catalogIndices.Length; i++)
+                {
+                    if (!Session.Enqueue(catalogIndices[i])) continue;
+
+                    LastAdded++;
+                    ok = true;
+                }
+            }
+
+            Done(ok);
+            return ok;
+        }
+
+        /// <summary>直近の <see cref="LoadList"/> で、鳴らした + 積んだ曲の数。</summary>
+        public int LastAdded;
+
         // ───────── 内部 ─────────
 
         private void EnsureInitialized()

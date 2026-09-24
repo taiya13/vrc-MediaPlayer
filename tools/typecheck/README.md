@@ -1,6 +1,6 @@
 # typecheck — Unity を起動せずにコードを検査する
 
-5 つあります。
+7 つあります。
 
 | ツール | 見るもの |
 | --- | --- |
@@ -9,8 +9,10 @@
 | `udon_lint.py` | UdonSharp で書けるか(mcs を通っても U# が弾く書き方) |
 | `genmeta.py` | `.meta` が全ファイルに揃っているか(無いと GUID が壊れる) |
 | `panel_layout.py` | 壁パネルの部品が重なっていないか(数を足した結果でしか分からない) |
+| `ui_probe/run.py` | 本物のビルダーで組んだ壁パネルに、重なり・はみ出し・入り切らない文字が無いか |
+| `behaviour_sim/run.py` | U# の実物を組み合わせて、画面から見た操作の流れ(プレイリストの保存 → 入り直し → 再生 → 削除など)が通るか |
 
-**コードを変えたら、納品前に 5 つとも通してください。**
+**コードを変えたら、納品前に 7 つとも通してください。**
 
 ```bash
 python3 tools/typecheck/genmeta.py      # 先に .meta を揃える
@@ -18,6 +20,8 @@ python3 tools/typecheck/typecheck.py
 python3 tools/typecheck/runtests.py
 python3 tools/typecheck/udon_lint.py
 python3 tools/typecheck/panel_layout.py # UI の寸法を変えたときだけでよい
+python3 tools/typecheck/ui_probe/run.py
+python3 tools/typecheck/behaviour_sim/run.py
 ```
 
 ---
