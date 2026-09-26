@@ -1,0 +1,25 @@
+{
+    "name": "SmartMediaPlatform.Video.VRChat",
+    "rootNamespace": "SmartMediaPlatform.Video.VRChat",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Backend",
+        "SmartMediaPlatform.Adapter",
+        "SmartMediaPlatform.Video",
+        "SmartMediaPlatform.Queue",
+        "SmartMediaPlatform.Recommendation",
+        "SmartMediaPlatform.Player",
+        "SmartMediaPlatform.Session"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "VRC_SDK_VRCSDK3"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

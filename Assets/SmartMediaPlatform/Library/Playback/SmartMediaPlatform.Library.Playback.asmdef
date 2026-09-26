@@ -1,0 +1,21 @@
+{
+    "name": "SmartMediaPlatform.Library.Playback",
+    "rootNamespace": "SmartMediaPlatform.Library.Playback",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Queue",
+        "SmartMediaPlatform.Backend",
+        "SmartMediaPlatform.Player",
+        "SmartMediaPlatform.Session",
+        "SmartMediaPlatform.Library"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

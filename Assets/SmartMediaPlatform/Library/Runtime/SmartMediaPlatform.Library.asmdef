@@ -1,0 +1,16 @@
+{
+    "name": "SmartMediaPlatform.Library",
+    "rootNamespace": "SmartMediaPlatform.Library",
+    "references": [
+        "SmartMediaPlatform.Catalog"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}

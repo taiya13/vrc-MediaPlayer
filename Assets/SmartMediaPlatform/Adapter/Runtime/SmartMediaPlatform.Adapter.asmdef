@@ -1,0 +1,17 @@
+{
+    "name": "SmartMediaPlatform.Adapter",
+    "rootNamespace": "SmartMediaPlatform.Adapter",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Backend"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}
