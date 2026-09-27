@@ -46,7 +46,7 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("重ねる長さ(秒)。前の曲が下がる長さと、次の曲が上がる長さを、どちらもこれにそろえる。"
                  + "長くするほど、前の曲の終わり際(サビの余韻など)が早くから小さくなる")]
         [Range(1f, 15f)]
-        public float FadeSeconds = 6f;
+        public float FadeSeconds = 8f;
 
         [Tooltip("Quest など Android でも重ねる。動画プレイヤーを 2 つ同時に動かすので重く、"
                  + "動くかどうか実機で確かめてから入れること。切っていれば Android では重ねない方式になる")]

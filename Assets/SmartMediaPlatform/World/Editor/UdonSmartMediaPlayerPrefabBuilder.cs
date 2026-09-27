@@ -400,6 +400,10 @@ namespace SmartMediaPlatform.World.EditorTools
                     crossfade.BackendB = backendB;
                     crossfade.FaderA = fader;
                     crossfade.FaderB = faderB;
+
+                    // 重ねる長さ。6 秒では「一気に下がって一気に上がる」と感じたので 8 秒(2026-09-27)。
+                    // 作り直しても前の値が残らないよう、ここで必ず書き込む。
+                    crossfade.FadeSeconds = 8f;
                 }
                 if (_needsCompile) return root;
 

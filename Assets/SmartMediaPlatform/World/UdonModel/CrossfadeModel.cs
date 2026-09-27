@@ -33,7 +33,7 @@ namespace SmartMediaPlatform.World.UdonModel
         // ───────── 設定 ─────────
 
         /// <summary>重ねる長さ(秒)。表が下がる長さと、裏が上がる長さを、どちらもこれにそろえる。</summary>
-        public float FadeSeconds = 6f;
+        public float FadeSeconds = 8f;
 
         /// <summary>
         /// 本当の終わりより、これだけ手前で表を 0 にする(秒)。
