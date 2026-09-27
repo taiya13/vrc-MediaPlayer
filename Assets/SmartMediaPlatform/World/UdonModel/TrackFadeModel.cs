@@ -62,12 +62,33 @@ namespace SmartMediaPlatform.World.UdonModel
         /// </summary>
         public float MaximumTrackSeconds = 86400f;
 
+        /// <summary>
+        /// <b>再生位置がこれだけ進んだら「音が出始めた」とみなす</b>(秒)。Phase8-4。
+        ///
+        /// 動画プレイヤーは「再生中」になってから、実際に音が出るまでに間があることがあります
+        /// (AVPro が読み込んだ動画を溜めている間など)。「再生中」になった瞬間から上げ始めると、
+        /// 音が出たころには上げ終わっていて、<b>いきなり全開で始まったように聞こえます</b>。
+        /// そこで、再生位置が実際に進み始めるまでは 0 のまま待ちます。
+        /// </summary>
+        public float ProgressThreshold = 0.1f;
+
+        /// <summary>
+        /// <b>再生位置が進まなくても、これだけ待ったら上げ始める</b>(秒)。Phase8-4。
+        /// 生配信のように位置が進まないものでも、無音のまま止まらないようにするための逃げ道です。
+        /// </summary>
+        public float MaxWaitForProgress = 3f;
+
         private bool _seen;
         private int _lastLoadCount;
         private bool _fadeInArmed;
         private bool _fadeInRunning;
         private float _fadeInStartedAt;
         private float _level = 1f;
+
+        // 音が出始めるのを待っている間の控え(Phase8-4)
+        private bool _progressWatching;
+        private float _progressFrom;
+        private float _progressWaitStartedAt;
 
         /// <summary>いまの倍率(0〜1)。最後に <see cref="Tick"/> が返した値。</summary>
         public float Level { get { return _level; } }
@@ -136,6 +157,7 @@ namespace SmartMediaPlatform.World.UdonModel
                 _seen = true;
                 _lastLoadCount = loadCount;
                 _fadeInRunning = false;
+                _progressWatching = false;
 
                 // 切り替わった瞬間に下がっていた = 終わりに向かって下げていた。
                 // 手で途中から変えたなら 1 のまま。
@@ -162,8 +184,33 @@ namespace SmartMediaPlatform.World.UdonModel
             {
                 if (!_fadeInRunning)
                 {
+                    // ── 音が出始めるまで待つ(Phase8-4)。
+                    //    「再生中」になった瞬間ではなく、<b>再生位置が実際に進み始めた瞬間</b>から数えます。
+                    if (!_progressWatching)
+                    {
+                        _progressWatching = true;
+                        _progressFrom = time;
+                        _progressWaitStartedAt = now;
+                    }
+
+                    // 前の曲の位置が残っていた(大きく戻った)なら、そこから数え直す。
+                    if (time < _progressFrom - 1f) _progressFrom = time;
+
+                    bool moved = time > _progressFrom + ProgressThreshold;
+                    bool gaveUp = now - _progressWaitStartedAt >= MaxWaitForProgress;
+
+                    if (!moved && !gaveUp)
+                    {
+                        _level = 0f;
+                        return _level;
+                    }
+
                     _fadeInRunning = true;
-                    _fadeInStartedAt = now;
+
+                    // 位置が進んだぶんだけ、音はもう出ていた。そのぶん遡って数え始める
+                    // (気付くのが少し遅れても、上げる速さが変わらないように)。
+                    // 待ちきれずに始めたときは、位置が当てにならないので「いま」から。
+                    _fadeInStartedAt = moved ? now - (time - _progressFrom) : now;
                 }
 
                 float fadeIn = FadeInLevel(now - _fadeInStartedAt, FadeInSeconds);
@@ -191,6 +238,7 @@ namespace SmartMediaPlatform.World.UdonModel
         {
             _fadeInArmed = false;
             _fadeInRunning = false;
+            _progressWatching = false;
             _level = 1f;
         }
 

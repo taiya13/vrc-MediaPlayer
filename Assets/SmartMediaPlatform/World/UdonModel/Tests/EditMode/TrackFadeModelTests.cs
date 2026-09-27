@@ -206,17 +206,64 @@ namespace SmartMediaPlatform.World.UdonModel.Tests
         [Test]
         public void 生配信でも0のまま止まらない()
         {
-            // 生配信は再生位置が進まないことがある。上げる速さを実時間で数えるので、必ず上がりきる。
+            // 生配信は再生位置が進まないことがある。
+            // 位置が進むのを待ちきれなくなったら(3 秒)、そこから実時間で上げるので、必ず上がりきる。
             TrackFadeModel model = New();
 
             model.Tick(1, true, Length - 0.5f, Length, 199f);
             model.Tick(1, false, Length - 0.5f, Length, 199.5f);
             model.Tick(2, false, 0f, 0f, 200f);
 
-            model.Tick(2, true, 0f, 0f, 201f);
-            float later = model.Tick(2, true, 0f, 0f, 204f);
+            model.Tick(2, true, 0f, 0f, 201f);                       // 鳴り始めた(位置は 0 のまま)
+            Assert.AreEqual(0f, model.Tick(2, true, 0f, 0f, 203f), "待っている間は 0");
 
-            Assert.AreEqual(1f, later);
+            Assert.AreEqual(0f, model.Tick(2, true, 0f, 0f, 204f), "待ちきれなくなった瞬間から上げ始める");
+            Assert.AreEqual(0.5f, model.Tick(2, true, 0f, 0f, 205f), 1e-4f);
+            Assert.AreEqual(1f, model.Tick(2, true, 0f, 0f, 206f));
+        }
+
+        [Test]
+        public void 音が出始めるまでは上げ始めない()
+        {
+            // 「再生中」になってから実際に位置が進むまで 1.5 秒かかった(読み込んだ動画を溜めている)。
+            // その間に上げてしまうと、音が出たころには全開になっている。
+            TrackFadeModel model = New();
+
+            Assert.AreEqual(0f, PlayToEndThenStartNext(model, 1, 0f), "再生中になった瞬間");
+            Assert.AreEqual(0f, model.Tick(2, true, 0f, 180f, 203f), "位置が止まっている間は 0");
+            Assert.AreEqual(0f, model.Tick(2, true, 0.05f, 180f, 203.5f), "わずかな揺れでは始めない");
+
+            // 203.5 秒に音が出始めた。そこから 2 秒で上がる。
+            Assert.AreEqual(0.25f, model.Tick(2, true, 0.5f, 180f, 204f), 1e-3f);
+            Assert.AreEqual(0.75f, model.Tick(2, true, 1.5f, 180f, 205f), 1e-3f);
+            Assert.AreEqual(1f, model.Tick(2, true, 2.5f, 180f, 206f));
+            Assert.IsFalse(model.FadeInArmed);
+        }
+
+        [Test]
+        public void 前の曲の位置が一瞬残っていても待ちすぎない()
+        {
+            // 切り替わった直後、プレイヤーが前の曲の位置を返すことがある。
+            // そこを起点にすると「進んだ」と判断できず、3 秒待たされてしまう。
+            TrackFadeModel model = New();
+
+            model.Tick(1, true, Length - 0.5f, Length, 199f);
+            model.Tick(1, false, Length - 0.5f, Length, 199.5f);
+            model.Tick(2, false, 0f, 0f, 200f);
+
+            Assert.AreEqual(0f, model.Tick(2, true, Length - 0.5f, 180f, 202f), "前の曲の位置");
+            Assert.AreEqual(0f, model.Tick(2, true, 0f, 180f, 202.2f), "新しい曲の頭に戻った");
+            Assert.AreEqual(0.5f, model.Tick(2, true, 1f, 180f, 203.2f), 1e-3f);
+        }
+
+        [Test]
+        public void 途中から追いついた人は全開まで早く上がる()
+        {
+            // 同期で途中の位置へ飛ばされたら、音はその分だけ前から出ていた扱いになる。
+            TrackFadeModel model = New();
+
+            PlayToEndThenStartNext(model, 1, 0f);
+            Assert.AreEqual(1f, model.Tick(2, true, 60f, 180f, 202.1f));
         }
 
         [Test]

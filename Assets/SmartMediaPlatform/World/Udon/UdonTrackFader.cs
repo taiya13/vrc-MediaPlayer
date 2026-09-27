@@ -60,6 +60,20 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("これより長い「長さ」は信じない(秒)。生配信では極端な値が返ることがある")]
         public float MaximumTrackSeconds = 86400f;
 
+        [Header("音が出始めるのを待つ(Phase8-4)")]
+        [Tooltip("再生位置がこれだけ進んだら「音が出始めた」とみなして上げ始める(秒)。"
+                 + "再生中になってから実際に音が出るまでの間に上げきってしまわないように")]
+        public float ProgressThreshold = 0.1f;
+
+        [Tooltip("位置が進まなくても、これだけ待ったら上げ始める(秒)。生配信で無音のまま止まらないように")]
+        [Range(0.5f, 10f)]
+        public float MaxWaitForProgress = 3f;
+
+        [Header("困ったとき")]
+        [Tooltip("下げ始めた・上げ始めた・手で変えたのでフェードしない、などを Console に出す。"
+                 + "実機で「効いていない」ように感じたときの手掛かりになる")]
+        public bool LogTransitions = true;
+
         [Tooltip("止めておく。2 系統のクロスフェードと一緒に置かれたときに、根っこが立てる")]
         public bool Suspended;
 
@@ -77,6 +91,11 @@ namespace SmartMediaPlatform.World.Udon
         private bool _fadeInRunning;
         private float _fadeInStartedAt;
         private float _level = 1f;
+
+        // 音が出始めるのを待っている間の控え(Phase8-4)
+        private bool _progressWatching;
+        private float _progressFrom;
+        private float _progressWaitStartedAt;
 
         private float _nextIdleCheck;
 
@@ -110,11 +129,77 @@ namespace SmartMediaPlatform.World.Udon
             // 実際に再生中で読み込み中でもなければ、鳴っているとみなします。
             bool started = Backend.HasStarted || (Backend.IsPlaying && !Backend.IsLoading);
 
-            float level = Tick(
-                Backend.LoadCount, started,
-                Backend.GetTime(), Backend.GetDuration(), Time.time);
+            float time = Backend.GetTime();
+            float duration = Backend.GetDuration();
+
+            // ログのために、進める前の様子を控えておく(計算そのものには関わらない)。
+            bool wasSeen = _seen;
+            int wasLoad = _lastLoadCount;
+            bool wasArmed = _fadeInArmed;
+            bool wasRunning = _fadeInRunning;
+            float wasLevel = _level;
+
+            float level = Tick(Backend.LoadCount, started, time, duration, Time.time);
 
             Screen.SetFadeLevel(level);
+
+            if (LogTransitions)
+            {
+                ReportTransition(wasSeen, wasLoad, wasArmed, wasRunning, wasLevel, time, duration);
+            }
+        }
+
+        /// <summary>
+        /// <b>状態が変わった瞬間だけ Console に 1 行出す。</b>Phase8-4。
+        /// 実機では耳だけが頼りなので、「下げたのに聞き分けられない」のか
+        /// 「そもそも下げていない」のかを、ここで見分けられるようにします。
+        /// </summary>
+        private void ReportTransition(
+            bool wasSeen, int wasLoad, bool wasArmed, bool wasRunning, float wasLevel,
+            float time, float duration)
+        {
+            bool trackChanged = wasSeen && _lastLoadCount != wasLoad;
+
+            if (trackChanged && !_fadeInArmed)
+            {
+                Log(wasLevel >= 0.999f
+                    ? "曲が変わりました。途中で手で変えたので、フェードせず全開で始めます"
+                    : "曲が変わりましたが、フェードインは切ってあるので全開で始めます");
+                return;
+            }
+
+            if (!wasArmed && _fadeInArmed)
+            {
+                Log("曲が自然に終わりました。次の曲は音が出始めるのを待ってから上げます");
+                return;
+            }
+
+            if (!wasRunning && _fadeInRunning)
+            {
+                float waited = Time.time - _progressWaitStartedAt;
+                Log(waited >= MaxWaitForProgress
+                    ? "再生位置が進まないので、待たずに上げ始めます(" + FadeInSeconds + " 秒)"
+                    : "音が出始めたので上げ始めます(" + FadeInSeconds + " 秒・待ち "
+                      + Mathf.RoundToInt(waited * 10f) / 10f + " 秒)");
+                return;
+            }
+
+            if (wasArmed && !_fadeInArmed && !trackChanged)
+            {
+                Log("上げきりました");
+                return;
+            }
+
+            if (wasLevel >= 0.999f && _level < 0.999f && !_fadeInArmed)
+            {
+                Log("終わりに向かって下げ始めました(残り "
+                    + Mathf.RoundToInt((duration - time) * 10f) / 10f + " 秒)");
+            }
+        }
+
+        private void Log(string message)
+        {
+            Debug.Log("[UdonTrackFader] " + message, gameObject);
         }
 
         /// <summary>
@@ -124,6 +209,7 @@ namespace SmartMediaPlatform.World.Udon
         {
             _fadeInArmed = false;
             _fadeInRunning = false;
+            _progressWatching = false;
             _level = 1f;
 
             if (Screen != null) Screen.SetFadeLevel(1f);
@@ -142,6 +228,7 @@ namespace SmartMediaPlatform.World.Udon
                 _seen = true;
                 _lastLoadCount = loadCount;
                 _fadeInRunning = false;
+                _progressWatching = false;
 
                 // 切り替わった瞬間に下がっていた = 終わりに向かって下げていた。
                 // 手で途中から変えたなら 1 のまま。
@@ -161,8 +248,32 @@ namespace SmartMediaPlatform.World.Udon
             {
                 if (!_fadeInRunning)
                 {
+                    // ── 音が出始めるまで待つ(Phase8-4)。
+                    //    「再生中」になった瞬間ではなく、<b>再生位置が実際に進み始めた瞬間</b>から数えます。
+                    if (!_progressWatching)
+                    {
+                        _progressWatching = true;
+                        _progressFrom = time;
+                        _progressWaitStartedAt = now;
+                    }
+
+                    // 前の曲の位置が残っていた(大きく戻った)なら、そこから数え直す。
+                    if (time < _progressFrom - 1f) _progressFrom = time;
+
+                    bool moved = time > _progressFrom + ProgressThreshold;
+                    bool gaveUp = now - _progressWaitStartedAt >= MaxWaitForProgress;
+
+                    if (!moved && !gaveUp)
+                    {
+                        _level = 0f;
+                        return _level;
+                    }
+
                     _fadeInRunning = true;
-                    _fadeInStartedAt = now;
+
+                    // 位置が進んだぶんだけ、音はもう出ていた。そのぶん遡って数え始める。
+                    // 待ちきれずに始めたときは、位置が当てにならないので「いま」から。
+                    _fadeInStartedAt = moved ? now - (time - _progressFrom) : now;
                 }
 
                 float fadeIn = FadeInLevel(now - _fadeInStartedAt);
