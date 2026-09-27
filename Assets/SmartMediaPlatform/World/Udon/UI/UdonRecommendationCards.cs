@@ -310,11 +310,24 @@ namespace SmartMediaPlatform.World.Udon.UI
             int catalogIndex = _shown[card];
             if (catalogIndex < 0) return;
 
+            // ── 「＋」を押した直後に、同じカードの「再生」が届いたら捨てる。
+            //    「＋」はカードの中にあるので、uGUI と「使う」の 2 つの道から
+            //    「＋」とカードの両方に届くことがあります。そのまま通すと
+            //    <b>再生予定に入れたつもりが曲が変わります</b>。
+            if (card == _queuedCard && Time.time - _queuedAt < QueueGuardSeconds) return;
+
             _touchedCard = card;
             _touchedAt = Time.time;
 
             if (Controller != null) Controller.PlayCatalogIndex(catalogIndex);
         }
+
+        // 直前に「＋」が押されたカードと時刻(上の取り違えよけ)。
+        private int _queuedCard = -1;
+        private float _queuedAt = -999f;
+
+        /// <summary>「＋」のあと、同じカードの「再生」を捨てる秒数。</summary>
+        private const float QueueGuardSeconds = 0.5f;
 
         // ───────── 「＋」で再生予定へ ─────────
         //
@@ -340,6 +353,8 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             _touchedCard = card;
             _touchedAt = Time.time;
+            _queuedCard = card;
+            _queuedAt = Time.time;
 
             if (Controller != null) Controller.EnqueueCatalogIndex(catalogIndex);
         }

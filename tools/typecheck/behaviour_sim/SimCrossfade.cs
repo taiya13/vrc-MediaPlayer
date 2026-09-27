@@ -571,6 +571,37 @@ public static class SimCrossfade
 
     public static void Run()
     {
+        Sim.Scenario("[おすすめ] カードの「＋」を押しても曲は変わらない(カードの「再生」が一緒に届いても)", () =>
+        {
+            var w = Build(10, 60f);
+            Start(w);
+            Run(w, 5f);
+
+            var cards = new GameObject("Cards").AddComponent<SmartMediaPlatform.World.Udon.UI.UdonRecommendationCards>();
+            cards.Controller = w.Controller;
+            cards.Session = w.Session;
+            cards.Store = w.Store;
+            cards.Recommendation = w.Rec;
+            cards.Cards = new GameObject[6];
+            for (int i = 0; i < 6; i++) cards.Cards[i] = new GameObject("Card" + i);
+            CallPrivate(cards, "EnsureInitialized");
+
+            FieldInfo shown = cards.GetType().GetField("_shown", BindingFlags.NonPublic | BindingFlags.Instance);
+            var ids = (int[])shown.GetValue(cards);
+            ids[2] = 7;
+
+            cards.Queue2();
+            Time.SimNow += 0.1f;
+            cards.Click2();         // 「使う」がカードのほうも拾った
+
+            Equal(0, w.Session.CurrentIndex, "曲は変わらない");
+            Equal(0, w.Session.IndexInQueue(7), "再生予定に入る");
+
+            Time.SimNow += 1f;
+            cards.Click2();         // しばらくしてからカードを押したら、ちゃんと流れる
+            Equal(7, w.Session.CurrentIndex, "カードそのものを押せば流れる");
+        });
+
         Sim.Scenario("[組み立て] AVPro で作った Prefab の配線", () =>
         {
             CheckPrefab(SmartMediaPlatform.Video.VRChat.VideoPlayerPreference.AVPro);

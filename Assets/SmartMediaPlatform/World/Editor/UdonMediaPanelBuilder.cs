@@ -1147,6 +1147,15 @@ namespace SmartMediaPlatform.World.EditorTools
                     PlusSize, PlusSize, "＋", 26,
                     UdonMediaTheme.Base, Mathf.RoundToInt(PlusSize * 0.5f), out plusLabel);
 
+                // ── 「＋」を<b>カードより手前</b>に出す(2026-09-27 の不具合)。
+                //    「＋」はカードの中にあり、カード全体も「使う」で押せる大きな当たり判定です。
+                //    同じ奥行きに重なっていると、「使う」がカードのほうを拾うことがあり、
+                //    <b>再生予定に入れたつもりが曲が変わっていました</b>。
+                //    一覧のスクロール(ValueStrip)と同じく、手前に出して必ず先に当たるようにします。
+                RectTransform plusRect = plus.GetComponent<RectTransform>();
+                plusRect.localPosition = new Vector3(
+                    plusRect.localPosition.x, plusRect.localPosition.y, -3f);
+
                 UdonWorldUiKit.Wire(plus, view, queueEvents[i], "再生予定に追加");
 
                 Image press = UdonWorldUiKit.RoundedPlate(
