@@ -404,6 +404,9 @@ namespace SmartMediaPlatform.World.EditorTools
                     // 重ねる長さ。6 秒では「一気に下がって一気に上がる」と感じたので 8 秒(2026-09-27)。
                     // 作り直しても前の値が残らないよう、ここで必ず書き込む。
                     crossfade.FadeSeconds = 8f;
+
+                    // 音量の変わり方。等パワーでは「一気に消えて一気に上がる」と聞こえたので、なめらかを既定に。
+                    crossfade.Curve = UdonMediaScreen.CurveSmooth;
                 }
                 if (_needsCompile) return root;
 

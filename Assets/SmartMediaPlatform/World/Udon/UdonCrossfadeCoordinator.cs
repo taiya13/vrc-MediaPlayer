@@ -48,6 +48,12 @@ namespace SmartMediaPlatform.World.Udon
         [Range(1f, 15f)]
         public float FadeSeconds = 8f;
 
+        [Tooltip("音量の変わり方。1 = 等パワー(重なり中も大きさが一定。ただし最後に一気に消え、最初に一気に上がって聞こえる)"
+                 + " / 2 = なめらか(じわっと下がり、じわっと上がる。重なりの真ん中が少し静かになる)"
+                 + " / 0 = まっすぐ(その中間)。再生中に変えても効く")]
+        [Range(0, 2)]
+        public int Curve = UdonMediaScreen.CurveSmooth;
+
         [Tooltip("Quest など Android でも重ねる。動画プレイヤーを 2 つ同時に動かすので重く、"
                  + "動くかどうか実機で確かめてから入れること。切っていれば Android では重ねない方式になる")]
         public bool AllowOnAndroid;
@@ -153,11 +159,7 @@ namespace SmartMediaPlatform.World.Udon
                 ApplyFadeSettings(FaderA);
                 ApplyFadeSettings(FaderB);
 
-                if (Screen != null)
-                {
-                    Screen.EqualPowerCurve = true;
-                    Screen.ApplyVolume();
-                }
+                ApplyLiveSettings();
             }
 
             ShowBackend(Front);
@@ -172,6 +174,23 @@ namespace SmartMediaPlatform.World.Udon
             fader.FadeOutSeconds = FadeSeconds;
             fader.FadeInSeconds = FadeSeconds;
             fader.SilentBeforeEnd = SilentBeforeEnd;
+        }
+
+        /// <summary>
+        /// <b>Inspector の設定を、音量担当と画面へ渡し直す。</b>
+        /// 再生中に秒数や曲線を変えても、その場で効くように、見回りのたびに呼びます
+        /// (変わっていなければ何もしない)。
+        /// </summary>
+        private void ApplyLiveSettings()
+        {
+            if (FaderA != null && FaderA.FadeOutSeconds != FadeSeconds) ApplyFadeSettings(FaderA);
+            if (FaderB != null && FaderB.FadeOutSeconds != FadeSeconds) ApplyFadeSettings(FaderB);
+
+            if (Screen != null && Screen.FadeCurve != Curve)
+            {
+                Screen.FadeCurve = Curve;
+                Screen.ApplyVolume();
+            }
         }
 
         // ───────── 表と裏 ─────────
@@ -234,6 +253,8 @@ namespace SmartMediaPlatform.World.Udon
             if (!_initialized) return;
             if (Time.time < _nextCheck) return;
             _nextCheck = Time.time + CheckInterval;
+
+            if (IsActive()) ApplyLiveSettings();
 
             Step();
             UpdateVisibleScreen();

@@ -111,8 +111,17 @@ namespace SmartMediaPlatform.World.EditorTools
         // 区画を増やすほど細かく狙えますが、1 区画が狭くなって当てにくくなります。
         // レーザーで無理なく当てられる幅(3 cm 前後)から逆算した数です。
 
-        /// <summary>再生位置バーの区画数。5 分の曲で 20 秒きざみ。</summary>
-        private const int SeekSegments = 16;
+        /// <summary>
+        /// 再生位置バーの区画数(壁パネル)。4 分の曲で約 2.4 秒きざみ。
+        /// 1 区画は約 1.7 cm で、レーザーで狙える幅に収まる(2026-09-27 に 16 から増やした)。
+        /// </summary>
+        private const int SeekSegments = 100;
+
+        /// <summary>
+        /// 再生位置バーの区画数(リモコン)。バーが短い(約 61 cm)ので、
+        /// 100 区画だと 1 区画 6 mm になって狙えない。約 1 cm になる数にする。
+        /// </summary>
+        private const int RemoteSeekSegments = 60;
 
         /// <summary>音量バーの区画数。0 / 8 / 17 …… / 100 %。</summary>
         private const int VolumeSegments = 13;
@@ -428,7 +437,8 @@ namespace SmartMediaPlatform.World.EditorTools
             //    バーの上に細長い当たり判定を並べて、指した所へ飛ばします。
             UdonWorldUiKit.ValueStrip(
                 section, "SeekStrip", 0f, barTop, barWidth, seekTouch,
-                SeekSegments, seek, null, null, false, view, "OnSeekChanged", "");
+                wide ? SeekSegments : RemoteSeekSegments,
+                seek, null, null, false, view, "OnSeekChanged", "");
 
             view.TitleText.text = "曲を選んでください";
             return view;

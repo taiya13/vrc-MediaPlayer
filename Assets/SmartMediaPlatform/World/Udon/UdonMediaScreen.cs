@@ -50,9 +50,25 @@ namespace SmartMediaPlatform.World.Udon
         [Range(0f, 1f)]
         public float Volume = 0.6f;
 
-        [Tooltip("倍率を「等パワー」の曲線で掛ける(Phase8-5)。"
-                 + "2 曲を重ねたとき、真ん中で音が痩せないようにする。クロスフェードの担当が入れる")]
-        public bool EqualPowerCurve;
+        /// <summary>倍率をそのまま音量にする(1 曲ずつのフェードの既定)。</summary>
+        public const int CurveLinear = 0;
+
+        /// <summary>
+        /// 等パワー。重ねている間も合計の大きさが変わらない。
+        /// ただし耳には「前半ほとんど変わらず、最後に一気に消える / 最初に一気に大きくなる」と聞こえる。
+        /// </summary>
+        public const int CurveEqualPower = 1;
+
+        /// <summary>
+        /// なめらか。耳で感じる大きさが、じわっと変わる(倍率の 2 乗)。
+        /// 重ねている真ん中では 2 曲とも小さめになり、少し静かな瞬間ができる。
+        /// </summary>
+        public const int CurveSmooth = 2;
+
+        [Tooltip("倍率を音量に直す曲線(Phase8-5)。0 = まっすぐ / 1 = 等パワー / 2 = なめらか。"
+                 + "曲を重ねるときは、クロスフェードの担当が自分の設定で上書きする")]
+        [Range(0, 2)]
+        public int FadeCurve = CurveLinear;
 
         // 曲の切り替わりで一時的に掛ける倍率(0〜1)。Phase8-3。
         // <see cref="Volume"/>(人が決めた音量)とは別に持ち、スピーカーへは掛け算で出す。
@@ -85,15 +101,22 @@ namespace SmartMediaPlatform.World.Udon
         }
 
         /// <summary>
-        /// 倍率を音量に直す。
-        /// <b>等パワー</b>(<c>sin(x·π/2)</c>)なら、下がるほうと上がるほうの 2 乗の和が 1 になり、
-        /// 重なっている間も大きさが変わらずに聞こえます。
+        /// 倍率を音量に直す(<see cref="FadeCurve"/>)。
+        /// <list type="bullet">
+        /// <item>まっすぐ …… そのまま</item>
+        /// <item>等パワー …… <c>sin(x·π/2)</c>。下がるほうと上がるほうの 2 乗の和が 1 になり、
+        ///       重なっている間も大きさが変わらない</item>
+        /// <item>なめらか …… <c>x²</c>。耳は大きさを「比」で感じるので、
+        ///       倍率をそのまま使うより、下がり始め・上がり終わりがじわっと聞こえる</item>
+        /// </list>
         /// </summary>
         private float Shape(float level)
         {
-            float clamped = Mathf.Clamp01(level);
-            if (!EqualPowerCurve) return clamped;
-            return Mathf.Sin(clamped * Mathf.PI * 0.5f);
+            float x = Mathf.Clamp01(level);
+
+            if (FadeCurve == CurveEqualPower) return Mathf.Sin(x * Mathf.PI * 0.5f);
+            if (FadeCurve == CurveSmooth) return x * x;
+            return x;
         }
 
         /// <summary>

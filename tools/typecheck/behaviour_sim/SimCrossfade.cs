@@ -283,7 +283,8 @@ public static class SimCrossfade
         return new GameObject(name).AddComponent<T>();
     }
 
-    static XWorld Build(int songs, float duration, bool crossfade = true, bool withOptions = false)
+    static XWorld Build(int songs, float duration, bool crossfade = true, bool withOptions = false,
+                        int curve = UdonMediaScreen.CurveEqualPower)
     {
         SimEvents.Clear();
         SimPlayer.LoadTimes.Clear();
@@ -377,6 +378,7 @@ public static class SimCrossfade
         w.X.FaderB = w.FB;
         w.X.Enabled = crossfade;
         w.X.LogFade = false;
+        w.X.Curve = curve;
 
         w.Session.Backend = w.A;
         w.Session.Crossfade = w.X;
@@ -817,7 +819,51 @@ public static class SimCrossfade
             Check(RunUntil(w, () => w.Session.CurrentIndex == 2 && w.PA.Audible, 200f), "2 曲とも流れる");
             Equal(0, w.PB.Loads, "2 つめのプレイヤーは使わない");
             Equal(0, w.OverlapEvents, "重ならない");
-            Check(!w.Screen.EqualPowerCurve, "音量の曲線も今までどおり");
+            Equal(UdonMediaScreen.CurveLinear, w.Screen.FadeCurve, "音量の曲線も今までどおり(まっすぐ)");
+        });
+
+        Sim.Scenario("[重ねる] 曲線「なめらか」では、じわっと下がって、じわっと上がる", () =>
+        {
+            var w = Build(10, 60f, true, false, UdonMediaScreen.CurveSmooth);
+            Start(w, 1, 2);
+            Equal(UdonMediaScreen.CurveSmooth, w.Screen.FadeCurve, "画面にも曲線が渡っている");
+
+            // 前の曲が下がり始めた所から、2 秒ごとの大きさを見る
+            Check(RunUntil(w, () => w.VolA < 0.999f && w.PA.Audible, 80f), "前の曲が下がり始める");
+            float a0 = w.VolA; Run(w, 2f);
+            float a2 = w.VolA; Run(w, 2f);
+            float a4 = w.VolA;
+            Check(a2 < a0 && a4 < a2, "下がり続ける " + a0.ToString("0.00") + " → " + a2.ToString("0.00") + " → " + a4.ToString("0.00"));
+            Check(a2 < 0.70f, "2 秒で目に見えて下がる(等パワーなら 0.92 のまま) " + a2.ToString("0.00"));
+            Check(a4 < 0.35f, "4 秒で半分より小さい(等パワーなら 0.71) " + a4.ToString("0.00"));
+
+            var w2 = Build(10, 60f, true, false, UdonMediaScreen.CurveSmooth);
+            Start(w2, 1, 2);
+            Check(RunUntil(w2, () => w2.VolB > Audible, 80f), "次の曲が聞こえ始める");
+            Run(w2, 2f);
+            float b2 = w2.VolB; Run(w2, 2f);
+            float b4 = w2.VolB;
+            Check(b2 < 0.15f, "上がり始めの 2 秒はまだ小さい(等パワーなら 0.38) " + b2.ToString("0.00"));
+            Check(b4 > b2 && b4 < 0.45f, "4 秒でも半分には届かない(じわっと) " + b4.ToString("0.00"));
+            Check(RunUntil(w2, () => w2.Session.CurrentIndex == 1, 20f), "入れ替わる");
+            Check(RunUntil(w2, () => w2.VolB > 0.99f, 10f), "最後は全開");
+            Check(w2.LongestSilence <= 0.3f, "曲の間に無音ができない(最長 " + w2.LongestSilence.ToString("0.00") + " 秒)");
+        });
+
+        Sim.Scenario("[重ねる] 再生中に Inspector で秒数や曲線を変えても、その場で効く", () =>
+        {
+            var w = Build(10, 60f, true, false, UdonMediaScreen.CurveSmooth);
+            Start(w, 1, 2);
+            Run(w, 5f);
+
+            w.X.Curve = UdonMediaScreen.CurveEqualPower;
+            w.X.FadeSeconds = 5f;
+            Run(w, 0.3f);
+
+            Equal(UdonMediaScreen.CurveEqualPower, w.Screen.FadeCurve, "曲線が変わる");
+            Check(w.FA.FadeOutSeconds == 5f && w.FB.FadeInSeconds == 5f, "両方の音量担当の秒数が変わる");
+            Check(RunUntil(w, () => w.Session.CurrentIndex == 1 && w.PB.Audible, 80f), "そのまま次の曲へ重なって進む");
+            Check(w.OverlapEvents >= 1, "重なった");
         });
 
         Sim.Scenario("[重ねる] 持ち主でない人は、手元で入れ替えても曲を進めず、同期を待つ", () =>
