@@ -72,6 +72,7 @@ namespace SmartMediaPlatform.World.EditorTools
             ok &= InspectScreen(player, sb);
             ok &= InspectPlayerComponent(player, sb);
             ok &= InspectBackend(player, sb);
+            ok &= InspectSecondChannel(player, sb);
 
             sb.AppendLine();
             sb.AppendLine(ok
@@ -79,6 +80,81 @@ namespace SmartMediaPlatform.World.EditorTools
                   + "板の向き(裏からは透明)と、その URL が VRChat で再生できるかを見てください。"
                 : "  ✗ 上の「✗」を直してください。");
             sb.AppendLine();
+        }
+
+        // ───────── ⑤ 2 つめの動画プレイヤー(Phase8-5 / 重ねるクロスフェード)─────────
+
+        /// <summary>
+        /// 曲を重ねるための 2 つめの動画プレイヤーの配線を見る。
+        /// 無ければ「重ねない構成」として何も言わない(1 つでも正しく動くため)。
+        /// </summary>
+        private static bool InspectSecondChannel(UdonSmartMediaPlayer player, StringBuilder sb)
+        {
+            if (player.BackendB == null && player.Crossfade == null) return true;
+
+            sb.AppendLine("  ⑤ 曲を重ねる 2 つめの動画プレイヤー");
+
+            UdonMediaScreen screen = player.Screen;
+            UdonVideoBackend b = player.BackendB;
+            bool ok = true;
+
+            if (b == null || b.Player == null)
+            {
+                sb.AppendLine("     ✗ 2 つめの動画プレイヤー(PlayerB)がありません。Prefab を作り直してください。");
+                return false;
+            }
+
+            if (screen == null || screen.SurfaceB == null || screen.SpeakerB == null)
+            {
+                sb.AppendLine("     ✗ 画面に 2 つめの面・音の出口(SurfaceB / SpeakerB)がありません。");
+                return false;
+            }
+
+            // Phase7-5 で「2 つめの音が出ない」原因になった形。
+            if (screen.Speaker != null && screen.Speaker.gameObject == screen.SpeakerB.gameObject)
+            {
+                sb.AppendLine("     ✗ 2 つの音の出口が同じ GameObject に付いています。");
+                sb.AppendLine("       2 つめのプレイヤーの音が出ません。Prefab を作り直してください。");
+                ok = false;
+            }
+
+            if (screen.SpeakerB.gameObject == screen.SurfaceB.gameObject)
+            {
+                sb.AppendLine("     ! 2 つめの音の出口が面と同じ GameObject にあります(面を隠すと音も止まるおそれ)。");
+            }
+
+            var component = b.Player as Component;
+            if (component != null && component.GetType().Name.Contains("AVPro"))
+            {
+                Component surfaceB = FindComponentByName(screen.SurfaceB.gameObject, "VRCAVProVideoScreen");
+                Component speakerB = FindComponentByName(screen.SpeakerB.gameObject, "VRCAVProVideoSpeaker");
+
+                if (surfaceB == null || ReadMember(surfaceB, "videoPlayer", "VideoPlayer") == null)
+                {
+                    sb.AppendLine("     ✗ SurfaceB の VRCAVProVideoScreen が 2 つめのプレイヤーを指していません。");
+                    ok = false;
+                }
+
+                if (speakerB == null || ReadMember(speakerB, "videoPlayer", "VideoPlayer") == null)
+                {
+                    sb.AppendLine("     ✗ SpeakerB の VRCAVProVideoSpeaker が 2 つめのプレイヤーを指していません。");
+                    ok = false;
+                }
+            }
+
+            if (player.Crossfade == null || player.FaderB == null)
+            {
+                sb.AppendLine("     ✗ 重ねる担当(Crossfade)か、2 つめの音量担当(FadeB)がありません。");
+                ok = false;
+            }
+
+            if (ok)
+            {
+                sb.AppendLine("     ✓ 2 つめのプレイヤー・面・音の出口がそろっています"
+                              + (player.Crossfade.Enabled ? "(曲を重ねてつなぎます)" : "(重ねない設定です)"));
+                sb.AppendLine("       Android(Quest)では、AllowOnAndroid が切れていれば重ねずにつなぎます。");
+            }
+            return ok;
         }
 
         // ───────── ① カタログ(URL がそもそも本物か)─────────

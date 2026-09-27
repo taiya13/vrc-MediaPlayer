@@ -59,9 +59,6 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string UnityPlayerMenuPath =
             "Tools/Smart Media Platform/SmartMediaPlayer を作る/VRChat 実機 (Unity Video)";
 
-        /// <summary>1 枚の画面に 2 系統を混ぜるシェーダー(Phase7-5)。</summary>
-        private const string CrossfadeShaderName = "SmartMediaPlatform/Crossfade";
-
         /// <summary>
         /// ふつうの画面のシェーダー(Phase8-3)。見え方は Unlit/Texture と同じで、
         /// <b>ミラーの中でだけ左右を反転</b>します(鏡越しでも字幕が読めるように)。
@@ -69,25 +66,24 @@ namespace SmartMediaPlatform.World.EditorTools
         private const string ScreenShaderName = "SmartMediaPlatform/VideoScreen";
 
         /// <summary>
-        /// <b>動画プレイヤーを 2 系統にして曲を混ぜるか。</b>Phase7-6 で false にしました。
+        /// <b>動画プレイヤーを 2 つにして、曲を重ねてつなぐか。</b>Phase8-5 で true に戻しました。
         ///
-        /// <b>なぜやめたのか</b><br/>
-        /// 2 系統にすると、1 枚の画面へ<b>専用のシェーダー</b>で
-        /// 2 つの映像を書き込むことになります。この作りは
+        /// Phase7-5 の 2 系統は、<b>1 枚の画面へ専用シェーダーで 2 つの映像を混ぜる</b>作りでした。
+        /// 画面が真っ白になる・2 つめの音が出ない、で Phase7-6 に止めています。
+        /// Phase8-5 では作りを変えています。
         /// <list type="bullet">
-        /// <item>画面が真っ白になる原因を作った(材質が絡む問題が増える)</item>
-        /// <item>音の出口が 2 つに増え、切り替えの前後で鳴り方が読みにくい</item>
+        /// <item>画面は<b>2 枚を重ねて置き、どちらか 1 枚だけを表示</b>する(混ぜるシェーダーは使わない)</item>
+        /// <item>音の出口は<b>別々の GameObject</b>に置く(同じ所に 2 つ付けると、2 つめが使われなかった)</item>
+        /// <item>音量の上げ下げは、実機で確認済みの <c>UdonTrackFader</c> を 2 つ使う</item>
         /// </list>
-        /// という代償が大きく、得られる滑らかさに見合いませんでした。
-        /// <b>1 系統に戻すと、画面は Unlit 1 枚・音は AudioSource 1 つ</b>になります。
-        ///
-        /// <c>UdonCrossfadeCoordinator</c> は<b>消していません</b>。
-        /// ここを true に戻せば、また 2 系統で組み立てます。
+        /// false にすると、動画プレイヤー 1 つ・重ねない方式で組み立てます。
+        /// Android(Quest)では、組み立てた Prefab のままでも重ねない方式で動きます
+        /// (<c>UdonCrossfadeCoordinator.AllowOnAndroid</c> が切れているため)。
         /// </summary>
         //  const ではなく変数にしてあります。const だと
         //  「if (false) の中身」が到達不能として警告になり、
         //  <b>本物のエラーを探すときに邪魔</b>だからです。
-        private static readonly bool UseCrossfade = false;
+        private static readonly bool UseCrossfade = true;
 
         private const string ExtraPanelMenuPath =
             "Tools/Smart Media Platform/操作パネルを追加で作る (2 枚目以降・任意)";
@@ -267,8 +263,13 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <code>
         /// SmartMediaPlayer         UdonSmartMediaPlayer(配線だけ)
         /// ├── Screen               UdonMediaScreen        ← 映像と音の出力先
-        /// │   └── Surface          Renderer + AudioSource
-        /// ├── Player               動画プレイヤー + UdonVideoBackend  ← URL を知る唯一の場所
+        /// │   ├── Surface          Renderer(1 つめの動画プレイヤーが映す)
+        /// │   ├── SurfaceB         Renderer(2 つめ。Surface と同じ場所に重ね、どちらか一方だけ表示)
+        /// │   ├── Speaker          AudioSource(1 つめの音)
+        /// │   └── SpeakerB         AudioSource(2 つめの音。別の GameObject に置く)
+        /// ├── Player / PlayerB     動画プレイヤー + UdonVideoBackend  ← URL を知る唯一の場所
+        /// ├── Fade / FadeB         UdonTrackFader         ← 音量の上げ下げ(それぞれのプレイヤー用)
+        /// ├── Crossfade            UdonCrossfadeCoordinator ← 曲を重ねてつなぐ段取り
         /// ├── Catalog              UdonMediaCatalog + UdonCatalogStore + UdonRecommendationEngine
         /// ├── Session              UdonPlayerSession      ← 再生の判断
         /// └── Controller           UdonMediaController    ← 操作の窓口(パネルはここに名乗り出る)
@@ -280,68 +281,49 @@ namespace SmartMediaPlatform.World.EditorTools
 
             // ── Screen(映像と音の出力先)
             var screenObject = Child(root, "Screen");
-            var surface = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            surface.name = "Surface";
-            surface.transform.SetParent(screenObject.transform, false);
-            surface.transform.localPosition = new Vector3(0f, 1.8f, 0f);
-            surface.transform.localScale = new Vector3(3.2f, 1.8f, 1f);
 
-            var collider = surface.GetComponent<Collider>();
-            if (collider != null) UnityEngine.Object.DestroyImmediate(collider);
+            Renderer renderer = BuildSurface(screenObject, "Surface", "SmartMediaScreen", log);
 
-            var renderer = surface.GetComponent<Renderer>();
-            AssignScreenMaterial(renderer, log);
-            var speaker = surface.AddComponent<AudioSource>();
-            speaker.playOnAwake = false;
-            speaker.spatialBlend = 1f;      // ワールドに置く前提なので 3D
-            speaker.maxDistance = 25f;
-            speaker.volume = 0.6f;
+            // ── 2 つめの面は、1 つめと<b>同じ場所に重ねて</b>置き、最初は隠しておく(Phase8-5)。
+            //    どちらを見せるかは UdonMediaScreen.ShowChannel が切り替えます。
+            Renderer rendererB = null;
+            if (UseCrossfade)
+            {
+                rendererB = BuildSurface(screenObject, "SurfaceB", "SmartMediaScreenB", log);
+                if (rendererB != null) rendererB.enabled = false;
+            }
+
+            // ── 音の出口は、面とは<b>別の GameObject</b>に置く(Phase8-5)。
+            //    Phase7-5 では 2 つの出口を同じ GameObject に付けていて、
+            //    2 つめが使われず、入れ替えたあとに無音になった可能性が高い。
+            AudioSource speaker = BuildSpeaker(screenObject, "Speaker", 0.6f);
+            AudioSource speakerB = UseCrossfade ? BuildSpeaker(screenObject, "SpeakerB", 0.6f) : null;
 
             var screen = Add<UdonMediaScreen>(screenObject);
             if (screen != null)
             {
                 screen.Surface = renderer;
                 screen.Speaker = speaker;
+                screen.SurfaceB = rendererB;
+                screen.SpeakerB = speakerB;
             }
             if (_needsCompile) return root;
 
-            // ── Player(動画プレイヤー + バックエンド)を 2 系統(Phase7-5)
+            // ── Player(動画プレイヤー + バックエンド)
             //
             //    VRChat の動画イベントは「同じ GameObject の UdonBehaviour」にしか
             //    届かないので、UdonVideoBackend は必ずプレイヤーと同じ場所に置く。
-            //    A と B で別々の GameObject にしてあるのはそのためです。
-            //
-            //    <b>画面は 1 枚のまま</b>です。A は _MainTex、B は _SecondTex へ
-            //    書かせて、シェーダー側で混ぜます(板も描画も増えません)。
-            //
-            //    <b>音は系統ごとに別の AudioSource</b>が要ります。
-            //    1 つを共有すると、フェード中に片方の音量を動かした瞬間
-            //    もう片方も一緒に動いてしまい、混ざりません。
-            var backend = BuildPlayer(
-                root, "Player", preference, renderer, speaker, screen, "_MainTex", log);
+            //    2 つめ(PlayerB)は、曲を重ねるときに次の曲を裏で用意する係です(Phase8-5)。
+            var backend = BuildPlayer(root, "Player", preference, renderer, speaker, screen, log);
             if (backend == null) { UnityEngine.Object.DestroyImmediate(root); return null; }
             if (_needsCompile) return root;
 
             UdonVideoBackend backendB = null;
-
-            if (UseCrossfade)
+            if (UseCrossfade && rendererB != null && speakerB != null)
             {
-                // B 系統の音は、同じ場所に置いた 2 つめの AudioSource から出す。
-                var speakerB = surface.AddComponent<AudioSource>();
-                speakerB.playOnAwake = false;
-                speakerB.spatialBlend = speaker.spatialBlend;
-                speakerB.maxDistance = speaker.maxDistance;
-                speakerB.volume = 0f;   // 裏は黙って始まる
-
-                backendB = BuildPlayer(
-                    root, "PlayerB", preference, renderer, speakerB, screen, "_SecondTex", log);
+                backendB = BuildPlayer(root, "PlayerB", preference, rendererB, speakerB, screen, log);
                 if (_needsCompile) return root;
-
-                if (backendB != null) backendB.SetFadeVolume(0f);
             }
-
-            // 表(A)の音は、人が決めた音量から始める。
-            if (backend != null) backend.SetFadeVolume(1f);
 
             // ── Catalog(焼き込み済みデータ)+ Store(表示用の窓口)
             var catalogObject = Child(root, "Catalog");
@@ -356,6 +338,9 @@ namespace SmartMediaPlatform.World.EditorTools
                 UdonCatalogBaker.Bake(catalog, items);
                 _bakedCount = items.Count;
             }
+
+            if (backend != null) backend.Catalog = catalog;
+            if (backendB != null) backendB.Catalog = catalog;
 
             var store = Add<UdonCatalogStore>(catalogObject);
             if (store != null) store.Catalog = catalog;
@@ -374,13 +359,37 @@ namespace SmartMediaPlatform.World.EditorTools
             if (recommendation != null) recommendation.Profile = profile;
             if (_needsCompile) return root;
 
-            // ── Crossfade(曲と曲を繋ぐ担当。Phase7-5 / Phase7-6 で既定はオフ)
-            //    Session も Backend も、混ぜ方のことは知りません。
-            //    <see cref="UseCrossfade"/> が false のときは<b>置きません</b> —
-            //    置いておくだけで Session が「混ぜる道」を通ってしまうためです。
-            UdonCrossfadeCoordinator crossfade = null;
+            // ── Fade(曲の終わりで下げ、次を 0 から上げる担当。Phase8-3)
+            //    動画プレイヤー 1 つにつき 1 つ。重ねるときも、この 2 つがそれぞれの音量を動かします。
+            var fadeObject = Child(root, "Fade");
+            var fader = Add<UdonTrackFader>(fadeObject);
+            if (fader != null)
+            {
+                fader.Backend = backend;
+                fader.Screen = screen;
+                fader.Channel = 0;
+            }
+            if (_needsCompile) return root;
 
-            if (UseCrossfade)
+            UdonTrackFader faderB = null;
+            if (backendB != null)
+            {
+                var fadeObjectB = Child(root, "FadeB");
+                faderB = Add<UdonTrackFader>(fadeObjectB);
+                if (faderB != null)
+                {
+                    faderB.Backend = backendB;
+                    faderB.Screen = screen;
+                    faderB.Channel = 1;
+                }
+                if (_needsCompile) return root;
+            }
+
+            // ── Crossfade(曲を重ねてつなぐ段取り。Phase8-5)
+            //    次に何を流すかは決めません(Session に聞くだけ)。
+            //    音量は上の 2 つの Fade が動かし、ここは「いつ読む・いつ鳴らす・どちらを表にするか」だけ。
+            UdonCrossfadeCoordinator crossfade = null;
+            if (backendB != null && faderB != null)
             {
                 var crossfadeObject = Child(root, "Crossfade");
                 crossfade = Add<UdonCrossfadeCoordinator>(crossfadeObject);
@@ -389,26 +398,17 @@ namespace SmartMediaPlatform.World.EditorTools
                     crossfade.Screen = screen;
                     crossfade.BackendA = backend;
                     crossfade.BackendB = backendB;
+                    crossfade.FaderA = fader;
+                    crossfade.FaderB = faderB;
                 }
                 if (_needsCompile) return root;
-            }
 
-            // ── Fade(曲の終わりで下げ、次を 0 から上げる担当。Phase8-3)
-            //    <b>重ねない方式</b>なので、動画プレイヤーは 1 つのままです。
-            //    2 系統のクロスフェードを使う組み立てのときは置きません
-            //    (どちらも音量を動かすので、両方あると打ち消し合います)。
-            UdonTrackFader fader = null;
-
-            if (!UseCrossfade)
-            {
-                var fadeObject = Child(root, "Fade");
-                fader = Add<UdonTrackFader>(fadeObject);
-                if (fader != null)
-                {
-                    fader.Backend = backend;
-                    fader.Screen = screen;
-                }
-                if (_needsCompile) return root;
+                // 裏にいる間の知らせの行き先と、2 つ合わせた読み込み間隔。
+                // 担当の Start でも設定しますが、Prefab の時点で入れておけば Start の順番に左右されません。
+                backend.Coordinator = crossfade;
+                backendB.Coordinator = crossfade;
+                backend.LoadPartner = backendB;
+                backendB.LoadPartner = backend;
             }
 
             // ── Session(再生の判断)
@@ -433,7 +433,7 @@ namespace SmartMediaPlatform.World.EditorTools
             }
 
             // 終わりの合図は、両系統から同じ Session へ届く必要がある。
-            // 混ぜている最中に古いほうから届いたぶんは Session 側で捌く。
+            // 裏にいる間の合図は、クロスフェードの担当が受け取る(Session まで届かない)。
             if (backend != null) backend.Session = session;
             if (backendB != null) backendB.Session = session;
             if (crossfade != null) crossfade.Session = session;
@@ -456,6 +456,7 @@ namespace SmartMediaPlatform.World.EditorTools
                 sync.Session = session;
                 sync.Backend = backend;
                 sync.Controller = controller;
+                sync.Crossfade = crossfade;
             }
             if (controller != null) controller.Sync = sync;
             if (_needsCompile) return root;
@@ -485,6 +486,8 @@ namespace SmartMediaPlatform.World.EditorTools
                 smartPlayer.Sync = sync;
                 smartPlayer.Crossfade = crossfade;
                 smartPlayer.Fader = fader;
+                smartPlayer.BackendB = backendB;
+                smartPlayer.FaderB = faderB;
                 smartPlayer.Playlists = playlists;
             }
 
@@ -582,13 +585,15 @@ namespace SmartMediaPlatform.World.EditorTools
         /// <b>Unlit にします。</b>映像は自分で光っているものなので、
         /// ライトを当てる必要がそもそもありません。
         /// </summary>
-        private static void AssignScreenMaterial(Renderer renderer, StringBuilder log)
+        private static void AssignScreenMaterial(Renderer renderer, string assetName, StringBuilder log)
         {
             if (renderer == null) return;
 
             // 材質も「更新で消えない側」に置く(Phase7-3 で SmartMediaPlatform の外へ移動)。
+            // 面ごとに別の材質にする(Phase8-5)。同じ材質だと、2 つの動画プレイヤーの絵が
+            // 同じ欄を取り合う。
             const string folder = "Assets/SmartMediaPlatform_Data";
-            const string path = folder + "/SmartMediaScreen.mat";
+            string path = folder + "/" + assetName + ".mat";
 
             // ── <b>毎回作り直します。</b>Phase7-6。
             //
@@ -600,24 +605,14 @@ namespace SmartMediaPlatform.World.EditorTools
             var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
             if (existing != null) AssetDatabase.DeleteAsset(path);
 
-            // ── 2 系統で混ぜるときだけ専用シェーダーを使う(Phase7-5)。
-            bool crossfadeReady = UseCrossfade;
-            Shader shader = crossfadeReady ? UsableShader(CrossfadeShaderName, log) : null;
-
-            if (shader == null) crossfadeReady = false;
-
-            // ── 1 系統(既定)は、ミラー対応の画面シェーダー(Phase8-3)。
+            // ── ミラー対応の画面シェーダー(Phase8-3)。
             //
             //    中身は Unlit/Texture と同じで、ミラーの中でだけ左右を反転します。
             //    <b>コンパイルに失敗していたら使いません。</b>失敗したシェーダーを当てると
             //    画面が紫(エラーの色)になり、動画が映らなくなります。
             //    そのときは今までの Unlit/Texture に戻します(反転だけが効かなくなる)。
-            bool mirrorReady = false;
-            if (shader == null)
-            {
-                shader = UsableShader(ScreenShaderName, log);
-                mirrorReady = shader != null;
-            }
+            Shader shader = UsableShader(ScreenShaderName, log);
+            bool mirrorReady = shader != null;
 
             if (shader == null) shader = Shader.Find("Unlit/Texture");
 
@@ -630,7 +625,7 @@ namespace SmartMediaPlatform.World.EditorTools
             }
 
             var material = new Material(shader);
-            material.name = "SmartMediaScreen";
+            material.name = assetName;
 
             // ── 動画が来るまでの絵を入れておく。
             //
@@ -640,13 +635,6 @@ namespace SmartMediaPlatform.World.EditorTools
             //    黒を入れておけば、映る前は黒い画面になります。
             material.mainTexture = Texture2D.blackTexture;
 
-            if (crossfadeReady)
-            {
-                // B 系統の欄も黒で埋めておく(こちらが空でも白くなります)。
-                material.SetTexture("_SecondTex", Texture2D.blackTexture);
-                material.SetFloat("_Blend", 0f);
-            }
-
             if (!AssetDatabase.IsValidFolder(folder)) Directory.CreateDirectory(folder);
 
             AssetDatabase.CreateAsset(material, path);
@@ -654,11 +642,9 @@ namespace SmartMediaPlatform.World.EditorTools
 
             renderer.sharedMaterial = material;
 
-            log.AppendLine(crossfadeReady
-                ? "  画面の材質   : " + path + " を作り直しました(クロスフェード対応 / ライト不要)"
-                : mirrorReady
-                    ? "  画面の材質   : " + path + " を作り直しました(ミラーで反転 / ライト不要)"
-                    : "  画面の材質   : " + path + " を作り直しました(Unlit / ライト不要)");
+            log.AppendLine(mirrorReady
+                ? "  画面の材質   : " + path + " を作り直しました(ミラーで反転 / ライト不要)"
+                : "  画面の材質   : " + path + " を作り直しました(Unlit / ライト不要)");
         }
 
         /// <summary>
@@ -686,22 +672,21 @@ namespace SmartMediaPlatform.World.EditorTools
         }
 
         /// <summary>
-        /// 動画プレイヤー 1 系統ぶんを組む(Phase7-5)。
-        /// A と B で違うのは<b>名前・音の出口・書き込むテクスチャ欄</b>だけです。
+        /// 動画プレイヤー 1 つぶんを組む。
+        /// 1 つめと 2 つめで違うのは<b>名前・映す面・音の出口</b>だけです(Phase8-5)。
+        /// どちらも自分の面の <c>_MainTex</c> に書きます(面が別々なので取り合わない)。
         /// </summary>
         private static UdonVideoBackend BuildPlayer(
             GameObject root, string objectName, VideoPlayerPreference preference,
-            Renderer renderer, AudioSource speaker, UdonMediaScreen screen,
-            string textureProperty, StringBuilder log)
+            Renderer renderer, AudioSource speaker, UdonMediaScreen screen, StringBuilder log)
         {
             var playerObject = Child(root, objectName);
 
             log.AppendLine("  [" + objectName + "]");
 
-            VRChatVideoPlayerFactory.TextureProperty = textureProperty;
+            VRChatVideoPlayerFactory.ResetTextureProperty();
             var built = VRChatVideoPlayerFactory.AddPlayer(
                 playerObject, preference, renderer, speaker);
-            VRChatVideoPlayerFactory.ResetTextureProperty();
 
             if (!built.Ok)
             {
@@ -717,10 +702,45 @@ namespace SmartMediaPlatform.World.EditorTools
             {
                 backend.Player = built.Player;
                 backend.Screen = screen;
-                backend.Speaker = speaker;
-                backend.TextureProperty = textureProperty;
             }
             return backend;
+        }
+
+        /// <summary>
+        /// 映す面を 1 枚作る(Phase8-5 で 2 枚ぶん作れるよう切り出した)。
+        /// 当たり判定は消す(画面を「使う」で押せてしまうと、奥の操作を邪魔するため)。
+        /// </summary>
+        private static Renderer BuildSurface(
+            GameObject screenObject, string name, string materialName, StringBuilder log)
+        {
+            var surface = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            surface.name = name;
+            surface.transform.SetParent(screenObject.transform, false);
+            surface.transform.localPosition = new Vector3(0f, 1.8f, 0f);
+            surface.transform.localScale = new Vector3(3.2f, 1.8f, 1f);
+
+            var collider = surface.GetComponent<Collider>();
+            if (collider != null) UnityEngine.Object.DestroyImmediate(collider);
+
+            var renderer = surface.GetComponent<Renderer>();
+            AssignScreenMaterial(renderer, materialName, log);
+            return renderer;
+        }
+
+        /// <summary>
+        /// 音の出口を 1 つ作る。<b>面とは別の GameObject</b> で、面と同じ位置に置く(Phase8-5)。
+        /// </summary>
+        private static AudioSource BuildSpeaker(GameObject screenObject, string name, float volume)
+        {
+            var speakerObject = Child(screenObject, name);
+            speakerObject.transform.localPosition = new Vector3(0f, 1.8f, 0f);
+
+            var speaker = speakerObject.AddComponent<AudioSource>();
+            speaker.playOnAwake = false;
+            speaker.spatialBlend = 1f;      // ワールドに置く前提なので 3D
+            speaker.maxDistance = 25f;
+            speaker.volume = volume;
+            return speaker;
         }
 
         private static GameObject Child(GameObject parent, string name)

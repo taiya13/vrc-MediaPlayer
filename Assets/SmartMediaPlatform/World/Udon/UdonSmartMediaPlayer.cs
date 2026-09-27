@@ -78,12 +78,19 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("同期の担当(Phase5-4)。空なら 1 人用として動く")]
         public UdonSyncCoordinator Sync;
 
-        [Tooltip("曲と曲を繋ぐ担当(Phase7-5)。空なら今までどおり即切り替え")]
+        [Tooltip("曲を重ねてつなぐ担当(Phase8-5)。空なら重ねない")]
         public UdonCrossfadeCoordinator Crossfade;
 
         [Tooltip("曲の終わりで音を下げ、次の曲を 0 から上げる担当(Phase8-3)。"
                  + "空なら今までどおり、音量を変えずに切り替える")]
         public UdonTrackFader Fader;
+
+        [Header("2 系統目(Phase8-5 / 重ねるクロスフェード)")]
+        [Tooltip("2 つめの動画プレイヤー。空なら重ねない")]
+        public UdonVideoBackend BackendB;
+
+        [Tooltip("2 つめの動画プレイヤーの音量の上げ下げ(Channel 1)")]
+        public UdonTrackFader FaderB;
 
         [Tooltip("名前を付けて取っておくプレイリストの棚(Phase8-3)。"
                  + "空ならプレイリストのタブは空のまま(ほかは今までどおり動く)")]
@@ -126,6 +133,13 @@ namespace SmartMediaPlatform.World.Udon
                 if (Backend.Session == null) Backend.Session = Session;
             }
 
+            if (BackendB != null)
+            {
+                if (BackendB.Catalog == null) BackendB.Catalog = Catalog;
+                if (BackendB.Screen == null) BackendB.Screen = Screen;
+                if (BackendB.Session == null) BackendB.Session = Session;
+            }
+
             if (Session != null)
             {
                 if (Session.Store == null) Session.Store = Store;
@@ -134,25 +148,29 @@ namespace SmartMediaPlatform.World.Udon
                 if (Session.Crossfade == null) Session.Crossfade = Crossfade;
             }
 
+            if (Fader != null)
+            {
+                if (Fader.Backend == null) Fader.Backend = Backend;
+                if (Fader.Screen == null) Fader.Screen = Screen;
+            }
+
+            if (FaderB != null)
+            {
+                if (FaderB.Backend == null) FaderB.Backend = BackendB;
+                if (FaderB.Screen == null) FaderB.Screen = Screen;
+                FaderB.Channel = 1;
+            }
+
+            // ── 重ねるクロスフェードは、上の 2 つの音量担当を使い回します(Phase8-5)。
+            //    前の作り(Phase7-5)のように音量担当を止めることはしません。
             if (Crossfade != null)
             {
                 if (Crossfade.Session == null) Crossfade.Session = Session;
                 if (Crossfade.Screen == null) Crossfade.Screen = Screen;
                 if (Crossfade.BackendA == null) Crossfade.BackendA = Backend;
-            }
-
-            if (Fader != null)
-            {
-                if (Fader.Backend == null) Fader.Backend = Backend;
-                if (Fader.Screen == null) Fader.Screen = Screen;
-
-                // ── 2 系統のクロスフェードと同時には動かしません。
-                //    どちらも音量を動かすので、両方あると互いに打ち消し合います。
-                if (Crossfade != null)
-                {
-                    Fader.Suspended = true;
-                    Fader.ResetFade();
-                }
+                if (Crossfade.BackendB == null) Crossfade.BackendB = BackendB;
+                if (Crossfade.FaderA == null) Crossfade.FaderA = Fader;
+                if (Crossfade.FaderB == null) Crossfade.FaderB = FaderB;
             }
 
             if (Playlists != null)
@@ -172,6 +190,7 @@ namespace SmartMediaPlatform.World.Udon
                 if (Sync.Session == null) Sync.Session = Session;
                 if (Sync.Backend == null) Sync.Backend = Backend;
                 if (Sync.Controller == null) Sync.Controller = Controller;
+                if (Sync.Crossfade == null) Sync.Crossfade = Crossfade;
             }
 
             IsWired = Session != null && Backend != null && Store != null && Catalog != null;

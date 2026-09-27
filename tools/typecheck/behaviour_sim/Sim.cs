@@ -16,7 +16,7 @@ public static class Sim
     static int _failures;
     static int _checks;
 
-    static void Check(bool ok, string what)
+    internal static void Check(bool ok, string what)
     {
         _checks++;
         if (ok) return;
@@ -24,12 +24,12 @@ public static class Sim
         Console.WriteLine("  ✗ " + what);
     }
 
-    static void Equal<T>(T expected, T actual, string what)
+    internal static void Equal<T>(T expected, T actual, string what)
     {
         Check(Equals(expected, actual), what + "  (期待: " + expected + " / 実際: " + actual + ")");
     }
 
-    static void Contains(string text, string part, string what)
+    internal static void Contains(string text, string part, string what)
     {
         Check(text != null && text.Contains(part), what + "  (「" + part + "」が無い: 「" + text + "」)");
     }
@@ -169,11 +169,12 @@ public static class Sim
         PlayerData.SimWrites = 0;
         Networking.SimLocal = new VRCPlayerApi { isLocal = true, displayName = "me" };
         Time.SimNow = 100f;
+        SimEvents.Clear();
     }
 
     // ───────── 流れ ─────────
 
-    static void Scenario(string name, Action body)
+    internal static void Scenario(string name, Action body)
     {
         Console.WriteLine("■ " + name);
         Fresh();
@@ -476,6 +477,9 @@ public static class Sim
             Equal(0, w.View.TotalCount(), "0 本");
             Contains(w.View.EmptyMessageFor(), "保存", "空のときの案内");
         });
+
+        // 重ねるクロスフェード(Phase8-5)
+        SimCrossfade.Run();
 
         Console.WriteLine();
         Console.WriteLine(_failures == 0

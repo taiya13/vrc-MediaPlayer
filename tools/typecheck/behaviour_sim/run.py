@@ -68,6 +68,18 @@ def live_vrc():
         "        { string v; return SimStore.TryGetValue(key, out v) ? v : null; }\n"
         "        public static void SetString(string key, string value) { SimWrites++; SimStore[key] = value; }\n", w)
 
+    # SendCustomEvent / 遅れて呼ぶ呼び出しを、本当に呼ぶ(Phase8-5)。
+    # 動画プレイヤーの読み込み間隔(LoadPending)や、パネルへの「書き直して」がこれを使う。
+    text = replace_once(text,
+        "        public void SendCustomEvent(string eventName) { }\n"
+        "        public void SendCustomEventDelayedSeconds(string eventName, float delaySeconds) { }\n"
+        "        public void SendCustomEventDelayedFrames(string eventName, int delayFrames) { }\n",
+        "        public void SendCustomEvent(string eventName) { SimEvents.Invoke(this, eventName); }\n"
+        "        public void SendCustomEventDelayedSeconds(string eventName, float delaySeconds)"
+        " { SimEvents.Schedule(this, eventName, delaySeconds); }\n"
+        "        public void SendCustomEventDelayedFrames(string eventName, int delayFrames)"
+        " { SimEvents.Schedule(this, eventName, 0f); }\n", w)
+
     # DataToken / DataDictionary に中身を持たせる(カタログの ID → 番号で使う)
     start = text.index("    public struct DataToken\n")
     end = text.index("    public class DataList\n")
@@ -124,10 +136,17 @@ def live_vrc():
 
 def live_unity():
     text = open(os.path.join(PROBE, "UnityEngine.live.cs"), encoding="utf-8").read()
-    return replace_once(text,
+    w = "ui_probe/UnityEngine.live.cs"
+    text = replace_once(text,
         "        public static float time { get { return 0f; } }\n",
-        "        public static float SimNow;\n        public static float time { get { return SimNow; } }\n",
-        "ui_probe/UnityEngine.live.cs")
+        "        public static float SimNow;\n        public static float time { get { return SimNow; } }\n", w)
+
+    # 板(Quad)は、本物と同じく Renderer と当たり判定を持って生まれる(Prefab ビルダーの確認用)。
+    text = replace_once(text,
+        "        public static GameObject CreatePrimitive(PrimitiveType type) { return new GameObject(type.ToString()); }",
+        "        public static GameObject CreatePrimitive(PrimitiveType type)"
+        " { var go = new GameObject(type.ToString()); go.AddComponent<Renderer>(); go.AddComponent<BoxCollider>(); return go; }", w)
+    return text
 
 
 def main():
@@ -152,6 +171,7 @@ def main():
               os.path.join(STUBS, "NUnit.cs"),
               os.path.join(PROBE, "SceneUtilityShim.cs"),
               os.path.join(HERE, "Sim.cs"),
+              os.path.join(HERE, "SimCrossfade.cs"),
               "@" + os.path.join(OUT, "srcs.txt")])
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:

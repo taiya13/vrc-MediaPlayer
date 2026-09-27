@@ -1,262 +1,387 @@
 using NUnit.Framework;
+using SmartMediaPlatform.World.UdonModel;
 
 namespace SmartMediaPlatform.World.UdonModel.Tests
 {
     /// <summary>
-    /// Phase7-5: クロスフェードの数え方を検証する。
+    /// <see cref="CrossfadeModel"/> —— 重ねるクロスフェードの段取り(Phase8-5)。
     ///
-    /// 確かめたいのは 3 つです。
-    /// <list type="bullet">
-    /// <item><b>始めてはいけないときに始めない</b>(長さ不明・短い曲・行き過ぎ)</item>
-    /// <item><b>混ざっている最中に音が痩せない</b>(等パワー)</item>
-    /// <item>絵と音で混ぜ方が違う</item>
-    /// </list>
+    /// <b>いちばん困るのは「今の曲が止まる」「次の曲が鳴らない」「同じ曲を読み直す」</b>の 3 つです。
+    /// どの失敗の道でも、それが起きないことを確かめます。
     /// </summary>
-    public sealed class CrossfadeModelTests
+    public class CrossfadeModelTests
     {
-        private static CrossfadeModel New()
+        const float Length = 200f;
+        const int Next = 7;
+
+        // 既定: 重ねる 6 秒 + 手前 0.8 秒 = 残り 6.8 秒で重ね始め、そこから 20 秒前(残り 26.8 秒)に読む。
+
+        static CrossfadeModel New()
         {
-            var model = new CrossfadeModel();
-            model.FadeSeconds = 10f;
-            model.MinimumTrackSeconds = 30f;
-            return model;
-        }
-
-        // ───────── いつ始めるか ─────────
-
-        [Test]
-        public void PreparingStartsExactlyOneFadeLengthBeforeTheEnd()
-        {
-            var model = New();
-
-            // 200 秒の曲。残り 10.1 秒ではまだ始めない。
-            Assert.IsFalse(model.ShouldPrepare(189.9f, 200f));
-
-            // 残りちょうど 10 秒で始める。
-            Assert.IsTrue(model.ShouldPrepare(190f, 200f));
-        }
-
-        [Test]
-        public void NothingHappensWhenTheLengthIsUnknown()
-        {
-            var model = New();
-
-            // 生配信や読み込み中は長さが 0 で返る。
-            // ここで始めると、まだ半分残っているのに次の曲へ移ってしまう。
-            Assert.IsFalse(model.ShouldPrepare(0f, 0f));
-            Assert.IsFalse(model.ShouldPrepare(100f, 0f));
-            Assert.IsFalse(model.ShouldPrepare(100f, -1f));
-        }
-
-        [Test]
-        public void ShortTracksAreNeverCrossfaded()
-        {
-            var model = New();
-
-            // 25 秒の曲に 10 秒のフェードを掛けると、
-            // 鳴っている時間の 4 割が「混ざっている最中」になる。
-            Assert.IsFalse(model.ShouldPrepare(20f, 25f));
-
-            // 30 秒あれば掛ける。
-            Assert.IsTrue(model.ShouldPrepare(20f, 30f));
-        }
-
-        [Test]
-        public void NothingHappensAfterTheTrackHasAlreadyEnded()
-        {
-            var model = New();
-
-            // 行き過ぎているときは、終わりの合図(OnVideoEnd)に任せる。
-            Assert.IsFalse(model.ShouldPrepare(200f, 200f));
-            Assert.IsFalse(model.ShouldPrepare(205f, 200f));
-        }
-
-        [Test]
-        public void PreparingOnlyHappensOnce()
-        {
-            var model = New();
-
-            Assert.IsTrue(model.ShouldPrepare(190f, 200f));
-            model.MarkPrepared();
-
-            // もう読ませたので、次のフレームでまた読ませようとしない。
-            Assert.IsFalse(model.ShouldPrepare(191f, 200f));
-        }
-
-        [Test]
-        public void TurningTheFadeOffStopsItFromEverStarting()
-        {
-            var model = New();
-            model.FadeSeconds = 0f;
-
-            Assert.IsFalse(model.ShouldPrepare(190f, 200f));
-        }
-
-        // ───────── 進み方 ─────────
-
-        [Test]
-        public void TheFadeFinishesAfterExactlyTheFadeLength()
-        {
-            var model = New();
-            model.BeginFade();
-
-            Assert.IsFalse(model.Advance(5f), "半分ではまだ終わらない");
-            Assert.IsFalse(model.Advance(4.9f));
-            Assert.IsTrue(model.Advance(0.2f), "10 秒を越えたら終わり");
-        }
-
-        [Test]
-        public void AdvancingDoesNothingWhileNotFading()
-        {
-            var model = New();
-
-            Assert.IsFalse(model.Advance(100f), "混ぜていないのに終わったことにしない");
-            Assert.AreEqual(0f, model.Elapsed);
-        }
-
-        [Test]
-        public void ProgressGoesFromZeroToOne()
-        {
-            var model = New();
-            model.BeginFade();
-
-            Assert.AreEqual(0f, model.Progress, 0.001f);
-
-            model.Advance(5f);
-            Assert.AreEqual(0.5f, model.Progress, 0.001f);
-
-            model.Advance(5f);
-            Assert.AreEqual(1f, model.Progress, 0.001f);
-        }
-
-        [Test]
-        public void ProgressNeverGoesPastOne()
-        {
-            var model = New();
-            model.BeginFade();
-            model.Advance(999f);
-
-            Assert.AreEqual(1f, model.Progress, 0.001f);
-        }
-
-        [Test]
-        public void ResettingPutsItBackToIdle()
-        {
-            var model = New();
-            model.BeginFade();
-            model.Advance(5f);
-
-            model.Reset();
-
-            Assert.IsTrue(model.IsIdle);
-            Assert.AreEqual(0f, model.Progress);
-            Assert.AreEqual(0f, model.Elapsed);
-        }
-
-        // ───────── 音の混ざり方(等パワー)─────────
-
-        [Test]
-        public void TheOutgoingTrackFadesFromFullToSilent()
-        {
-            Assert.AreEqual(1f, CrossfadeModel.OutgoingVolumeAt(0f), 0.01f);
-            Assert.AreEqual(0f, CrossfadeModel.OutgoingVolumeAt(1f), 0.01f);
-        }
-
-        [Test]
-        public void TheIncomingTrackFadesFromSilentToFull()
-        {
-            Assert.AreEqual(0f, CrossfadeModel.IncomingVolumeAt(0f), 0.01f);
-            Assert.AreEqual(1f, CrossfadeModel.IncomingVolumeAt(1f), 0.01f);
-        }
-
-        [Test]
-        public void TheTotalLoudnessStaysTheSameThroughoutTheFade()
-        {
-            // ここが「等パワー」の肝。
-            // out² + in² が常に 1 なら、混ざっている最中も大きさが変わらない。
-            // 素朴に 1-t と t で混ぜると、真ん中で 0.5 まで落ちて音が痩せる。
-            for (int step = 0; step <= 10; step++)
+            return new CrossfadeModel
             {
-                float t = step / 10f;
-
-                float outgoing = CrossfadeModel.OutgoingVolumeAt(t);
-                float incoming = CrossfadeModel.IncomingVolumeAt(t);
-
-                float power = outgoing * outgoing + incoming * incoming;
-
-                Assert.AreEqual(1f, power, 0.02f,
-                                "混ざっている最中に音の大きさが変わってはいけない(t = " + t + ")");
-            }
+                FadeSeconds = 6f,
+                SilentBeforeEnd = 0.8f,
+                PrepareLeadSeconds = 20f,
+                StartLeadSeconds = 0.3f,
+                MinimumTrackSeconds = 45f,
+                MaximumTrackSeconds = 86400f,
+                SeekBackMargin = 3f,
+            };
         }
 
-        [Test]
-        public void TheMidPointIsLouderThanANaiveLinearFadeWouldBe()
+        /// <summary>ふつうに再生中の表で判断させる。</summary>
+        static int At(CrossfadeModel model, float remaining, int next = Next, bool backReady = false,
+                      bool playing = true, bool enabled = true, bool blocked = false, int load = 1,
+                      float length = Length)
         {
-            // 真ん中では両方 0.707 付近。単純な 0.5 ずつより大きい。
-            float half = CrossfadeModel.OutgoingVolumeAt(0.5f);
-
-            Assert.Greater(half, 0.6f);
-            Assert.Less(half, 0.8f);
+            return model.Decide(enabled, blocked, playing, true, playing,
+                                length - remaining, length, load, next, backReady);
         }
 
-        [Test]
-        public void VolumesAreClampedOutsideTheNormalRange()
-        {
-            Assert.AreEqual(1f, CrossfadeModel.OutgoingVolumeAt(-1f), 0.01f);
-            Assert.AreEqual(0f, CrossfadeModel.OutgoingVolumeAt(2f), 0.01f);
-
-            Assert.AreEqual(0f, CrossfadeModel.IncomingVolumeAt(-1f), 0.01f);
-            Assert.AreEqual(1f, CrossfadeModel.IncomingVolumeAt(2f), 0.01f);
-        }
-
-        // ───────── 絵の混ざり方(そのまま)─────────
+        // ───────── いつ読むか ─────────
 
         [Test]
-        public void TheVideoBlendIsPlainAndLinear()
-        {
-            var model = New();
-            model.BeginFade();
-            model.Advance(5f);
-
-            // 絵は 2 枚を重ねるだけなので、真ん中はちょうど半分。
-            // ここに音と同じ曲線を使うと、切り替わりが急に見える。
-            Assert.AreEqual(0.5f, model.VideoBlend, 0.001f);
-        }
-
-        [Test]
-        public void TheVideoBlendIsZeroWhileNotFading()
+        public void 読み込み始める所より前では何もしない()
         {
             var model = New();
 
-            Assert.AreEqual(0f, model.VideoBlend);
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 100f));
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 26.9f));
         }
 
-        // ───────── ひとつながりの流れ ─────────
-
         [Test]
-        public void AWholeFadeRunsThroughItsStatesInOrder()
+        public void 残り26_8秒で裏に読み込ませる()
         {
             var model = New();
-            Assert.IsTrue(model.IsIdle);
 
-            // 残り 10 秒。次の曲を裏で読ませる。
-            Assert.IsTrue(model.ShouldPrepare(190f, 200f));
-            model.MarkPrepared();
-            Assert.IsTrue(model.IsPreparing);
+            Assert.AreEqual(26.8f, model.PreloadRemaining, 1e-4f);
+            Assert.AreEqual(CrossfadeModel.ActionPreload, At(model, 26.7f));
+            Assert.AreEqual(CrossfadeModel.ActionPreload, At(model, 10f), "遅れても読む");
+        }
 
-            // 裏の曲が鳴り出した。混ぜ始める。
-            model.BeginFade();
-            Assert.IsTrue(model.IsFading);
+        [Test]
+        public void 終わりぎりぎりでは読まない()
+        {
+            var model = New();
 
-            // 混ざっている最中。
-            model.Advance(5f);
-            Assert.AreEqual(0.5f, model.Progress, 0.001f);
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 1.7f));
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 0.2f));
+        }
 
-            // 混ざり終わった。
-            Assert.IsTrue(model.Advance(5f));
+        [Test]
+        public void 次の曲が無ければ読まない()
+        {
+            var model = New();
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, next: -1));
+        }
+
+        [Test]
+        public void 使えない構成や止める予定があれば読まない()
+        {
+            var model = New();
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, enabled: false));
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, blocked: true), "おやすみタイマー");
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, playing: false), "一時停止中");
+        }
+
+        [Test]
+        public void 表が今の曲を鳴らしていなければ読まない()
+        {
+            var model = New();
+
+            // 読み込み中・外部 URL を鳴らしている
+            Assert.AreEqual(CrossfadeModel.ActionNone,
+                model.Decide(true, false, true, false, true, Length - 20f, Length, 1, Next, false));
+        }
+
+        [Test]
+        public void 長さが分からない曲や短い曲では重ねない()
+        {
+            var model = New();
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, length: 0f), "生配信");
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, length: 40f), "短い曲");
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, length: 1e9f), "長さがおかしい");
+            Assert.AreEqual(CrossfadeModel.ActionPreload, At(model, 20f, length: 45f), "ちょうど下限");
+        }
+
+        // ───────── いつ鳴らすか ─────────
+
+        [Test]
+        public void 読み終わっていても重ねる所までは鳴らさない()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, backReady: true));
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 7.2f, backReady: true));
+        }
+
+        [Test]
+        public void 表が下がり始める少し前に裏を鳴らす()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            // 6.8 + 0.3 = 7.1
+            Assert.AreEqual(CrossfadeModel.ActionStartBack, At(model, 7.0f, backReady: true));
+            Assert.AreEqual(CrossfadeModel.ActionStartBack, At(model, 3f, backReady: true), "遅れて読み終わっても鳴らす");
+        }
+
+        [Test]
+        public void 読み終わっていなければ待つ()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 5f, backReady: false));
+            Assert.AreEqual(CrossfadeModel.StatePreloading, model.State);
+        }
+
+        [Test]
+        public void 一時停止中は読み込んだまま待つ()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 5f, backReady: true, playing: false));
+            Assert.AreEqual(CrossfadeModel.StatePreloading, model.State);
+        }
+
+        // ───────── やめる ─────────
+
+        [Test]
+        public void 読み込み中に次の曲が変わったらやめる()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 20f, next: 9));
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 20f, next: -1));
+        }
+
+        [Test]
+        public void 重なっている最中は次の曲が変わってもやめない()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            model.MarkOverlapping();
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 4f, next: 9));
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 4f, next: -1));
+        }
+
+        [Test]
+        public void バーを大きく戻されたらやめる()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 29.7f), "少しだけなら続ける");
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 29.9f));
 
             model.Reset();
-            Assert.IsTrue(model.IsIdle);
+            model.MarkPreloading(Next);
+            model.MarkOverlapping();
+
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 10f));
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 10.5f));
+        }
+
+        [Test]
+        public void 重なっている最中に一時停止されたら裏を止める()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            model.MarkOverlapping();
+
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 4f, playing: false));
+        }
+
+        [Test]
+        public void 止める予定になったらやめる()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 20f, blocked: true));
+
+            model.Reset();
+            model.MarkPreloading(Next);
+            model.MarkOverlapping();
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 4f, blocked: true));
+        }
+
+        [Test]
+        public void 表が別の物を鳴らし始めたらやめる()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionCancel,
+                model.Decide(true, false, true, false, true, Length - 20f, Length, 1, Next, false));
+        }
+
+        [Test]
+        public void 表の長さが分からなくなったらやめる()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 20f, length: 0f));
+        }
+
+        [Test]
+        public void 設定で切られたらやめる()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(CrossfadeModel.ActionCancel, At(model, 20f, enabled: false));
+        }
+
+        // ───────── 失敗 ─────────
+
+        [Test]
+        public void 裏が失敗した曲ではもう読まない()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            model.MarkFailed(1);
+
+            Assert.IsFalse(model.IsBusy);
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 20f, load: 1));
+            Assert.AreEqual(CrossfadeModel.ActionNone, At(model, 10f, load: 1));
+        }
+
+        [Test]
+        public void 失敗は次の曲まで持ち越さない()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            model.MarkFailed(1);
+
+            Assert.AreEqual(CrossfadeModel.ActionPreload, At(model, 20f, load: 2));
+        }
+
+        // ───────── 表が終わったとき ─────────
+
+        [Test]
+        public void 表が終わったら裏を表にする()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            model.MarkOverlapping();
+
+            Assert.AreEqual(Next, model.TakeSwap(false));
+            Assert.IsFalse(model.IsBusy);
+            Assert.AreEqual(-1, model.PendingIndex);
+        }
+
+        [Test]
+        public void 読み込みが間に合わなくても表が終わったら裏を表にする()
+        {
+            // 裏はまだ読み込み中。読み直さずに、そのまま表にする(鳴り始めた所から上がる)。
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(Next, model.TakeSwap(false));
+        }
+
+        [Test]
+        public void 止める予定なら表にしない()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            model.MarkOverlapping();
+
+            Assert.AreEqual(-1, model.TakeSwap(true));
+            Assert.IsFalse(model.IsBusy, "やめた状態に戻る");
+        }
+
+        [Test]
+        public void 裏を使っていなければ何もしない()
+        {
+            var model = New();
+            Assert.AreEqual(-1, model.TakeSwap(false));
+        }
+
+        // ───────── いますぐこの曲を ─────────
+
+        [Test]
+        public void 裏に読ませてある曲を選ばれたら読み直さない()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+            model.MarkOverlapping();
+
+            Assert.AreEqual(Next, model.PromoteFor(Next));
+            Assert.IsFalse(model.IsBusy);
+        }
+
+        [Test]
+        public void 別の曲を選ばれたら裏はやめる()
+        {
+            var model = New();
+            model.MarkPreloading(Next);
+
+            Assert.AreEqual(-1, model.PromoteFor(9));
+            Assert.IsFalse(model.IsBusy);
+            Assert.AreEqual(-1, model.PromoteFor(-1));
+        }
+
+        [Test]
+        public void 裏を使っていないときの選曲は何もしない()
+        {
+            var model = New();
+            Assert.AreEqual(-1, model.PromoteFor(Next));
+        }
+
+        // ───────── 状態の出入り ─────────
+
+        [Test]
+        public void 状態は決まった順にしか進まない()
+        {
+            var model = New();
+
+            model.MarkOverlapping();
+            Assert.AreEqual(CrossfadeModel.StateIdle, model.State, "読んでいないのに重ならない");
+
+            model.MarkPreloading(-1);
+            Assert.AreEqual(CrossfadeModel.StateIdle, model.State, "曲が無いのに読まない");
+
+            model.MarkPreloading(Next);
+            model.MarkPreloading(9);
+            Assert.AreEqual(Next, model.PendingIndex, "読み込み中に上書きしない");
+
+            model.MarkOverlapping();
+            Assert.AreEqual(CrossfadeModel.StateOverlapping, model.State);
+        }
+
+        [Test]
+        public void 一曲まるごと流すと読む鳴らす入れ替えるが1回ずつ起きる()
+        {
+            var model = New();
+            int preloads = 0, starts = 0, cancels = 0;
+            bool backReady = false;
+
+            for (float remaining = Length; remaining > 0.3f; remaining -= 0.1f)
+            {
+                int action = At(model, remaining, backReady: backReady);
+
+                if (action == CrossfadeModel.ActionPreload) { preloads++; model.MarkPreloading(Next); }
+                if (action == CrossfadeModel.ActionStartBack) { starts++; model.MarkOverlapping(); }
+                if (action == CrossfadeModel.ActionCancel) { cancels++; model.Reset(); }
+
+                // 読み込みに 5 秒かかる
+                if (model.State == CrossfadeModel.StatePreloading && remaining < 21.8f) backReady = true;
+            }
+
+            Assert.AreEqual(1, preloads);
+            Assert.AreEqual(1, starts);
+            Assert.AreEqual(0, cancels);
+            Assert.AreEqual(Next, model.TakeSwap(false));
         }
     }
 }

@@ -47,6 +47,15 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("読み込みが終わったら自動で再生を始める")]
         public bool AutoPlayWhenReady = true;
 
+        [Header("2 系統(Phase8-5 / 重ねるクロスフェード)")]
+        [Tooltip("重ねるクロスフェードの担当。入っていれば、裏にいる間の知らせ(終わり・失敗・鳴り始め)は"
+                 + "Session ではなくこちらへ送る。裏の失敗で、表の曲まで止まらないようにするため")]
+        public UdonCrossfadeCoordinator Coordinator;
+
+        [Tooltip("もう 1 つの動画プレイヤー。読み込みの間隔は、2 つ合わせて空ける"
+                 + "(VRChat の読み込み回数の制限は、プレイヤーごとではないため)")]
+        public UdonVideoBackend LoadPartner;
+
         [Tooltip("同じ失敗を何度も送らない(直前と同じ種類のエラーは 1 回だけ通す)")]
         public bool CollapseRepeatedErrors = true;
 
@@ -81,6 +90,9 @@ namespace SmartMediaPlatform.World.Udon
         // 読み込んでから一度でも鳴ったか(鳴らずに終わったら失敗とみなす)
         private bool _started;
 
+        // 読み込みが終わって、鳴らせる状態か(Phase8-5。裏で読ませたものを鳴らしてよいかの判断)
+        private bool _ready;
+
         // ───────── 上位からの指示 ─────────
 
         /// <summary>
@@ -107,10 +119,11 @@ namespace SmartMediaPlatform.World.Udon
             //    「即座に失敗して返る」。それを上位が「失敗 → 次へ」と受けると、
             //    次の読み込みもまた制限に掛かり、フレーム単位で回り続けて固まる。
             //    捨てずに「遅らせる」ので、押した操作は必ず効く。
-            float wait = MinimumLoadInterval - (Time.time - _lastLoadAt);
+            float wait = LoadWait();
             if (wait > 0f)
             {
                 IsLoading = true;
+                _ready = false;
 
                 if (!_loadScheduled)
                 {
@@ -130,7 +143,35 @@ namespace SmartMediaPlatform.World.Udon
         public void LoadPending()
         {
             _loadScheduled = false;
+
+            // 待っている間に、もう 1 つのプレイヤーが読み込んでいたら、もう少し待つ。
+            float wait = LoadWait();
+            if (wait > 0f)
+            {
+                _loadScheduled = true;
+                SendCustomEventDelayedSeconds("LoadPending", wait);
+                return;
+            }
+
             LoadNow();
+        }
+
+        /// <summary>
+        /// あと何秒待てば読み込んでよいか。<b>2 つのプレイヤーのうち、新しいほうの読み込みから数えます</b>
+        /// (Phase8-5)。0 以下なら今すぐ読んでよい。
+        /// </summary>
+        private float LoadWait()
+        {
+            float last = _lastLoadAt;
+            if (LoadPartner != null && LoadPartner.LastLoadAt > last) last = LoadPartner.LastLoadAt;
+
+            return MinimumLoadInterval - (Time.time - last);
+        }
+
+        /// <summary>最後に読み込みを始めた時刻(<c>Time.time</c>)。</summary>
+        public float LastLoadAt
+        {
+            get { return _lastLoadAt; }
         }
 
         /// <summary>いま読み込む。待ち時間の判断はしない。</summary>
@@ -146,6 +187,7 @@ namespace SmartMediaPlatform.World.Udon
             LoadCount++;
             IsLoading = true;
             _started = false;
+            _ready = false;
             _lastReportedErrorCode = -1;
             _lastLoadAt = Time.time;
 
@@ -162,6 +204,23 @@ namespace SmartMediaPlatform.World.Udon
 
             Player.LoadURL(url);
             return true;
+        }
+
+        /// <summary>
+        /// <b>読み込むだけで、鳴らさない。</b>Phase8-5。
+        /// 重ねるクロスフェードで、次の曲を裏に用意しておくために使います
+        /// (鳴らすのは、前の曲が下がり始めるときに <see cref="Play"/> で)。
+        /// </summary>
+        public bool Preload(int catalogIndex)
+        {
+            _wantsPlay = false;
+            return Load(catalogIndex);
+        }
+
+        /// <summary>読み込みが終わって、<see cref="Play"/> ですぐ鳴らせる状態か(Phase8-5)。</summary>
+        public bool IsReadyToPlay
+        {
+            get { return _ready && !IsLoading; }
         }
 
         /// <summary>読み込んでから再生する。上位が使うのは基本これ。</summary>
@@ -219,6 +278,7 @@ namespace SmartMediaPlatform.World.Udon
             LoadCount++;
             IsLoading = true;
             _started = false;
+            _ready = false;
             _wantsPlay = true;
             _lastReportedErrorCode = -1;
             _lastLoadAt = Time.time;
@@ -238,6 +298,7 @@ namespace SmartMediaPlatform.World.Udon
             _wantsPlay = false;
             IsLoading = false;
             _started = false;
+            _ready = false;
             Player.Stop();
             return true;
         }
@@ -381,7 +442,46 @@ namespace SmartMediaPlatform.World.Udon
             //    曲が変わる瞬間に前の曲が一瞬鳴るのはこれです。
             if (Player != null) Player.Pause();
 
-            Session.NotifyEnded();
+            DeliverEnded();
+        }
+
+        // ───────── 知らせの行き先(Phase8-5)─────────
+        //
+        // 動画プレイヤーが 2 つあるとき、<b>裏</b>で起きたことを Session へ送ると、
+        // いま鳴っている(表の)曲が飛ばされます(Phase7-5 の「裏の失敗で表まで止まる」)。
+        // 裏の知らせは、クロスフェードの担当が受け取ります。
+
+        private bool IsBack()
+        {
+            return Coordinator != null && Coordinator.IsBackRole(this);
+        }
+
+        private void DeliverEnded()
+        {
+            if (Coordinator != null)
+            {
+                if (Coordinator.IsBackRole(this))
+                {
+                    Coordinator.NotifyBackTrouble(this);
+                    return;
+                }
+
+                // 表が終わった。裏に次の曲があれば、それを表にして終わり(読み直さない)。
+                if (Coordinator.NotifyFrontEnded(this)) return;
+            }
+
+            if (Session != null) Session.NotifyEnded();
+        }
+
+        private void DeliverError()
+        {
+            if (IsBack())
+            {
+                Coordinator.NotifyBackTrouble(this);
+                return;
+            }
+
+            if (Session != null) Session.NotifyError();
         }
 
         // ───────── VRChat からの知らせ ─────────
@@ -390,6 +490,7 @@ namespace SmartMediaPlatform.World.Udon
         public override void OnVideoReady()
         {
             IsLoading = false;
+            _ready = true;
 
             if (Screen != null) Screen.ApplyVolume();
 
@@ -404,6 +505,9 @@ namespace SmartMediaPlatform.World.Udon
         {
             IsLoading = false;
             _started = true;
+
+            // 裏で鳴り始めたものは、まだ「いまの曲」ではない。表になったときに知らせてもらう。
+            if (IsBack()) return;
 
             // 実際に鳴ったので、上位の「続けて失敗した回数」を戻してもらう。
             if (Session != null) Session.NotifyStarted();
@@ -421,7 +525,8 @@ namespace SmartMediaPlatform.World.Udon
                 Debug.LogWarning("[UdonVideoBackend] 一度も再生されずに終わりました: index "
                                  + LoadedIndex, gameObject);
 
-                if (Session != null) Session.NotifyError();
+                _ready = false;
+                DeliverError();
                 return;
             }
 
@@ -431,7 +536,7 @@ namespace SmartMediaPlatform.World.Udon
             if (_endReported) return;
             _endReported = true;
 
-            if (Session != null) Session.NotifyEnded();
+            DeliverEnded();
         }
 
         public override void OnVideoError(VideoError videoError)
@@ -449,36 +554,8 @@ namespace SmartMediaPlatform.World.Udon
             Debug.LogWarning("[UdonVideoBackend] 再生に失敗しました (VideoError " + code
                              + ") index " + LoadedIndex);
 
-            if (Session != null) Session.NotifyError();
-        }
-
-        // ───────── クロスフェード用(Phase7-5)─────────
-
-        [Header("クロスフェード(Phase7-5)")]
-        [Tooltip("この動画プレイヤーの音を鳴らす AudioSource。"
-                 + "クロスフェードでは A / B の音量を別々に動かすので、"
-                 + "Screen の Speaker ではなくこちらを直接触ります")]
-        public AudioSource Speaker;
-
-        [Tooltip("この動画プレイヤーが書き込む絵の欄(_MainTex か _SecondTex)。"
-                 + "1 枚の画面に 2 系統を混ぜるために分けてあります")]
-        public string TextureProperty = "_MainTex";
-
-        /// <summary>
-        /// <b>この系統の音量を直接決める。</b>Phase7-5。
-        ///
-        /// <see cref="UdonMediaScreen.SetVolume"/> は<b>人が決めた音量</b>で、
-        /// こちらは<b>混ぜている最中の一時的な倍率</b>です。
-        /// 掛け算にしてあるので、フェード中に人が音量を変えても、
-        /// 両方が正しく効きます。
-        /// </summary>
-        /// <param name="fade">0〜1。混ざり具合から来る倍率。</param>
-        public void SetFadeVolume(float fade)
-        {
-            if (Speaker == null) return;
-
-            float master = Screen != null ? Screen.Volume : 1f;
-            Speaker.volume = Mathf.Clamp01(master) * Mathf.Clamp01(fade);
+            _ready = false;
+            DeliverError();
         }
 
         /// <summary>いま読み込んでいるものが鳴り始めたか(クロスフェードの開始判定)。</summary>

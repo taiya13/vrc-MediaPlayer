@@ -76,6 +76,10 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("画面へ「書き直して」と伝える窓口")]
         public UdonMediaController Controller;
 
+        [Tooltip("曲を重ねてつなぐ担当(Phase8-5)。入っていれば、曲が変わったときの読み込みを任せる"
+                 + "(手元ですでに裏から表へ入れ替わっていれば、読み直さない)")]
+        public UdonCrossfadeCoordinator Crossfade;
+
         [Header("合わせ方")]
 
         [Tooltip("この秒数より大きくずれていたら合わせ直す")]
@@ -112,6 +116,10 @@ namespace SmartMediaPlatform.World.Udon
 
         // 変わったことの目印。中身が同じでも「配り直した」と分かるようにする。
         [UdonSynced] private int _revision;
+
+        // 次に流す曲(Phase8-5)。再生予定が空のとき、持ち主がおすすめから選んだもの。
+        // 重ねるクロスフェードでは曲が終わる前に次を裏で読むので、全員が同じ曲を読むよう配る。
+        [UdonSynced] private int _nextMedia = -1;
 
         // ───────── 手元だけの状態 ─────────
 
@@ -237,6 +245,7 @@ namespace SmartMediaPlatform.World.Udon
 
             int current = Session.CurrentIndex;
             _currentMedia = current;
+            _nextMedia = Session.PeekNextIndex();
 
             // 鳴らすものが変わったなら頭から。変わっていないなら、いまの位置を基準にする
             // (一時停止・再開はこれで表せる)。
@@ -248,7 +257,8 @@ namespace SmartMediaPlatform.World.Udon
             }
             else
             {
-                float seconds = Backend != null ? Backend.GetTime() : 0f;
+                UdonVideoBackend active = ActiveBackend();
+                float seconds = active != null ? active.GetTime() : 0f;
                 _basePositionMs = seconds > 0f ? (int)(seconds * 1000f) : 0;
             }
 
@@ -283,6 +293,9 @@ namespace SmartMediaPlatform.World.Udon
             // 1. 再生中・再生予定・再生状態をそのまま写す(判断はしない)
             int current = _currentMedia;
             Session.ApplySyncedState(_queue, _playing, current);
+            Session.ApplySyncedNext(_nextMedia);
+
+            UdonVideoBackend active = ActiveBackend();
 
             // 2. 鳴らすものが変わったなら読み直す
             if (current != _appliedMedia)
@@ -292,17 +305,30 @@ namespace SmartMediaPlatform.World.Udon
 
                 _anchored = false;      // 受け取る側も、鳴り始めるまで合わせない
 
-                if (Backend != null)
+                if (current < 0)
                 {
-                    if (current >= 0) Backend.LoadAndPlay(current);
-                    else Backend.Stop();
+                    if (Crossfade != null) Crossfade.CancelFade();
+                    if (active != null) active.Stop();
+                }
+                else if (Crossfade != null)
+                {
+                    // 手元ですでに裏から表へ入れ替わっていれば、読み直さない(Phase8-5)。
+                    Crossfade.FollowRemote(current);
+                }
+                else if (active != null)
+                {
+                    active.LoadAndPlay(current);
                 }
             }
-            else if (Backend != null && current >= 0)
+            else if (active != null && current >= 0)
             {
                 // 3. 同じものなら、再生 / 一時停止だけ合わせる
-                if (_playing) Backend.Play();
-                else Backend.Pause();
+                if (_playing) active.Play();
+                else
+                {
+                    if (Crossfade != null) Crossfade.CancelFade();
+                    active.Pause();
+                }
             }
 
             _appliedRevision = _revision;
@@ -344,6 +370,7 @@ namespace SmartMediaPlatform.World.Udon
 
             if (Session.CurrentIndex != _appliedMedia
                 || Session.IsPlaying != _playing
+                || Session.PeekNextIndex() != _nextMedia
                 || QueueChanged())
             {
                 Capture();
@@ -398,10 +425,26 @@ namespace SmartMediaPlatform.World.Udon
         /// </summary>
         private bool IsBackendOnCurrentMedia()
         {
-            if (Backend == null || Session == null) return false;
-            if (Backend.IsLoading) return false;
+            UdonVideoBackend active = ActiveBackend();
+            if (active == null || Session == null) return false;
+            if (active.IsLoading) return false;
 
-            return Backend.LoadedIndex == Session.CurrentIndex;
+            return active.LoadedIndex == Session.CurrentIndex;
+        }
+
+        /// <summary>
+        /// <b>いま鳴っている動画プレイヤー。</b>Phase8-5。
+        /// 重ねるクロスフェードでは 2 つが入れ替わるので、<see cref="Backend"/>(= 1 つめ固定)を
+        /// 直接見ると、入れ替わったあと<b>止まっているほうの位置で合わせてしまいます</b>。
+        /// </summary>
+        private UdonVideoBackend ActiveBackend()
+        {
+            if (Session != null)
+            {
+                UdonVideoBackend active = Session.ActiveBackend();
+                if (active != null) return active;
+            }
+            return Backend;
         }
 
         public void NotifySeeked(float seconds)
@@ -428,7 +471,7 @@ namespace SmartMediaPlatform.World.Udon
         private void AnchorWhenPlaybackStarts()
         {
             if (_anchored) return;
-            if (Backend == null || Session == null) return;
+            if (Session == null) return;
             if (Session.CurrentIndex < 0) return;
 
             // ── まだ「前の曲」が鳴っているうちに基準を置かない。
@@ -442,15 +485,17 @@ namespace SmartMediaPlatform.World.Udon
             //    「別の動画にしたら前と同じ秒数から始まる」の正体はこれでした。
             if (!IsBackendOnCurrentMedia()) return;
 
+            UdonVideoBackend active = ActiveBackend();
+
             // まだ鳴っていないなら待つ(次の見回りでまた見に来る)
-            if (!Backend.IsPlaying) return;
+            if (!active.IsPlaying) return;
 
             _anchored = true;
 
             if (!IsOwner()) return;
 
             // 頭から数え直す。いま鳴っている位置をそのまま基準にする。
-            float seconds = Backend.GetTime();
+            float seconds = active.GetTime();
             _basePositionMs = seconds > 0f ? (int)(seconds * 1000f) : 0;
             _baseServerTime = Networking.GetServerTimeInMilliseconds();
             _playing = Session.IsPlaying;
@@ -466,18 +511,20 @@ namespace SmartMediaPlatform.World.Udon
             // 鳴り始める前に合わせようとすると、読み込み待ちのぶんだけ頭が飛ぶ。
             if (!_anchored) return;
             if (!_playing) return;
-            if (Backend == null || Session == null) return;
+            if (Session == null) return;
             if (Session.CurrentIndex < 0) return;
 
             // 読み込み中の曲と、いま鳴っている曲が違う間は触らない。
             if (!IsBackendOnCurrentMedia()) return;
 
+            UdonVideoBackend active = ActiveBackend();
+
             // 読み込み中は GetTime が意味を持たないので触らない。
             // 次の見回りでまた見に来るので、読み込みが終われば自然に揃う。
-            if (!Backend.IsPlaying) return;
+            if (!active.IsPlaying) return;
 
             int expected = ExpectedPositionMs();
-            int actual = (int)(Backend.GetTime() * 1000f);
+            int actual = (int)(active.GetTime() * 1000f);
 
             int drift = actual - expected;
             if (drift < 0) drift = -drift;
@@ -485,7 +532,7 @@ namespace SmartMediaPlatform.World.Udon
             int tolerance = (int)(DriftTolerance * 1000f);
             if (drift <= tolerance) return;
 
-            if (!Backend.SetTime(expected * 0.001f)) return;
+            if (!active.SetTime(expected * 0.001f)) return;
 
             if (LogSync)
             {

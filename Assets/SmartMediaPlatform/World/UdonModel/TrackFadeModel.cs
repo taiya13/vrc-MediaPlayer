@@ -231,6 +231,30 @@ namespace SmartMediaPlatform.World.UdonModel
         }
 
         /// <summary>
+        /// <b>このプレイヤーで、次の曲を 0 から上げる準備をする。</b>Phase8-5(重ねるクロスフェード)。
+        ///
+        /// 裏のプレイヤーで次の曲を読み込む<b>直前</b>に呼びます。
+        /// 裏は「ひとりでに終わった」わけではないので、ふつうの見分け方(切り替わった瞬間に
+        /// 下がっていたか)ではフェードインになりません。ここで 0 にしておくと、
+        /// 次の読み込みが「下がっていた所からの切り替わり」になり、音が出始めてから上がります。
+        /// </summary>
+        /// <param name="currentLoadCount">いまの(読み込む前の)読み込み回数。</param>
+        public void PrepareIncoming(int currentLoadCount)
+        {
+            // まだ一度も見ていないなら、いまを起点にする(次の読み込みを「変わった」と数えるため)。
+            if (!_seen)
+            {
+                _seen = true;
+                _lastLoadCount = currentLoadCount;
+            }
+
+            _level = 0f;
+            _fadeInArmed = false;
+            _fadeInRunning = false;
+            _progressWatching = false;
+        }
+
+        /// <summary>
         /// <b>何も掛けていない状態に戻す。</b>止めた・無効にしたとき。
         /// 次に曲が変わっても、フェードインはしません。
         /// </summary>

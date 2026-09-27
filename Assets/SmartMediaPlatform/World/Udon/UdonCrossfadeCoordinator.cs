@@ -4,99 +4,124 @@ using UnityEngine;
 namespace SmartMediaPlatform.World.Udon
 {
     /// <summary>
-    /// <b>曲と曲をなめらかに繋ぐ担当。</b>Phase7-5。
+    /// <b>曲を重ねてつなぐ担当(重ねるクロスフェード)。</b>Phase8-5。
     ///
     /// ───────────────────────────────────────────────
-    /// <b>なぜこのクラスが要るのか</b>
+    /// <b>やること</b>
     ///
-    /// クロスフェードには<b>動画プレイヤーが 2 つ</b>要ります
-    /// (前の曲を鳴らしながら、次の曲を鳴らし始めるため)。
-    /// ところが「次に何を流すか」を決めるのは <see cref="UdonPlayerSession"/> で、
-    /// 「どこに映すか」は <see cref="UdonMediaScreen"/> です。
-    /// <b>混ぜ方だけをここへ集めます。</b>
-    /// おかげで Session も Queue も、クロスフェードのことを 1 行も知りません。
-    ///
-    /// ───────────────────────────────────────────────
-    /// <b>画面は 1 枚のままです</b>
-    ///
-    /// AVPro の <c>VRCAVProVideoScreen</c> は「どの Renderer の、どのテクスチャ欄へ
-    /// 書くか」を指定できます。そこで
-    /// <list type="bullet">
-    /// <item>プレイヤー A → 画面の <c>_MainTex</c></item>
-    /// <item>プレイヤー B → 画面の <c>_SecondTex</c></item>
+    /// 前の曲が小さくなっていく間に、次の曲が<b>もう鳴っていて</b>、同時に大きくなる。
+    /// 動画プレイヤーを 2 つ(表と裏)使います。
+    /// <list type="number">
+    /// <item>終わりの 20 秒ほど前に、次の曲を<b>裏で読み込むだけ</b>(まだ鳴らさない)</item>
+    /// <item>表が下がり始める所で、裏を鳴らし始める</item>
+    /// <item>表が終わったら、裏を表にする(<b>読み直さない</b>)</item>
     /// </list>
-    /// と<b>同じ 1 枚の Renderer</b> に別々の欄で書かせ、
-    /// <c>SmartMediaPlatform/Crossfade</c> シェーダーの <c>_Blend</c> で混ぜます。
-    /// 板も描画も 1 枚のままなので、見た目も負荷もほとんど変わりません。
+    ///
+    /// <b>音量の上げ下げはここでは決めません。</b>表と裏にそれぞれ付いた <see cref="UdonTrackFader"/> が、
+    /// 表は残り時間で下げ、裏は音が出始めてから上げます(Phase8-3 / 8-4 で実機確認済みの仕組み)。
+    /// ここが決めるのは<b>いつ読むか・いつ鳴らすか・いつやめるか・どちらを表にするか</b>だけです。
+    /// <b>次に何を流すかも決めません</b>(<see cref="UdonPlayerSession.PeekNextIndex"/> に聞くだけ)。
     ///
     /// ───────────────────────────────────────────────
-    /// <b>手で選んだときは混ぜません</b>
-    ///
-    /// 曲を選ぶのは「いますぐこれが聴きたい」という操作です。
-    /// そこで 10 秒かけて混ぜると<b>反応が鈍い</b>としか感じられません。
-    /// 混ぜるのは<b>ひとりでに次へ移るとき</b>(再生予定・おすすめ)だけです。
+    /// <b>Phase7-5 の作りとの違い(前回うまく動かなかった所)</b>
+    /// <list type="bullet">
+    /// <item><b>音の出口を別々の GameObject に置く</b>(同じ所に 2 つ付けると、2 つめが使われなかった)</item>
+    /// <item><b>早めに読み込んでおき、間に合わなければ重ねない方式に落ちる</b>(打ち切られて無音にならない)</item>
+    /// <item><b>次の曲を持ち主が決めて同期する</b>(人によって違う曲が裏で鳴らない)</item>
+    /// <item><b>裏の失敗は裏だけで片付ける</b>(表の曲まで止まらない)</item>
+    /// <item><b>映像は混ぜず、2 枚の画面を切り替えるだけ</b>(専用シェーダーで画面が真っ白になった)</item>
+    /// </list>
     ///
     /// ───────────────────────────────────────────────
-    /// <b>使えないときは黙って今までどおりに戻ります</b>
-    ///
-    /// プレイヤーが 1 つしか無い / シェーダーが見つからない /
-    /// 曲の長さが分からない(生配信)/ 曲が短すぎる —— どれでも
-    /// <see cref="Enabled"/> は落ちず、<b>その曲だけ</b>今までの
-    /// 「終わってから次へ」に任せます。
+    /// <b>判断の部分は <c>SmartMediaPlatform.World.UdonModel.CrossfadeModel</c> の写しです。</b>
+    /// あちらは純粋 C# で EditMode テスト済みです。<b>変えるときは両方を直してください。</b>
     /// </summary>
     [UdonBehaviourSyncMode(BehaviourSyncMode.None)]
     public class UdonCrossfadeCoordinator : UdonSharpBehaviour
     {
-        [Tooltip("再生の判断をする相手")]
+        [Header("★ よく触る設定")]
+        [Tooltip("曲を重ねてつなぐ。切ると、重ねない方式(下げきってから次を上げる)になる")]
+        public bool Enabled = true;
+
+        [Tooltip("重ねる長さ(秒)。前の曲が下がる長さと、次の曲が上がる長さを、どちらもこれにそろえる。"
+                 + "長くするほど、前の曲の終わり際(サビの余韻など)が早くから小さくなる")]
+        [Range(1f, 15f)]
+        public float FadeSeconds = 6f;
+
+        [Tooltip("Quest など Android でも重ねる。動画プレイヤーを 2 つ同時に動かすので重く、"
+                 + "動くかどうか実機で確かめてから入れること。切っていれば Android では重ねない方式になる")]
+        public bool AllowOnAndroid;
+
+        [Header("つなぎ先(Prefab が配線済み)")]
+        [Tooltip("次に流す曲を聞く相手")]
         public UdonPlayerSession Session;
 
-        [Tooltip("映像と音の出力先(人が決めた音量をここから借りる)")]
+        [Tooltip("映像と音の出口(どちらの画面を見せるかを切り替える)")]
         public UdonMediaScreen Screen;
 
-        [Header("2 系統の動画プレイヤー")]
-        [Tooltip("A 系統。画面の _MainTex に書く")]
+        [Tooltip("1 つめの動画プレイヤー(最初はこちらが表)")]
         public UdonVideoBackend BackendA;
 
-        [Tooltip("B 系統。画面の _SecondTex に書く。"
-                 + "空ならクロスフェードは使わず、今までどおり A だけで動きます")]
+        [Tooltip("2 つめの動画プレイヤー。空なら重ねず、今までどおり 1 つで動く")]
         public UdonVideoBackend BackendB;
 
-        [Header("設定")]
-        [Tooltip("混ぜる長さ(秒)。0 にすると今までどおりの即切り替えになります")]
-        [Range(0f, 20f)]
-        public float FadeSeconds = 10f;
+        [Tooltip("1 つめの音量の上げ下げ(Channel 0)")]
+        public UdonTrackFader FaderA;
 
-        [Tooltip("この長さより短い曲では混ぜない(秒)。"
-                 + "短い曲に長いフェードを掛けると、鳴っている時間の大半が混ざった状態になります")]
-        public float MinimumTrackSeconds = 30f;
+        [Tooltip("2 つめの音量の上げ下げ(Channel 1)")]
+        public UdonTrackFader FaderB;
 
-        [Tooltip("混ざり具合を書き込むシェーダーの欄")]
-        public string BlendProperty = "_Blend";
+        [Header("細かい設定")]
+        [Tooltip("本当の終わりより、これだけ手前で前の曲を 0 にする(秒)。音量担当の SilentBeforeEnd と同じ値にする")]
+        public float SilentBeforeEnd = 0.8f;
 
-        [Tooltip("様子を Console に出す")]
-        public bool LogFade;
+        [Tooltip("重ね始める所より、これだけ前から次の曲を裏で読み込む(秒)")]
+        [Range(5f, 60f)]
+        public float PrepareLeadSeconds = 20f;
 
-        // ───────── 状態 ─────────
-        //
-        // CrossfadeModel(正典・EditMode テスト済み)の写しです。
-        // 数え方を変えるときは必ず両方を直してください。
+        [Tooltip("裏を鳴らし始めるのを、前の曲が下がり始める所よりこれだけ早める(秒)")]
+        [Range(0f, 2f)]
+        public float StartLeadSeconds = 0.3f;
+
+        [Tooltip("この長さより短い曲では重ねない(秒)")]
+        public float MinimumTrackSeconds = 45f;
+
+        [Tooltip("これより長い「長さ」は信じない(秒)")]
+        public float MaximumTrackSeconds = 86400f;
+
+        [Tooltip("バーをこれ以上戻されたら、重ねるのをやめる(秒)")]
+        public float SeekBackMargin = 3f;
+
+        [Tooltip("見回りの間隔(秒)")]
+        [Range(0.05f, 0.5f)]
+        public float CheckInterval = 0.1f;
+
+        [Header("困ったとき")]
+        [Tooltip("読み込み始めた・重ね始めた・入れ替えた・やめた、を Console に出す")]
+        public bool LogFade = true;
+
+        // ───────── CrossfadeModel の写し ─────────
 
         private const int StateIdle = 0;
-        private const int StatePreparing = 1;
-        private const int StateFading = 2;
+        private const int StatePreloading = 1;
+        private const int StateOverlapping = 2;
+
+        private const int ActionNone = 0;
+        private const int ActionPreload = 1;
+        private const int ActionStartBack = 2;
+        private const int ActionCancel = 3;
 
         private int _state = StateIdle;
-        private float _elapsed;
+        private int _pending = -1;
+        private bool _hasFailure;
+        private int _failedForLoad;
 
-        /// <summary>いま表に出ている系統。false なら A、true なら B。</summary>
+        // ───────── ここだけの状態 ─────────
+
+        // いま表にいるのが B か。false なら A。
         private bool _bIsFront;
 
-        /// <summary>裏で読み込ませた次の曲。無ければ -1。</summary>
-        private int _pendingIndex = -1;
-
-        private Material _screenMaterial;
-        private bool _materialChecked;
-
+        private float _nextCheck;
         private bool _initialized;
 
         void Start()
@@ -109,352 +134,574 @@ namespace SmartMediaPlatform.World.Udon
             if (_initialized) return;
             _initialized = true;
 
-            // 始まりは A が表。B は黙らせておく。
-            ApplyFadeVolumes(1f, 0f);
-            ApplyBlend(0f);
+            // 動画プレイヤーに、裏にいる間の知らせをこちらへ送るよう教える。
+            // 読み込みの間隔も、2 つ合わせて空けさせる。
+            if (BackendA != null)
+            {
+                BackendA.Coordinator = this;
+                BackendA.LoadPartner = BackendB;
+            }
+            if (BackendB != null)
+            {
+                BackendB.Coordinator = this;
+                BackendB.LoadPartner = BackendA;
+            }
+
+            if (IsActive())
+            {
+                // 下がる長さと上がる長さを、重ねる長さにそろえる。
+                ApplyFadeSettings(FaderA);
+                ApplyFadeSettings(FaderB);
+
+                if (Screen != null)
+                {
+                    Screen.EqualPowerCurve = true;
+                    Screen.ApplyVolume();
+                }
+            }
+
+            ShowBackend(Front);
+
+            if (LogFade) Log(Describe());
+        }
+
+        private void ApplyFadeSettings(UdonTrackFader fader)
+        {
+            if (fader == null) return;
+
+            fader.FadeOutSeconds = FadeSeconds;
+            fader.FadeInSeconds = FadeSeconds;
+            fader.SilentBeforeEnd = SilentBeforeEnd;
         }
 
         // ───────── 表と裏 ─────────
 
-        /// <summary>いま鳴っている(表の)系統。</summary>
+        /// <summary>いま鳴っている(表の)動画プレイヤー。</summary>
         public UdonVideoBackend Front
         {
-            get { return _bIsFront ? BackendB : BackendA; }
+            get { return _bIsFront && BackendB != null ? BackendB : BackendA; }
         }
 
-        /// <summary>次を仕込む(裏の)系統。</summary>
+        /// <summary>次の曲を用意する(裏の)動画プレイヤー。1 つしか無ければ null。</summary>
         public UdonVideoBackend Back
-        {
-            get { return _bIsFront ? BackendA : BackendB; }
-        }
-
-        /// <summary>クロスフェードが使える構成か。</summary>
-        public bool CanCrossfade
         {
             get
             {
-                if (FadeSeconds <= 0f) return false;
-                if (BackendA == null || BackendB == null) return false;
-                return ResolveMaterial() != null;
+                if (BackendA == null || BackendB == null) return null;
+                return _bIsFront ? BackendA : BackendB;
             }
         }
 
-        /// <summary>混ざっている最中か(診断・表示用)。</summary>
-        public bool IsFading { get { return _state == StateFading; } }
-
-        /// <summary>
-        /// <b>次の曲へ移る作業の途中か</b>(裏で読ませた〜混ざり終わるまで)。
-        ///
-        /// <see cref="UdonPlayerSession.NotifyEnded"/> がこれを見ます。
-        /// 混ぜている最中は<b>古いほうの「終わりました」が飛んでくる</b>ので、
-        /// そのまま次へ進ませると<b>1 曲飛ばしてしまいます</b>。
-        /// </summary>
-        public bool IsBusy { get { return _state != StateIdle; } }
-
-        /// <summary>
-        /// <b>いますぐ混ぜ終わったことにする。</b>
-        ///
-        /// 混ざり切る前に古い曲が終わってしまったときに呼びます
-        /// (フェード時間より曲の残りが短かった・読み込みに手間取ったなど)。
-        /// 途中で切れるより、<b>そこで入れ替えてしまうほうが自然</b>です。
-        /// </summary>
-        /// <returns>入れ替えたら true。まだ裏が鳴っていないなら false。</returns>
-        public bool FinishNow()
+        /// <summary>この動画プレイヤーが、いま裏にいるか。裏の知らせは Session へ送らない。</summary>
+        public bool IsBackRole(UdonVideoBackend backend)
         {
-            if (_state == StateIdle) return false;
-
+            if (backend == null) return false;
             UdonVideoBackend back = Back;
+            return back != null && backend == back;
+        }
 
-            // 裏がまだ鳴っていないなら、混ぜようがない。やめて呼び出し側に任せる。
-            if (back == null || _pendingIndex < 0 || !back.IsPlaying)
-            {
-                CancelFade();
-                return false;
-            }
+        /// <summary>
+        /// <b>重ねてよい構成か。</b>設定・動画プレイヤーが 2 つあるか・機種。
+        /// </summary>
+        public bool IsActive()
+        {
+            if (!Enabled || FadeSeconds <= 0f) return false;
+            if (BackendA == null || BackendB == null || Screen == null) return false;
+            if (FaderA == null || FaderB == null) return false;
 
-            Swap();
+#if UNITY_ANDROID
+            if (!AllowOnAndroid) return false;
+#endif
             return true;
         }
 
-        // ───────── 上位からの指示 ─────────
+        /// <summary>裏を使っている最中か(読み込み中〜重なっている間)。</summary>
+        public bool IsBusy
+        {
+            get { return _state != StateIdle; }
+        }
+
+        /// <summary>重なっている最中か(診断・表示用)。</summary>
+        public bool IsFading
+        {
+            get { return _state == StateOverlapping; }
+        }
+
+        // ───────── 見回り ─────────
+
+        void Update()
+        {
+            if (!_initialized) return;
+            if (Time.time < _nextCheck) return;
+            _nextCheck = Time.time + CheckInterval;
+
+            Step();
+            UpdateVisibleScreen();
+        }
+
+        private void Step()
+        {
+            if (Session == null) return;
+
+            UdonVideoBackend front = Front;
+            UdonVideoBackend back = Back;
+            if (front == null || back == null) return;
+
+            int current = Session.CurrentIndex;
+            bool frontOnCurrent = current >= 0 && front.LoadedIndex == current && !front.IsLoading;
+
+            // 次の曲を聞くのは、要るときだけ(聞くとおすすめを選ぶことがあるため)。
+            int next = -1;
+            if (_state != StateIdle || NearPreload(front)) next = Session.PeekNextIndex();
+
+            bool backReady = _pending >= 0 && back.LoadedIndex == _pending && back.IsReadyToPlay;
+
+            int action = Decide(
+                IsActive(), Session.CrossfadeBlocked(), Session.IsPlaying,
+                frontOnCurrent, front.IsPlaying,
+                front.GetTime(), front.GetDuration(), front.LoadCount,
+                next, backReady);
+
+            if (action == ActionPreload)
+            {
+                BeginPreload(front, back, next);
+                return;
+            }
+
+            if (action == ActionStartBack)
+            {
+                back.Play();
+                MarkOverlapping();
+
+                if (LogFade) Log("前の曲が下がり始めるので、次の曲を鳴らし始めます(index " + _pending + ")");
+                return;
+            }
+
+            if (action == ActionCancel)
+            {
+                StopBack("やめました(一時停止・選び直し・バーを戻した・次の曲が変わった、のどれか)");
+            }
+        }
 
         /// <summary>
-        /// <b>いますぐこれを流す(手で選んだとき)。</b>混ぜません。
-        /// 表の系統に読ませ、裏は黙らせます。
+        /// 読み込み始める所に近いか。<b>おすすめを選ぶのは 1 曲に 1 回だけ</b>ですが、
+        /// 曲の頭で選ぶ必要もないので、近づいてから聞きます。
+        /// </summary>
+        private bool NearPreload(UdonVideoBackend front)
+        {
+            float duration = front.GetDuration();
+            if (duration <= 1f) return false;
+
+            float remaining = duration - front.GetTime();
+            return remaining <= FadeSeconds + SilentBeforeEnd + PrepareLeadSeconds + 1f;
+        }
+
+        private void BeginPreload(UdonVideoBackend front, UdonVideoBackend back, int next)
+        {
+            // 裏の音量担当に「次は 0 から上げる」と先に伝える(読み込みより前に)。
+            UdonTrackFader backFader = FaderOf(back);
+            if (backFader != null) backFader.PrepareIncoming();
+
+            if (!back.Preload(next))
+            {
+                MarkFailed(front.LoadCount);
+                if (LogFade) Log("次の曲を裏で読み込めませんでした。この曲は重ねずにつなぎます(index " + next + ")");
+                return;
+            }
+
+            MarkPreloading(next);
+            if (LogFade) Log("次の曲を裏で読み込み始めました(index " + next + ")");
+        }
+
+        /// <summary>
+        /// 重なっている間は、<b>音の大きいほうの画面</b>を見せる。
+        /// ちょうど真ん中(両方の音量が同じになる所)で映像が切り替わります。
+        /// </summary>
+        private void UpdateVisibleScreen()
+        {
+            UdonVideoBackend front = Front;
+            UdonVideoBackend back = Back;
+
+            if (_state != StateOverlapping || back == null)
+            {
+                ShowBackend(front);
+                return;
+            }
+
+            UdonTrackFader frontFader = FaderOf(front);
+            UdonTrackFader backFader = FaderOf(back);
+            if (frontFader == null || backFader == null) return;
+
+            ShowBackend(backFader.Level > frontFader.Level ? back : front);
+        }
+
+        // ───────── 動画プレイヤーからの知らせ ─────────
+
+        /// <summary>
+        /// <b>表の曲が終わった。</b>裏に次の曲があれば、それを表にして true。
+        /// false なら、今までどおり Session に次へ進んでもらう。
+        /// </summary>
+        public bool NotifyFrontEnded(UdonVideoBackend backend)
+        {
+            if (backend == null || backend != Front) return false;
+            if (_state == StateIdle) return false;
+
+            bool blocked = Session != null && Session.CrossfadeBlocked();
+            int pending = TakeSwap(blocked);
+
+            if (pending < 0)
+            {
+                StopBack("止める予定があるので、次の曲は鳴らしません");
+                return false;
+            }
+
+            // ── Session を進めるのは、次へ進んでよい人(持ち主・1 人用)だけ。
+            //
+            //    持ち主でない人が手元で進めると、同期の位置合わせが
+            //    <b>前の曲の秒数を新しい曲に当てて</b>、曲の途中へ飛ばしてしまいます。
+            //    持ち主でない人は、音と映像だけ入れ替えて、曲の切り替わりは同期で受け取ります
+            //    (1 秒ほどで届きます。届いたときは読み直しません → FollowRemote)。
+            bool commit = Session != null && Session.AutoAdvance;
+
+            Swap(pending, commit);
+            return true;
+        }
+
+        /// <summary>
+        /// <b>裏で困ったことが起きた</b>(読み込みの失敗・一度も鳴らずに終わった・裏のまま終わった)。
+        /// 表はそのまま鳴らし続け、この曲では重ねるのをやめます。
+        /// </summary>
+        public void NotifyBackTrouble(UdonVideoBackend backend)
+        {
+            if (backend == null || backend != Back) return;
+
+            // 裏を使っていないときの知らせは、止めたあとに遅れて届いたもの。何もしない
+            // (ここで止め直すと、止める → 知らせ → 止める … と回るおそれがある)。
+            if (_state == StateIdle) return;
+
+            UdonVideoBackend front = Front;
+            int frontLoad = front != null ? front.LoadCount : 0;
+
+            backend.Stop();
+            MarkFailed(frontLoad);
+            ShowBackend(front);
+
+            if (LogFade) Log("裏の読み込みに失敗しました。いまの曲はそのまま流し、重ねずにつなぎます");
+        }
+
+        /// <summary>
+        /// 互換のため残してある(Phase7-5 では Session がここを呼んでいた)。
+        /// いまは表の終わりを動画プレイヤーが直接知らせるので、ここはほぼ通りません。
+        /// </summary>
+        public bool FinishNow()
+        {
+            return NotifyFrontEnded(Front);
+        }
+
+        // ───────── Session からの指示 ─────────
+
+        /// <summary>
+        /// <b>いますぐこれを流す</b>(手で選んだ・次へ・前へ・失敗して飛ばした)。重ねません。
+        /// それが<b>裏にもう読ませてある曲なら、読み直さずに裏を表にします</b>
+        /// (重なっている最中に「次へ」を押したとき)。
         /// </summary>
         public bool PlayImmediate(int catalogIndex)
         {
             EnsureInitialized();
 
-            CancelFade();
+            if (_state != StateIdle)
+            {
+                int promoted = PromoteFor(catalogIndex);
+                if (promoted >= 0)
+                {
+                    // Session はもうこの曲へ移っているので、進め直さない。
+                    Swap(promoted, false);
+                    return true;
+                }
+
+                StopBack("別の曲が選ばれたので、裏の曲はやめました");
+            }
 
             UdonVideoBackend front = Front;
             if (front == null) return false;
 
-            // 裏で何か鳴っていたら止める(混ぜている最中に選び直された場合)。
-            UdonVideoBackend back = Back;
-            if (back != null) back.Stop();
-
-            ApplyFadeVolumes(1f, 0f);
-            ApplyBlend(0f);
-
+            ShowBackend(front);
             return front.LoadAndPlay(catalogIndex);
         }
 
         /// <summary>
-        /// <b>再生予定が変わった。</b>Phase7-5。
-        ///
-        /// おすすめを裏で読み始めたあとに人が曲を予定へ入れたら、
-        /// <b>予定のほうを優先し直します</b>。
-        /// 入れたのに次に流れないのでは、入れた意味がありません。
-        ///
-        /// <b>もう混ざり始めていたら、そのまま最後まで混ぜます。</b>
-        /// 音が半分まで入れ替わったところで別の曲に差し替えると、
-        /// <b>ぶつ切りに聞こえて、かえって壊れたように感じます</b>。
-        /// 入れた曲はその次に流れます。
+        /// <b>同期で、持ち主の曲が変わったと届いた。</b>持ち主以外の手元で呼ばれます。
+        /// 自分の手元でもう切り替わっていれば何もせず、裏に読ませてあれば表にし、
+        /// どちらでもなければ読み込みます。
         /// </summary>
-        public void NotifyQueueChanged()
+        public void FollowRemote(int catalogIndex)
         {
-            if (_state != StatePreparing) return;
-            if (Session == null) return;
+            EnsureInitialized();
 
-            int wanted = Session.PeekNextIndex();
-            if (wanted == _pendingIndex) return;   // 変わっていない
+            UdonVideoBackend front = Front;
+            if (front == null) return;
 
-            // 裏で読ませたものが「次」でなくなった。読み直しからやり直す。
-            UdonVideoBackend back = Back;
-            if (back != null) back.Stop();
-
-            CancelFade();
-
-            if (LogFade)
+            if (front.LoadedIndex == catalogIndex && catalogIndex >= 0)
             {
-                Debug.Log("[UdonCrossfadeCoordinator] 再生予定が変わったので仕込み直します。",
-                          gameObject);
+                // すでに手元で入れ替わっている(自分の手元でも曲が終わって、裏を表にした)。
+                if (!front.IsPlaying && !front.IsLoading) front.Play();
+                return;
             }
+
+            if (_state != StateIdle)
+            {
+                int promoted = PromoteFor(catalogIndex);
+                if (promoted >= 0)
+                {
+                    // 同期で受け取った状態はもう Session に入っているので、進め直さない。
+                    Swap(promoted, false);
+                    return;
+                }
+
+                StopBack("持ち主が別の曲にしたので、裏の曲はやめました");
+            }
+
+            ShowBackend(front);
+            front.LoadAndPlay(catalogIndex);
         }
 
         /// <summary>
-        /// 混ぜている途中でやめる(手で操作された・止められた)。
-        /// 表の系統だけが鳴っている状態に戻します。
+        /// 重ねている途中でやめる(止められた・一時停止された)。表だけが鳴っている状態に戻します。
         /// </summary>
         public void CancelFade()
         {
-            if (_state == StateIdle && _pendingIndex < 0) return;
-
-            _state = StateIdle;
-            _elapsed = 0f;
-            _pendingIndex = -1;
-
-            ApplyFadeVolumes(1f, 0f);
-            ApplyBlend(0f);
-
-            if (LogFade) Debug.Log("[UdonCrossfadeCoordinator] 混ぜるのをやめました。", gameObject);
-        }
-
-        // ───────── 毎フレーム ─────────
-
-        void Update()
-        {
-            if (!_initialized) return;
-            if (Session == null) return;
-
-            if (_state == StateFading)
-            {
-                AdvanceFade();
-                return;
-            }
-
-            if (_state == StatePreparing)
-            {
-                WaitForBackToStart();
-                return;
-            }
-
-            WatchForEndOfTrack();
+            if (_state == StateIdle) return;
+            StopBack("止められたので、裏の曲もやめました");
         }
 
         /// <summary>
-        /// 終わりが近づいたら、次の曲を裏で読み始める。
-        /// <c>CrossfadeModel.ShouldPrepare</c> の写しです。
+        /// 互換のため残してある。再生予定の変化は、見回りのたびに次の曲を聞き直して拾います
+        /// (読み込み中なら読み直し、重なっている最中ならそのまま)。
         /// </summary>
-        private void WatchForEndOfTrack()
+        public void NotifyQueueChanged()
         {
-            if (!CanCrossfade) return;
-            if (!Session.IsPlaying) return;
-
-            UdonVideoBackend front = Front;
-            if (front == null || !front.IsPlaying) return;
-
-            float duration = front.GetDuration();
-
-            // 長さが分からない(生配信・読み込み中)なら掛けない。
-            // ここで掛けると、まだ半分残っているのに次へ移ってしまう。
-            if (duration <= 0f) return;
-            if (duration < MinimumTrackSeconds) return;
-
-            float remaining = duration - front.GetTime();
-            if (remaining <= 0f) return;
-            if (remaining > FadeSeconds) return;
-
-            BeginPrepare();
+            _nextCheck = 0f;
         }
 
-        /// <summary>次に流すものを覗いて、裏へ読ませる。</summary>
-        private void BeginPrepare()
-        {
-            int next = Session.PeekNextIndex();
-            if (next < 0) return;      // 次が無い。今までどおり終わりの合図に任せる。
-
-            UdonVideoBackend back = Back;
-            if (back == null) return;
-
-            if (!back.LoadAndPlay(next)) return;
-
-            _pendingIndex = next;
-            _state = StatePreparing;
-            _elapsed = 0f;
-
-            // 裏はまだ黙らせておく。鳴り出してから混ぜ始める。
-            ApplyFadeVolumes(1f, 0f);
-
-            if (LogFade)
-            {
-                Debug.Log("[UdonCrossfadeCoordinator] 次の曲を裏で読み始めました: index "
-                          + next, gameObject);
-            }
-        }
+        // ───────── 入れ替え ─────────
 
         /// <summary>
-        /// 裏が鳴り出すのを待つ。
-        /// <b>読み込みに掛かる時間はまちまち</b>なので、決め打ちで待たずに
-        /// 「鳴り出した」ことを見てから混ぜ始めます。
+        /// <b>裏を表にする。</b>裏はもう読み込んである(または読み込み中)なので、読み直しません。
         /// </summary>
-        private void WaitForBackToStart()
-        {
-            UdonVideoBackend back = Back;
-
-            if (back == null || _pendingIndex < 0)
-            {
-                CancelFade();
-                return;
-            }
-
-            // 裏がまだ鳴っていないなら待つ。
-            if (!back.IsPlaying) return;
-
-            _state = StateFading;
-            _elapsed = 0f;
-
-            if (LogFade) Debug.Log("[UdonCrossfadeCoordinator] 混ぜ始めます。", gameObject);
-        }
-
-        /// <summary>混ざり具合を進める。混ざり終わったら役割を入れ替える。</summary>
-        private void AdvanceFade()
-        {
-            _elapsed += Time.deltaTime;
-
-            float progress = FadeSeconds > 0f ? _elapsed / FadeSeconds : 1f;
-            if (progress < 0f) progress = 0f;
-            if (progress > 1f) progress = 1f;
-
-            // 音は等パワー(真ん中で痩せないように)、絵はそのまま。
-            // CrossfadeModel と同じ式。
-            float outgoing = Mathf.Cos(progress * Mathf.PI * 0.5f);
-            float incoming = Mathf.Cos((1f - progress) * Mathf.PI * 0.5f);
-
-            ApplyFadeVolumes(outgoing, incoming);
-            ApplyBlend(progress);
-
-            if (_elapsed < FadeSeconds) return;
-
-            Swap();
-        }
-
-        /// <summary>混ざり終わった。裏を表にして、古いほうを止める。</summary>
-        private void Swap()
+        /// <param name="pending">裏に読ませてある曲。</param>
+        /// <param name="commit">Session を次の曲へ進めるか(自分で選んだときは、もう進んでいる)。</param>
+        private void Swap(int pending, bool commit)
         {
             UdonVideoBackend oldFront = Front;
-            int moved = _pendingIndex;
 
             _bIsFront = !_bIsFront;
-            _state = StateIdle;
-            _elapsed = 0f;
-            _pendingIndex = -1;
 
-            // 表が入れ替わったので、混ざり具合も裏返す。
-            ApplyFadeVolumes(1f, 0f);
-            ApplyBlend(_bIsFront ? 1f : 0f);
+            UdonVideoBackend newFront = Front;
 
-            if (oldFront != null) oldFront.Stop();
+            // まだ鳴らしていなければ鳴らす(読み込み中なら、読み終わったら鳴る)。
+            if (newFront != null && !newFront.IsPlaying) newFront.Play();
 
-            // ここで初めて Session の状態を進める。
-            // 「覗いただけ」を「実際に移った」に変えるのはこの 1 行です。
-            if (moved >= 0) Session.CommitAdvanceTo(moved);
+            if (oldFront != null && oldFront != newFront) oldFront.Stop();
 
-            if (LogFade)
+            ShowBackend(newFront);
+
+            if (Session != null)
             {
-                Debug.Log("[UdonCrossfadeCoordinator] 入れ替えました: index " + moved, gameObject);
+                if (commit) Session.CommitAdvanceTo(pending);
+
+                // 裏にいる間は「鳴り始めた」を Session へ送っていないので、ここで送る
+                // (履歴・再生回数に数えるため)。まだ鳴っていなければ、鳴り始めたときに届く。
+                // Session がまだこの曲へ進んでいない(持ち主でない人)なら送らない —
+                // 前の曲を二度数えてしまうため。
+                if (newFront != null && newFront.HasStarted && Session.CurrentIndex == pending)
+                {
+                    Session.NotifyStarted();
+                }
             }
+
+            if (LogFade) Log("次の曲へ入れ替えました(index " + pending + ")");
+        }
+
+        private void StopBack(string reason)
+        {
+            UdonVideoBackend back = Back;
+            bool wasBusy = _state != StateIdle;
+
+            Reset();
+
+            if (back != null && (wasBusy || back.IsPlaying || back.IsLoading)) back.Stop();
+
+            ShowBackend(Front);
+
+            if (wasBusy && LogFade) Log(reason);
         }
 
         // ───────── 出力 ─────────
 
-        /// <summary>表と裏の音量を当てる(混ざり具合から来る倍率)。</summary>
-        private void ApplyFadeVolumes(float frontFade, float backFade)
+        private void ShowBackend(UdonVideoBackend backend)
         {
-            UdonVideoBackend front = Front;
-            UdonVideoBackend back = Back;
-
-            if (front != null) front.SetFadeVolume(frontFade);
-            if (back != null) back.SetFadeVolume(backFade);
+            if (Screen == null) return;
+            Screen.ShowChannel(backend != null && backend == BackendB);
         }
 
-        /// <summary>
-        /// 絵の混ざり具合をシェーダーへ書く。
-        ///
-        /// <b>A が表のときは 0 → 1、B が表のときは 1 → 0</b> と向きが逆になります。
-        /// シェーダーの <c>_Blend</c> は「_SecondTex(= B)がどれだけ出ているか」だからです。
-        /// </summary>
-        private void ApplyBlend(float progress)
+        private UdonTrackFader FaderOf(UdonVideoBackend backend)
         {
-            Material material = ResolveMaterial();
-            if (material == null) return;
-
-            // 表が A なら、進むほど B が出てくる(0 → 1)。
-            // 表が B なら、進むほど A が出てくる(1 → 0)。
-            float blend = _bIsFront ? 1f - progress : progress;
-
-            material.SetFloat(BlendProperty, Mathf.Clamp01(blend));
+            if (backend == null) return null;
+            if (backend == BackendB) return FaderB;
+            return FaderA;
         }
 
-        /// <summary>
-        /// 画面のマテリアル。<b>1 回だけ探して覚えます</b>
-        /// (毎フレーム <c>GetComponent</c> を叩かないため)。
-        /// </summary>
-        private Material ResolveMaterial()
+        private void Log(string message)
         {
-            if (_materialChecked) return _screenMaterial;
-            _materialChecked = true;
+            Debug.Log("[UdonCrossfadeCoordinator] " + message, gameObject);
+        }
 
-            if (Screen == null || Screen.Surface == null) return null;
+        // ───────── 判断(CrossfadeModel の写し)─────────
 
-            // sharedMaterial だと、同じ材質を使う他の板まで一緒に変わります。
-            // ワールドに複数枚置かれることを考えて、こちらは触りません。
-            _screenMaterial = Screen.Surface.material;
-            return _screenMaterial;
+        private int Decide(
+            bool enabled, bool blocked, bool sessionPlaying,
+            bool frontOnCurrent, bool frontPlaying,
+            float frontTime, float frontDuration, int frontLoad,
+            int nextIndex, bool backReady)
+        {
+            // 表の曲が変わったら、前の曲での失敗は忘れる。
+            if (_hasFailure && frontLoad != _failedForLoad) _hasFailure = false;
+
+            bool lengthKnown = LengthUsable(frontDuration);
+            float remaining = frontDuration - frontTime;
+
+            if (_state == StateIdle)
+            {
+                if (!enabled || blocked) return ActionNone;
+                if (!sessionPlaying || !frontOnCurrent || !frontPlaying) return ActionNone;
+                if (nextIndex < 0 || _hasFailure || !lengthKnown) return ActionNone;
+
+                if (remaining > PreloadRemaining) return ActionNone;
+
+                // 終わりぎりぎりでは読まない。終わりの合図とぶつかるので、今までの道に任せる。
+                if (remaining <= SilentBeforeEnd + 1f) return ActionNone;
+
+                return ActionPreload;
+            }
+
+            // ── ここから下は、裏を使っている最中。
+            //    やめる理由が 1 つでもあれば、やめる。
+            if (!enabled || blocked || !frontOnCurrent || !lengthKnown) return ActionCancel;
+
+            if (_state == StatePreloading)
+            {
+                // 次の曲が変わった(再生予定に入れた・並べ替えた)。読み直すために一度やめる。
+                if (nextIndex != _pending) return ActionCancel;
+
+                // バーを大きく戻された。まだ当分鳴らさないので、裏を空ける。
+                if (remaining > PreloadRemaining + SeekBackMargin) return ActionCancel;
+
+                // 一時停止中は、読み込んだまま待つ(再開したら続きから)。
+                if (!sessionPlaying || !frontPlaying) return ActionNone;
+
+                if (remaining <= FadeStartRemaining + StartLeadSeconds && backReady)
+                {
+                    return ActionStartBack;
+                }
+
+                // 読み込みが間に合っていないなら待つ。表が終わったら、裏を表にする(TakeSwap)。
+                return ActionNone;
+            }
+
+            // ── 重なっている最中。
+            //    <b>次の曲が変わっても、やめません。</b>もう聞こえている曲を途中で切ると、
+            //    壊れたように聞こえます。新しく入れた曲は、そのあとに流れます。
+
+            // 一時停止・停止されたら、裏も止める(片方だけ鳴り続けないように)。
+            if (!sessionPlaying) return ActionCancel;
+
+            // バーを戻された。重ねる所より前なので、裏を止める。
+            if (remaining > FadeStartRemaining + StartLeadSeconds + SeekBackMargin) return ActionCancel;
+
+            return ActionNone;
+        }
+
+        /// <summary>前の曲が下がり始める、残り時間(秒)。</summary>
+        public float FadeStartRemaining
+        {
+            get { return FadeSeconds + SilentBeforeEnd; }
+        }
+
+        /// <summary>次の曲を裏で読み込み始める、残り時間(秒)。</summary>
+        public float PreloadRemaining
+        {
+            get { return FadeStartRemaining + PrepareLeadSeconds; }
+        }
+
+        private void MarkPreloading(int catalogIndex)
+        {
+            if (_state != StateIdle) return;
+            if (catalogIndex < 0) return;
+
+            _state = StatePreloading;
+            _pending = catalogIndex;
+        }
+
+        private void MarkOverlapping()
+        {
+            if (_state != StatePreloading) return;
+            _state = StateOverlapping;
+        }
+
+        private void Reset()
+        {
+            _state = StateIdle;
+            _pending = -1;
+        }
+
+        private void MarkFailed(int frontLoad)
+        {
+            Reset();
+            _hasFailure = true;
+            _failedForLoad = frontLoad;
+        }
+
+        private int TakeSwap(bool blocked)
+        {
+            if (_state == StateIdle || _pending < 0) return -1;
+
+            int pending = _pending;
+            Reset();
+
+            if (blocked) return -1;
+            return pending;
+        }
+
+        private int PromoteFor(int requested)
+        {
+            if (_state == StateIdle) return -1;
+
+            int pending = _pending;
+            Reset();
+
+            if (requested < 0 || requested != pending) return -1;
+            return pending;
+        }
+
+        private bool LengthUsable(float duration)
+        {
+            if (duration <= 1f) return false;
+            if (duration > MaximumTrackSeconds) return false;
+            if (duration < MinimumTrackSeconds) return false;
+            return true;
         }
 
         /// <summary>Console 表示用の 1 行(診断)。</summary>
         public string Describe()
         {
-            if (BackendA == null) return "A 系統がありません";
-            if (BackendB == null) return "B 系統がありません(クロスフェードは使いません)";
+            if (BackendA == null) return "動画プレイヤー A がありません";
+            if (BackendB == null) return "動画プレイヤー B がありません(重ねません)";
+            if (FaderA == null || FaderB == null) return "音量の担当が 2 つそろっていません(重ねません)";
+            if (!IsActive()) return "重ねない設定です(Android では AllowOnAndroid が切れていると重ねません)";
 
-            if (ResolveMaterial() == null) return "画面の材質が見つかりません";
-
-            return "A / B の 2 系統 / " + FadeSeconds + " 秒で混ぜます"
-                   + (IsFading ? "(いま混ざっています)" : "");
+            return FadeSeconds + " 秒重ねてつなぎます"
+                   + (_state == StateOverlapping ? "(いま重なっています)"
+                      : _state == StatePreloading ? "(次の曲を裏で読み込み中)" : "");
         }
     }
 }

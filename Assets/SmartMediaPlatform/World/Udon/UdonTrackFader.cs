@@ -41,6 +41,10 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("音量を出す先。人が決めた音量に、ここで決めた倍率を掛ける")]
         public UdonMediaScreen Screen;
 
+        [Tooltip("どちらの音の出口に掛けるか。0 = Speaker(A)/ 1 = SpeakerB(B)。Phase8-5")]
+        [Range(0, 1)]
+        public int Channel;
+
         [Header("長さ")]
         [Tooltip("終わりに向かって下げる長さ(秒)。0 にすると下げない")]
         [Range(0f, 10f)]
@@ -108,7 +112,7 @@ namespace SmartMediaPlatform.World.Udon
         void Start()
         {
             // 前回のワールドの状態を持ち越していることは無いが、念のため全開から始める。
-            if (Screen != null) Screen.SetFadeLevel(1f);
+            WriteLevel(_level);
         }
 
         void Update()
@@ -141,7 +145,7 @@ namespace SmartMediaPlatform.World.Udon
 
             float level = Tick(Backend.LoadCount, started, time, duration, Time.time);
 
-            Screen.SetFadeLevel(level);
+            WriteLevel(level);
 
             if (LogTransitions)
             {
@@ -170,7 +174,7 @@ namespace SmartMediaPlatform.World.Udon
 
             if (!wasArmed && _fadeInArmed)
             {
-                Log("曲が自然に終わりました。次の曲は音が出始めるのを待ってから上げます");
+                Log("次の曲は、音が出始めるのを待ってから上げます");
                 return;
             }
 
@@ -199,7 +203,8 @@ namespace SmartMediaPlatform.World.Udon
 
         private void Log(string message)
         {
-            Debug.Log("[UdonTrackFader] " + message, gameObject);
+            string prefix = Channel == 1 ? "[UdonTrackFader B] " : "[UdonTrackFader] ";
+            Debug.Log(prefix + message, gameObject);
         }
 
         /// <summary>
@@ -212,7 +217,44 @@ namespace SmartMediaPlatform.World.Udon
             _progressWatching = false;
             _level = 1f;
 
-            if (Screen != null) Screen.SetFadeLevel(1f);
+            WriteLevel(1f);
+        }
+
+        /// <summary>
+        /// <b>このプレイヤーで、次の曲を 0 から上げる準備をする。</b>Phase8-5。
+        /// 重ねるクロスフェードの担当が、裏で次の曲を読み込む<b>直前</b>に呼びます。
+        /// <c>TrackFadeModel.PrepareIncoming</c> の写しです。
+        /// </summary>
+        public void PrepareIncoming()
+        {
+            PrepareIncomingAt(Backend != null ? Backend.LoadCount : 0);
+            WriteLevel(_level);
+
+            if (LogTransitions) Log("次の曲を裏で読みます。音が出始めてから上げます");
+        }
+
+        private void PrepareIncomingAt(int currentLoadCount)
+        {
+            // まだ一度も見ていないなら、いまを起点にする(次の読み込みを「変わった」と数えるため)。
+            if (!_seen)
+            {
+                _seen = true;
+                _lastLoadCount = currentLoadCount;
+            }
+
+            _level = 0f;
+            _fadeInArmed = false;
+            _fadeInRunning = false;
+            _progressWatching = false;
+        }
+
+        /// <summary>受け持ちの音の出口へ倍率を書く。</summary>
+        private void WriteLevel(float level)
+        {
+            if (Screen == null) return;
+
+            if (Channel == 1) Screen.SetFadeLevelB(level);
+            else Screen.SetFadeLevel(level);
         }
 
         // ───────── 計算(TrackFadeModel の写し)─────────

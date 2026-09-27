@@ -281,6 +281,15 @@ namespace SmartMediaPlatform.World.Udon
         }
 
         /// <summary>
+        /// <b>この曲で止める予定か</b>(覗くだけで、予定は消さない)。Phase8-5。
+        /// 重ねるクロスフェードが、次の曲を裏で鳴らしてよいかを決めるのに使います。
+        /// </summary>
+        public bool WillStopAfterTrack()
+        {
+            return SleepMinutes == SleepAfterTrack;
+        }
+
+        /// <summary>
         /// <b>曲が終わった。止める頃合いか。</b>
         /// <see cref="UdonPlayerSession"/> から聞かれます。
         /// </summary>
@@ -334,8 +343,13 @@ namespace SmartMediaPlatform.World.Udon
 
         private UdonVideoBackend ResolveBackend()
         {
+            // 動画プレイヤーが 2 つあるときは入れ替わるので、いま鳴っているほうを先に聞く(Phase8-5)。
+            if (Session != null)
+            {
+                UdonVideoBackend active = Session.ActiveBackend();
+                if (active != null) return active;
+            }
             if (Backend != null) return Backend;
-            if (Session != null) return Session.ActiveBackend();
             return null;
         }
     }

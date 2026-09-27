@@ -257,6 +257,47 @@ namespace SmartMediaPlatform.World.UdonModel.Tests
         }
 
         [Test]
+        public void 裏で読む準備をすると次の曲は0から上がる()
+        {
+            // Phase8-5: 裏のプレイヤー。今まで鳴っていない(倍率 1 のまま)ところへ次の曲を読ませる。
+            TrackFadeModel model = New();
+            model.Tick(0, false, 0f, 0f, 100f);
+
+            model.PrepareIncoming(0);
+            Assert.AreEqual(0f, model.Level);
+
+            Assert.AreEqual(0f, model.Tick(1, false, 0f, 0f, 101f), "読み込み中は 0");
+            Assert.IsTrue(model.FadeInArmed);
+            Assert.AreEqual(0f, model.Tick(1, true, 0f, 180f, 105f), "鳴らし始めたが、まだ音が出ていない");
+            Assert.AreEqual(0.5f, model.Tick(1, true, 1f, 180f, 106f), 1e-3f);
+            Assert.AreEqual(1f, model.Tick(1, true, 2f, 180f, 107f));
+        }
+
+        [Test]
+        public void 一度も見ていなくても準備すれば0から上がる()
+        {
+            TrackFadeModel model = New();
+
+            model.PrepareIncoming(5);
+            Assert.AreEqual(0f, model.Tick(6, false, 0f, 0f, 1f));
+            Assert.IsTrue(model.FadeInArmed);
+        }
+
+        [Test]
+        public void 準備してから読み込みが遅れても0のまま待つ()
+        {
+            // 読み込み間隔の制限で、実際の読み込みが数秒遅れることがある。
+            TrackFadeModel model = New();
+            model.Tick(3, true, 50f, Length, 50f);
+
+            model.PrepareIncoming(3);
+            Assert.AreEqual(0f, model.Tick(3, false, 50f, Length, 52f));
+            Assert.AreEqual(0f, model.Tick(3, false, 50f, Length, 55f));
+            Assert.AreEqual(0f, model.Tick(4, false, 0f, 0f, 56f));
+            Assert.IsTrue(model.FadeInArmed);
+        }
+
+        [Test]
         public void 途中から追いついた人は全開まで早く上がる()
         {
             // 同期で途中の位置へ飛ばされたら、音はその分だけ前から出ていた扱いになる。

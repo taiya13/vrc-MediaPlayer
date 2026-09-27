@@ -276,6 +276,10 @@ namespace SmartMediaPlatform.World.Udon
             if (_isPlaying)
             {
                 _isPlaying = false;
+
+                // 重ねている最中なら、裏も止める(片方だけ鳴り続けないように)。Phase8-5。
+                if (Crossfade != null) Crossfade.CancelFade();
+
                 UdonVideoBackend active = ActiveBackend();
                 if (active != null) active.Pause();
                 return true;
@@ -298,7 +302,7 @@ namespace SmartMediaPlatform.World.Udon
 
             if (_queueCount > 0) return TakeFromQueue(0);
 
-            int pick = AutoQueueEnabled ? PickRecommendation() : -1;
+            int pick = AutoQueueEnabled ? TakeRecommendation() : -1;
             if (pick < 0)
             {
                 _exhausted = true;
@@ -573,7 +577,7 @@ namespace SmartMediaPlatform.World.Udon
 
             if (EndBehaviour == EndBehaviourRecommend)
             {
-                int pick = PickRecommendation();
+                int pick = TakeRecommendation();
                 if (pick >= 0)
                 {
                     MoveTo(pick);
@@ -889,7 +893,76 @@ namespace SmartMediaPlatform.World.Udon
             if (!AutoQueueEnabled) return -1;
             if (EndBehaviour != EndBehaviourRecommend) return -1;
 
-            return PickRecommendation();
+            // ── おすすめは<b>1 曲の間に 1 回だけ選び、そのまま取っておく</b>(Phase8-5)。
+            //
+            //    選び方にはランダムが入っているので、覗くたびに選び直すと
+            //    <b>裏で読み込んだ曲と、実際に次に流れる曲が食い違います</b>。
+            //    見回りは 0.1 秒ごとなので、毎回選ぶと重くもなります。
+            if (_reservedFor == _currentIndex)
+            {
+                if (_reservedNext < 0) return -1;
+                if (IsUsableRecommendation(_reservedNext)) return _reservedNext;
+            }
+
+            // 持ち主でない人は、自分では選ばない。持ち主が選んだものが同期で届く
+            // (人によって違う曲を裏で読み込まないように)。
+            if (!AutoAdvance) return -1;
+
+            int pick = PickRecommendation();
+            _reservedNext = pick;
+            _reservedFor = _currentIndex;
+            return pick;
+        }
+
+        // おすすめで選んで取っておいた次の曲と、そのとき鳴っていた曲。
+        // 鳴っている曲が変われば、取っておいたものは使わない。
+        private int _reservedNext = -1;
+        private int _reservedFor = -2;
+
+        /// <summary>
+        /// <b>おすすめから次の曲を取り出す。</b>取っておいたものがあればそれを使う(Phase8-5)。
+        /// 覗いたとき(<see cref="PeekNextIndex"/>)と、実際に進むときで、同じ曲になります。
+        /// </summary>
+        private int TakeRecommendation()
+        {
+            int pick;
+
+            if (_reservedFor == _currentIndex && _reservedNext >= 0
+                && IsUsableRecommendation(_reservedNext))
+            {
+                pick = _reservedNext;
+            }
+            else
+            {
+                pick = PickRecommendation();
+            }
+
+            _reservedNext = -1;
+            _reservedFor = -2;
+            return pick;
+        }
+
+        /// <summary>
+        /// <b>持ち主が選んだ「次の曲」を受け取る。</b>Phase8-5。
+        /// <see cref="ApplySyncedState"/> のあとに呼ぶ(いま鳴っている曲に紐づけるため)。
+        /// </summary>
+        public void ApplySyncedNext(int next)
+        {
+            EnsureInitialized();
+
+            _reservedNext = next;
+            _reservedFor = _currentIndex;
+        }
+
+        /// <summary>
+        /// <b>いまは曲を重ねてはいけないか。</b>Phase8-5。
+        /// おやすみタイマーが「この曲で止める」になっている・あとで流す URL が積まれている、のどちらか。
+        /// どちらも「次の曲へ進む」より優先されるので、裏で次の曲を鳴らしてはいけません。
+        /// </summary>
+        public bool CrossfadeBlocked()
+        {
+            if (Options == null) return false;
+            return Options.WillStopAfterTrack() || Options.ExternalCount > 0;
         }
 
         /// <summary>
