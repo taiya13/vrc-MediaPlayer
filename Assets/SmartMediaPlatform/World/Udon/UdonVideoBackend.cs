@@ -70,6 +70,13 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>いま読み込んでいる catalog index。無ければ -1。</summary>
         public int LoadedIndex = -1;
 
+        /// <summary>
+        /// いま読み込んでいるものの目印。カタログの曲なら <see cref="LoadedIndex"/> と同じ、
+        /// URL なら URL の目印(<see cref="UdonPlayerSession.ExternalKeyOf"/>)。無ければ -1。
+        /// 重ねる担当が「裏に読ませたのはどれか」を確かめるのに使います。
+        /// </summary>
+        public int LoadedKey = -1;
+
         /// <summary>読み込みを頼まれた回数。</summary>
         public int LoadCount;
 
@@ -91,6 +98,10 @@ namespace SmartMediaPlatform.World.Udon
 
         // 最後に頼まれた URL。「1 曲繰り返し」で同じ URL を読み直すために覚えておく。
         private VRCUrl _lastExternal;
+        private int _lastExternalKey = -1;
+
+        // 待たせている URL の目印。
+        private int _pendingExternalKey = -1;
         private bool _loadScheduled;
 
         // 読み込んでから一度でも鳴ったか(鳴らずに終わったら失敗とみなす)
@@ -199,6 +210,7 @@ namespace SmartMediaPlatform.World.Udon
                 url = _pendingExternal;
                 _pendingExternal = null;
                 LoadedIndex = -1;
+                LoadedKey = _pendingExternalKey;
             }
             else
             {
@@ -209,6 +221,7 @@ namespace SmartMediaPlatform.World.Udon
                 if (url == null) return false;
 
                 LoadedIndex = _pendingIndex;
+                LoadedKey = _pendingIndex;
             }
 
             LoadCount++;
@@ -296,13 +309,15 @@ namespace SmartMediaPlatform.World.Udon
         /// <see cref="LoadedIndex"/> は -1 になります。カタログの何番でもないので、
         /// 上位が「いまカタログの何を鳴らしているか」と取り違えないためです。
         /// </summary>
-        public bool PlayExternal(VRCUrl url)
+        public bool PlayExternal(VRCUrl url, int key)
         {
             if (Player == null || url == null) return false;
 
             _pendingIndex = -1;
             _pendingExternal = url;
+            _pendingExternalKey = key;
             _lastExternal = url;
+            _lastExternalKey = key;
             LoadedIndex = -1;
             _wantsPlay = true;
 
@@ -322,7 +337,25 @@ namespace SmartMediaPlatform.World.Udon
         public bool ReplayExternal()
         {
             if (_lastExternal == null) return false;
-            return PlayExternal(_lastExternal);
+            return PlayExternal(_lastExternal, _lastExternalKey);
+        }
+
+        /// <summary>
+        /// <b>URL を読み込むだけで、鳴らさない。</b>URL も重ねてつなぐための、<see cref="Preload"/> の URL 版。
+        /// <paramref name="key"/> は URL の目印で、読み終わったら <see cref="LoadedKey"/> がこれになります。
+        /// </summary>
+        public bool PreloadExternal(VRCUrl url, int key)
+        {
+            if (Player == null || url == null) return false;
+
+            _pendingIndex = -1;
+            _pendingExternal = url;
+            _pendingExternalKey = key;
+            _lastExternal = url;
+            _lastExternalKey = key;
+            _wantsPlay = false;
+
+            return LoadOrWait();
         }
 
         public bool Stop()

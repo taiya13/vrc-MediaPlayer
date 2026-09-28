@@ -927,6 +927,117 @@ public static class SimCrossfade
             Networking.SimLocal = null;
             Networking.SimOwner = null;
         });
+
+        Sim.Scenario("[URL を重ねる] URL の次に積んだ URL は、前の URL と重なって入れ替わる(読み直さない)", () =>
+        {
+            var w = Build(6, 60f, true, true);
+
+            PasteUrl(w, "https://example.com/first", 60f);
+            w.Options.PlayUrl();
+            Check(RunUntil(w, () => FrontAudible(w), 15f), "1 本目が鳴り始める");
+
+            PasteUrl(w, "https://example.com/second", 60f);
+            w.Options.EnqueueUrl();
+
+            Check(RunUntil(w, () => w.VolA > Audible && w.VolB > Audible, 70f), "2 本目が、1 本目と重なって鳴り始める");
+            int loads = w.PA.Loads + w.PB.Loads;
+
+            Check(RunUntil(w, () => w.Session.ExternalLabel == "https://example.com/second", 20f),
+                  "1 本目が終わると、2 本目が「いまの曲」になる");
+            Equal(loads, w.PA.Loads + w.PB.Loads, "入れ替えるとき読み直さない");
+            Equal(0, w.Options.ExternalCount, "2 本目は再生予定から外れる");
+            Check(FrontUrl(w) == "https://example.com/second" && FrontAudible(w), "表で 2 本目が鳴り続ける");
+            Check(w.Overlap >= 4f, "4 秒以上重なっている(" + w.Overlap.ToString("0.0") + " 秒)");
+            Check(w.LongestSilence <= 0.3f, "間に無音ができない(最長 " + w.LongestSilence.ToString("0.00") + " 秒)");
+            Check(MinLoadGap() >= 4.99f, "読み込みの間隔は 5 秒以上空いている");
+        });
+
+        Sim.Scenario("[URL を重ねる] カタログの曲の次に積んだ URL も重なる / URL の次の曲も重なる", () =>
+        {
+            var w = Build(6, 60f, true, true);
+            Start(w);
+            Check(RunUntil(w, () => FrontAudible(w), 10f), "曲 0 が鳴り始める");
+
+            PasteUrl(w, "https://example.com/mid", 60f);
+            w.Options.EnqueueUrl();
+            w.Session.Enqueue(3);
+
+            Check(RunUntil(w, () => w.VolA > Audible && w.VolB > Audible, 70f), "曲 0 と URL が重なる");
+            Check(RunUntil(w, () => w.Session.IsExternal, 20f), "URL が「いまの曲」になる");
+            Equal("3", QueueText(w), "曲 3 は再生予定に残る");
+
+            float before = w.Overlap;
+            int events = w.OverlapEvents;
+            Check(RunUntil(w, () => w.Session.CurrentIndex == 3, 80f), "URL のあと曲 3 へ進む");
+            Check(w.OverlapEvents > events && w.Overlap - before >= 4f, "URL と曲 3 も重なる");
+            Check(!w.Session.IsExternal, "カタログの曲へ移ったら URL の印は外れる");
+            Check(w.LongestSilence <= 0.3f, "間に無音ができない");
+        });
+
+        Sim.Scenario("[URL を重ねる] 重なっている最中に ▶▶ を押すと、鳴っている URL をそのまま使う", () =>
+        {
+            var w = Build(6, 60f, true, true);
+            Start(w);
+            Check(RunUntil(w, () => FrontAudible(w), 10f), "曲 0 が鳴り始める");
+
+            PasteUrl(w, "https://example.com/skip", 60f);
+            w.Options.EnqueueUrl();
+            Check(RunUntil(w, () => w.VolA > Audible && w.VolB > Audible, 70f), "重なり始める");
+
+            int loads = w.PA.Loads + w.PB.Loads;
+            Check(w.Session.Next(), "▶▶ を押せる");
+            Run(w, 0.5f);
+
+            Check(w.Session.IsExternal, "URL が「いまの曲」になる");
+            Equal(loads, w.PA.Loads + w.PB.Loads, "読み直さない");
+            Check(FrontUrl(w) == "https://example.com/skip" && FrontAudible(w), "URL が鳴り続けている");
+            Equal(0, w.Options.ExternalCount, "URL は再生予定から外れる");
+        });
+
+        Sim.Scenario("[URL を重ねる] 持ち主でない人の手元でも重なり、同期が届いても読み直さない", () =>
+        {
+            var owner = new VRCPlayerApi { playerId = 1, displayName = "持ち主", isLocal = true, isMaster = true };
+            var guest = new VRCPlayerApi { playerId = 2, displayName = "ゲスト", isLocal = true, isMaster = false };
+
+            var a = Build(6, 60f, true, true);
+            var b = Build(6, 60f, true, true);
+            UdonSyncCoordinator syncA = AttachSync(a);
+            UdonSyncCoordinator syncB = AttachSync(b);
+            Networking.SimOwner = owner;
+
+            AsPlayer(owner, () =>
+            {
+                syncA.EnsureInitialized();
+                PasteUrl(a, "https://example.com/one", 60f);
+                a.Options.PlayUrl();
+                PasteUrl(a, "https://example.com/two", 60f);
+                a.Options.EnqueueUrl();
+            });
+            b.Media["https://example.com/one"] = new SimMedia { Duration = 60f };
+            b.Media["https://example.com/two"] = new SimMedia { Duration = 60f };
+            AsPlayer(guest, () => { syncB.EnsureInitialized(); Deliver(syncA, syncB); });
+
+            Check(RunBoth(a, b, owner, guest, () => FrontAudible(a) && FrontAudible(b), 15f), "二人とも 1 本目が鳴る");
+            Equal(1, b.Options.ExternalCount, "ゲストの再生予定にも 2 本目がある");
+
+            Check(RunBoth(a, b, owner, guest, () => b.VolA > Audible && b.VolB > Audible, 70f),
+                  "ゲストの手元でも 2 本目が重なって鳴り始める");
+            Check(RunBoth(a, b, owner, guest, () => a.Session.ExternalLabel == "https://example.com/two", 20f),
+                  "持ち主は 2 本目へ進む");
+            RunBoth(a, b, owner, guest, () => false, 2f);
+
+            int loads = b.PA.Loads + b.PB.Loads;
+            AsPlayer(owner, () => syncA.Capture());
+            AsPlayer(guest, () => Deliver(syncA, syncB));
+            Run(b, 0.5f);
+
+            Equal("https://example.com/two", b.Session.ExternalLabel, "ゲストも 2 本目が「いまの曲」");
+            Equal(loads, b.PA.Loads + b.PB.Loads, "同期が届いても読み直さない(頭から鳴り直さない)");
+            Check(FrontUrl(b) == "https://example.com/two" && FrontAudible(b), "ゲストの手元で 2 本目が鳴り続ける");
+
+            Networking.SimLocal = null;
+            Networking.SimOwner = null;
+        });
     }
 
     public static void Run()

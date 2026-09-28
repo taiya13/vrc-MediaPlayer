@@ -173,6 +173,68 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>URL を流しているときの見出し(打ち込まれた URL そのもの)。</summary>
         public string ExternalLabel { get { return IsExternal ? _externalLabel : ""; } }
 
+        // ───────── URL の目印(2026-09-28、URL も重ねてつなぐ)─────────
+        //
+        // 重ねる担当は「次の曲」を<b>番号</b>で扱います(裏に読ませたのはどれか・入れ替えたらどれへ進むか)。
+        // URL には番号が無いので、<b>URL の文字から作った目印</b>を、カタログと重ならない範囲の番号として使います。
+        // 同じ URL は必ず同じ目印になるので、持ち主でない人の手元でも同じ番号になります。
+
+        /// <summary>URL の目印の始まり。カタログの番号(0〜数千)とは重ならない。</summary>
+        public const int ExternalKeyBase = 268435456;
+
+        /// <summary><paramref name="key"/> が URL の目印か(カタログの番号でないか)。</summary>
+        public bool IsExternalKey(int key)
+        {
+            return key >= ExternalKeyBase;
+        }
+
+        /// <summary>URL の文字から目印を作る。空なら -1。</summary>
+        public int ExternalKeyOf(string text)
+        {
+            if (text == null || text.Length == 0) return -1;
+
+            int hash = 0;
+            for (int i = 0; i < text.Length; i++) hash = hash * 31 + (int)text[i];
+
+            return ExternalKeyBase + (hash & 0x0FFFFFFF);
+        }
+
+        /// <summary>
+        /// <b>いまの曲の目印。</b>カタログの曲なら番号、URL なら URL の目印、何も無ければ -1。
+        /// 重ねる担当が「表のプレイヤーが、いまの曲を鳴らしているか」を確かめるのに使います。
+        /// </summary>
+        public int CurrentKey
+        {
+            get
+            {
+                if (_currentIndex >= 0) return _currentIndex;
+                if (IsExternal) return ExternalKeyOf(_externalLabel);
+                return -1;
+            }
+        }
+
+        /// <summary>
+        /// <b>次に流すものの目印。</b>あとで流す URL があれば先頭の URL、無ければ <see cref="PeekNextIndex"/>。
+        /// 曲が終わったとき(<see cref="NotifyEnded"/>)と同じ順番です。
+        /// </summary>
+        public int PeekNextKey()
+        {
+            if (Options != null && Options.ExternalCount > 0) return Options.ExternalKeyAt(0);
+            return PeekNextIndex();
+        }
+
+        /// <summary>
+        /// <b>重ねて入れ替えたので、次へ進んだことにする。</b>目印が URL なら URL を、番号なら曲を。
+        /// 読み込みは済んでいるので頼みません。
+        /// </summary>
+        public bool CommitAdvanceToKey(int key)
+        {
+            if (!IsExternalKey(key)) return CommitAdvanceTo(key);
+            if (Options == null) return false;
+
+            return Options.AdoptExternalFromQueue(key);
+        }
+
         /// <summary>URL を流し始めるたびに進む番号(同期で「読み直すか」を決めるのに使う)。</summary>
         public int ExternalSerial { get { return _externalSerial; } }
 
@@ -331,6 +393,12 @@ namespace SmartMediaPlatform.World.Udon
             if (Profile != null && _currentIndex >= 0) Profile.NoteSkipped(_currentIndex);
 
             // 「あとで流す」に積んだ URL が先。再生予定の一覧でも先頭に出ている。
+            // 重ねている最中で、裏でもう鳴っている URL なら、読み直さずにそれを表にする。
+            if (Options != null && Options.ExternalCount > 0 && Crossfade != null
+                && Crossfade.PromoteNow(Options.ExternalKeyAt(0)))
+            {
+                return true;
+            }
             if (Options != null && Options.TryPlayNextExternal()) return true;
 
             if (_queueCount > 0) return TakeFromQueue(0);
@@ -1039,7 +1107,9 @@ namespace SmartMediaPlatform.World.Udon
         public bool CrossfadeBlocked()
         {
             if (Options == null) return false;
-            return Options.WillStopAfterTrack() || Options.ExternalCount > 0;
+
+            // あとで流す URL も、いまは重ねてつなげる(2026-09-28)ので、止める理由にはしない。
+            return Options.WillStopAfterTrack();
         }
 
         /// <summary>

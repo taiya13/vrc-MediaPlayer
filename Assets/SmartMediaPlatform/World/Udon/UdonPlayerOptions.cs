@@ -287,6 +287,17 @@ namespace SmartMediaPlatform.World.Udon
         {
             if (url == null || Session == null) return false;
 
+            // ── 自分の手元でも、もう重ねて入れ替えていた(または裏で鳴らしていた)なら、読み直さない。
+            //    持ち主でない人の手元でも、曲の終わりで裏から表へ入れ替わるためです。
+            //    読み直すと、きれいに重なったあとで頭から鳴り直してしまいます。
+            if (Session.Crossfade != null
+                && Session.Crossfade.FollowRemoteKey(Session.ExternalKeyOf(url.Get())))
+            {
+                _current = url;
+                Session.ApplySyncedExternal(url.Get(), serial);
+                return true;
+            }
+
             bool ok = StartExternal(url);
             Session.ApplySyncedExternal(url.Get(), serial);
             return ok;
@@ -360,6 +371,54 @@ namespace SmartMediaPlatform.World.Udon
             get { EnsureInitialized(); return _externalCount; }
         }
 
+        /// <summary>
+        /// 再生予定の <paramref name="position"/> 番目の URL の目印(重ねる担当が「次」を番号で扱うため)。
+        /// 無ければ -1。
+        /// </summary>
+        public int ExternalKeyAt(int position)
+        {
+            EnsureInitialized();
+            if (position < 0 || position >= _externalCount || Session == null) return -1;
+            return Session.ExternalKeyOf(_externalText[position]);
+        }
+
+        /// <summary>目印が <paramref name="key"/> の URL(裏のプレイヤーに読ませるため)。無ければ null。</summary>
+        public VRCUrl ExternalUrlForKey(int key)
+        {
+            int position = ExternalPositionOf(key);
+            return position >= 0 ? _external[position] : null;
+        }
+
+        private int ExternalPositionOf(int key)
+        {
+            EnsureInitialized();
+            if (key < 0 || Session == null) return -1;
+
+            for (int i = 0; i < _externalCount; i++)
+            {
+                if (Session.ExternalKeyOf(_externalText[i]) == key) return i;
+            }
+            return -1;
+        }
+
+        /// <summary>
+        /// <b>重ねて入れ替えた URL を、「いまの曲」にする。</b>再生予定から外すだけで、読み込みは頼みません
+        /// (裏のプレイヤーで、もう鳴っているため)。
+        /// </summary>
+        public bool AdoptExternalFromQueue(int key)
+        {
+            int position = ExternalPositionOf(key);
+            if (position < 0) return false;
+
+            VRCUrl url = _external[position];
+            RemoveExternalAt(position);
+            if (url == null) return false;
+
+            if (Session != null) Session.NotifyExternalPlayback(url.Get());
+            _current = url;
+            return true;
+        }
+
         /// <summary>再生予定の一覧に出す文字(打ち込まれた URL そのもの)。</summary>
         public string ExternalTextAt(int position)
         {
@@ -382,7 +441,7 @@ namespace SmartMediaPlatform.World.Udon
             UdonVideoBackend backend = ResolveBackend();
             if (backend == null) return false;
 
-            return backend.PlayExternal(url);
+            return backend.PlayExternal(url, Session != null ? Session.ExternalKeyOf(url.Get()) : -1);
         }
 
         private VRCUrl ReadUrl()

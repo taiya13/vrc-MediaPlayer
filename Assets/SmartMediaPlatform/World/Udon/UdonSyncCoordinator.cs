@@ -574,10 +574,8 @@ namespace SmartMediaPlatform.World.Udon
             if (active == null || Session == null) return false;
             if (active.IsLoading) return false;
 
-            // URL はカタログの番号を持たない(-1)。読み込みが終わっていれば、それがいまの URL。
-            if (Session.IsExternal) return active.LoadedIndex < 0;
-
-            return active.LoadedIndex == Session.CurrentIndex;
+            // 目印で比べる(カタログの曲なら番号、URL なら URL の目印)。
+            return active.LoadedKey == Session.CurrentKey;
         }
 
         /// <summary>

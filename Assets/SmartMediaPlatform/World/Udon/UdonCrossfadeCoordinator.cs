@@ -127,6 +127,10 @@ namespace SmartMediaPlatform.World.Udon
         // いま表にいるのが B か。false なら A。
         private bool _bIsFront;
 
+        // 手元で重ねて入れ替えた曲の目印(同期で同じ曲が届いたら、読み直さずに済ませるため)。
+        // 届いて使ったら -1 に戻す。同じ URL を<b>もう一度流した</b>ときに、読み直しを飛ばさないように。
+        private int _swappedKey = -1;
+
         private float _nextCheck;
         private bool _initialized;
 
@@ -268,14 +272,16 @@ namespace SmartMediaPlatform.World.Udon
             UdonVideoBackend back = Back;
             if (front == null || back == null) return;
 
-            int current = Session.CurrentIndex;
-            bool frontOnCurrent = current >= 0 && front.LoadedIndex == current && !front.IsLoading;
+            // ── 曲は<b>目印</b>で比べます(2026-09-28)。カタログの曲なら番号、URL なら URL の目印。
+            //    これで URL の動画も、カタログの曲と同じ道で重ねてつなげます。
+            int current = Session.CurrentKey;
+            bool frontOnCurrent = current >= 0 && front.LoadedKey == current && !front.IsLoading;
 
             // 次の曲を聞くのは、要るときだけ(聞くとおすすめを選ぶことがあるため)。
             int next = -1;
-            if (_state != StateIdle || NearPreload(front)) next = Session.PeekNextIndex();
+            if (_state != StateIdle || NearPreload(front)) next = Session.PeekNextKey();
 
-            bool backReady = _pending >= 0 && back.LoadedIndex == _pending && back.IsReadyToPlay;
+            bool backReady = _pending >= 0 && back.LoadedKey == _pending && back.IsReadyToPlay;
 
             int action = Decide(
                 IsActive(), Session.CrossfadeBlocked(), Session.IsPlaying,
@@ -323,7 +329,19 @@ namespace SmartMediaPlatform.World.Udon
             UdonTrackFader backFader = FaderOf(back);
             if (backFader != null) backFader.PrepareIncoming();
 
-            if (!back.Preload(next))
+            bool started;
+            if (Session.IsExternalKey(next))
+            {
+                // 次は「あとで流す」に積まれた URL。人が URL 欄に打ったものを、そのまま裏へ渡す。
+                started = Session.Options != null
+                          && back.PreloadExternal(Session.Options.ExternalUrlForKey(next), next);
+            }
+            else
+            {
+                started = back.Preload(next);
+            }
+
+            if (!started)
             {
                 MarkFailed(front.LoadCount);
                 if (LogFade) Log("次の曲を裏で読み込めませんでした。この曲は重ねずにつなぎます(index " + next + ")");
@@ -429,6 +447,7 @@ namespace SmartMediaPlatform.World.Udon
         public bool PlayImmediate(int catalogIndex)
         {
             EnsureInitialized();
+            _swappedKey = -1;
 
             if (_state != StateIdle)
             {
@@ -487,6 +506,61 @@ namespace SmartMediaPlatform.World.Udon
         }
 
         /// <summary>
+        /// <b>「次へ」が押された。裏でもう鳴っている(読んである)のがその曲なら、読み直さずに表にする。</b>
+        /// URL の動画の「次へ」用(カタログの曲は <see cref="PlayImmediate"/> が同じことをする)。
+        /// </summary>
+        /// <returns>表にしたら true。false なら、呼び出し側がふつうに読み込む。</returns>
+        public bool PromoteNow(int key)
+        {
+            EnsureInitialized();
+            if (_state == StateIdle) return false;
+
+            int promoted = PromoteFor(key);
+            if (promoted < 0)
+            {
+                StopBack("別の曲が選ばれたので、裏の曲はやめました");
+                return false;
+            }
+
+            Swap(promoted, true);
+            return true;
+        }
+
+        /// <summary>
+        /// <b>同期で「持ち主は URL をこれにした」と届いた。</b>持ち主以外の手元で呼ばれます(URL 版の <see cref="FollowRemote"/>)。
+        /// 手元でもう入れ替わっている・裏に読んであるなら、読み直さずに済ませて true。
+        /// </summary>
+        public bool FollowRemoteKey(int key)
+        {
+            EnsureInitialized();
+            if (key < 0) return false;
+
+            UdonVideoBackend front = Front;
+            if (front == null) return false;
+
+            if (front.LoadedKey == key && _swappedKey == key)
+            {
+                _swappedKey = -1;
+                if (!front.IsPlaying && !front.IsLoading) front.Play();
+                return true;
+            }
+
+            if (_state != StateIdle)
+            {
+                int promoted = PromoteFor(key);
+                if (promoted >= 0)
+                {
+                    Swap(promoted, false);
+                    return true;
+                }
+
+                StopBack("持ち主が別の曲にしたので、裏の曲はやめました");
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// 重ねている途中でやめる(止められた・一時停止された)。表だけが鳴っている状態に戻します。
         /// </summary>
         public void CancelFade()
@@ -516,6 +590,7 @@ namespace SmartMediaPlatform.World.Udon
             UdonVideoBackend oldFront = Front;
 
             _bIsFront = !_bIsFront;
+            _swappedKey = pending;
 
             UdonVideoBackend newFront = Front;
 
@@ -528,13 +603,13 @@ namespace SmartMediaPlatform.World.Udon
 
             if (Session != null)
             {
-                if (commit) Session.CommitAdvanceTo(pending);
+                if (commit) Session.CommitAdvanceToKey(pending);
 
                 // 裏にいる間は「鳴り始めた」を Session へ送っていないので、ここで送る
                 // (履歴・再生回数に数えるため)。まだ鳴っていなければ、鳴り始めたときに届く。
                 // Session がまだこの曲へ進んでいない(持ち主でない人)なら送らない —
                 // 前の曲を二度数えてしまうため。
-                if (newFront != null && newFront.HasStarted && Session.CurrentIndex == pending)
+                if (newFront != null && newFront.HasStarted && Session.CurrentKey == pending)
                 {
                     Session.NotifyStarted();
                 }
