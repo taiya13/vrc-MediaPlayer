@@ -1,0 +1,21 @@
+{
+    "name": "SmartMediaPlatform.CatalogBuilder.Editor",
+    "rootNamespace": "SmartMediaPlatform.CatalogBuilder.EditorTools",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Catalog.Assets",
+        "SmartMediaPlatform.CatalogBuilder",
+        "SmartMediaPlatform.CatalogBuilder.YouTube"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,23 @@
+{
+    "name": "SmartMediaPlatform.World.VRChat",
+    "rootNamespace": "SmartMediaPlatform.World.VRChat",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Backend",
+        "SmartMediaPlatform.Adapter",
+        "SmartMediaPlatform.Video",
+        "SmartMediaPlatform.Video.VRChat",
+        "SmartMediaPlatform.World"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "VRC_SDK_VRCSDK3"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

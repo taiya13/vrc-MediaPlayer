@@ -1,0 +1,1082 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Smart Media Platform Phase7 の UI 全面リデザイン案。壁パネル・タブ・リモコンのワイヤーフレーム。">
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; }
+  img, svg { max-width: 100%; }
+</style>
+<title>Phase7 UI 設計案 — Smart Media Platform</title>
+<style>
+  :root {
+    --ground:      #f6f7fa;
+    --ground-2:    #ffffff;
+    --rule:        #d7dce6;
+    --rule-soft:   #e7eaf1;
+    --ink:         #10141c;
+    --ink-2:       #4a5568;
+    --ink-3:       #78849a;
+    --accent:      #1c6ba8;
+    --accent-soft: #e3f0fa;
+    --warn:        #9a5b00;
+    --warn-soft:   #fdf1dc;
+    --good:        #1c6b4a;
+    --good-soft:   #e0f2e9;
+
+    /* パネルの実物。テーマに関係なく暗いまま描く。 */
+    --panel-bg:    #12141a;
+    --panel-sec:   #212430;
+    --panel-face:  #333845;
+    --panel-row:   #292b36;
+    --panel-cyan:  #59b8f2;
+    --panel-blue:  #266ba8;
+    --panel-text:  #f2f5fa;
+    --panel-dim:   #a8b3c7;
+
+    --sans: "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "Yu Gothic",
+            "Noto Sans JP", "Segoe UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground:      #0e1116;
+      --ground-2:    #151920;
+      --rule:        #2b323d;
+      --rule-soft:   #21262f;
+      --ink:         #eef1f6;
+      --ink-2:       #b0bacb;
+      --ink-3:       #7e8a9e;
+      --accent:      #64b6ea;
+      --accent-soft: #16232f;
+      --warn:        #e0a84a;
+      --warn-soft:   #2a2113;
+      --good:        #5cc79a;
+      --good-soft:   #12241c;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0e1116;
+    --ground-2:    #151920;
+    --rule:        #2b323d;
+    --rule-soft:   #21262f;
+    --ink:         #eef1f6;
+    --ink-2:       #b0bacb;
+    --ink-3:       #7e8a9e;
+    --accent:      #64b6ea;
+    --accent-soft: #16232f;
+    --warn:        #e0a84a;
+    --warn-soft:   #2a2113;
+    --good:        #5cc79a;
+    --good-soft:   #12241c;
+  }
+  :root[data-theme="light"] {
+    --ground:      #f6f7fa;
+    --ground-2:    #ffffff;
+    --rule:        #d7dce6;
+    --rule-soft:   #e7eaf1;
+    --ink:         #10141c;
+    --ink-2:       #4a5568;
+    --ink-3:       #78849a;
+    --accent:      #1c6ba8;
+    --accent-soft: #e3f0fa;
+    --warn:        #9a5b00;
+    --warn-soft:   #fdf1dc;
+    --good:        #1c6b4a;
+    --good-soft:   #e0f2e9;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15.5px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 28px 120px;
+  }
+  .col { max-width: 68ch; }
+
+  /* ── 見出し ───────────────────────────── */
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 11.5px;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin: 0 0 10px;
+  }
+  h1 {
+    font-size: clamp(30px, 4.4vw, 46px);
+    line-height: 1.18;
+    letter-spacing: -.022em;
+    font-weight: 700;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: clamp(21px, 2.5vw, 27px);
+    line-height: 1.3;
+    letter-spacing: -.015em;
+    font-weight: 700;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 17px;
+    letter-spacing: -.008em;
+    font-weight: 700;
+    margin: 0 0 8px;
+  }
+  p { margin: 0 0 15px; }
+  strong { font-weight: 700; }
+  code {
+    font-family: var(--mono);
+    font-size: .88em;
+    background: var(--rule-soft);
+    padding: .1em .38em;
+    border-radius: 3px;
+  }
+
+  header.top {
+    padding: 68px 0 40px;
+    border-bottom: 1px solid var(--rule);
+    margin-bottom: 44px;
+  }
+  .lede {
+    font-size: 18px;
+    line-height: 1.68;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0;
+  }
+
+  /* ── 数字の帯 ─────────────────────────── */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    background: var(--rule);
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-top: 34px;
+  }
+  .metric { background: var(--ground-2); padding: 18px 20px; }
+  .metric dt {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    margin-bottom: 7px;
+  }
+  .metric dd {
+    margin: 0;
+    font-size: 25px;
+    font-weight: 700;
+    letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums;
+  }
+  .metric dd .from { color: var(--ink-3); font-weight: 400; }
+  .metric dd .to { color: var(--accent); }
+
+  /* ── 節 ───────────────────────────────── */
+  section { margin: 0 0 72px; }
+  .sec-head {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    border-top: 2px solid var(--ink);
+    padding-top: 12px;
+    margin-bottom: 22px;
+  }
+  .sec-num {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    color: var(--accent);
+    flex: none;
+    padding-top: 4px;
+  }
+
+  /* ── 図面 ─────────────────────────────── */
+  figure { margin: 26px 0 0; }
+  .plate {
+    background: var(--panel-bg);
+    border: 1px solid var(--rule);
+    border-radius: 8px;
+    padding: 26px;
+    overflow-x: auto;
+  }
+  .plate svg { display: block; min-width: 620px; width: 100%; height: auto; }
+  figcaption {
+    font-size: 13.5px;
+    color: var(--ink-3);
+    margin-top: 11px;
+    line-height: 1.6;
+  }
+  figcaption b { color: var(--ink-2); font-weight: 700; }
+
+  /* ── 対比 ─────────────────────────────── */
+  .pair {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+    gap: 22px;
+    margin-top: 26px;
+  }
+  .pair > figure { margin: 0; }
+
+  /* ── 表 ───────────────────────────────── */
+  .tbl-wrap { overflow-x: auto; margin: 22px 0 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td {
+    text-align: left;
+    padding: 9px 14px 9px 0;
+    border-bottom: 1px solid var(--rule-soft);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--ink-3);
+    font-weight: 400;
+    border-bottom-color: var(--rule);
+    white-space: nowrap;
+  }
+  td.num, th.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.dim { font-family: var(--mono); font-size: 13px; color: var(--ink-2); white-space: nowrap; }
+
+  /* ── 方針カード ────────────────────────── */
+  .rules { display: grid; gap: 1px; background: var(--rule); border: 1px solid var(--rule);
+           border-radius: 6px; overflow: hidden; margin-top: 24px; }
+  .rule { background: var(--ground-2); padding: 18px 22px; }
+  .rule h3 { margin-bottom: 4px; }
+  .rule p { margin: 0; color: var(--ink-2); font-size: 14.5px; }
+  .rule p + p { margin-top: 8px; }
+
+  /* ── 注記 ─────────────────────────────── */
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    padding: 15px 20px;
+    border-radius: 0 5px 5px 0;
+    margin: 24px 0 0;
+    font-size: 14.5px;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  .note.decide { border-left-color: var(--warn); background: var(--warn-soft); }
+  .note.keep { border-left-color: var(--good); background: var(--good-soft); }
+  .note-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 6px;
+    color: var(--accent);
+  }
+  .note.decide .note-label { color: var(--warn); }
+  .note.keep .note-label { color: var(--good); }
+
+  /* ── 選択肢 ───────────────────────────── */
+  .options { display: grid; gap: 14px; margin-top: 22px; }
+  .option {
+    border: 1px solid var(--rule);
+    border-radius: 6px;
+    background: var(--ground-2);
+    padding: 18px 22px;
+  }
+  .option.pick { border-color: var(--accent); border-width: 2px; padding: 17px 21px; }
+  .option-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+  .option-head h3 { margin: 0; }
+  .tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: var(--rule-soft);
+    color: var(--ink-3);
+    white-space: nowrap;
+  }
+  .tag.rec { background: var(--accent); color: #fff; }
+  .option ul { margin: 0; padding-left: 1.2em; color: var(--ink-2); font-size: 14.5px; }
+  .option li { margin-bottom: 3px; }
+
+  ul.plain { padding-left: 1.25em; margin: 0 0 15px; }
+  ul.plain li { margin-bottom: 6px; }
+
+  footer.ask {
+    border-top: 2px solid var(--ink);
+    padding-top: 22px;
+    margin-top: 12px;
+  }
+
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <p class="eyebrow">Phase 7 · 設計案（実装前レビュー）</p>
+  <h1>開発ツールの見た目を捨てて、<br>音楽プレイヤーにする</h1>
+  <p class="lede">
+    いまのパネルは 3 つの一覧と 7 つのボタンが同じ大きさで並んでいます。
+    正しく動きますが、<strong>初めて見た人がどこを押せばいいか分かりません</strong>。
+    機能は 1 つも足さずに、情報の量と置き方だけを組み直します。
+  </p>
+
+  <dl class="metrics">
+    <div class="metric">
+      <dt>押せるもの</dt>
+      <dd><span class="from">42</span> → <span class="to">22</span></dd>
+    </div>
+    <div class="metric">
+      <dt>同時に見える一覧</dt>
+      <dd><span class="from">3</span> → <span class="to">1</span></dd>
+    </div>
+    <div class="metric">
+      <dt>サムネイル</dt>
+      <dd><span class="from">0</span> → <span class="to">6 枚</span></dd>
+    </div>
+    <div class="metric">
+      <dt>いちばん大きい要素</dt>
+      <dd class="to" style="color:var(--accent)">73 × 41 cm</dd>
+    </div>
+  </dl>
+</header>
+
+<!-- ══════════════════════════════════════ 1 ── -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">01</span>
+    <h2>いまの画面で起きていること</h2>
+  </div>
+
+  <div class="col">
+    <p>
+      下は現在の壁パネルを実寸比で描いたものです。
+      <strong>13 行の曲名と 7 つのボタンが、ほぼ同じ大きさで 42 か所ぶん並んでいます。</strong>
+      どれが「いま鳴っているもの」なのかは、左上の小さな文字だけが頼りです。
+    </p>
+  </div>
+
+  <figure>
+    <div class="plate">
+      <svg viewBox="0 0 1400 980" role="img" aria-label="現在の壁パネルの構成図">
+        <rect width="1400" height="980" fill="#12141a"/>
+        <text x="28" y="52" fill="#f2f5fa" font-size="30" font-family="sans-serif">Smart Media Player</text>
+        <text x="1372" y="52" fill="#a8b3c7" font-size="20" font-family="sans-serif" text-anchor="end">操作中: ○○</text>
+        <rect x="28" y="86" width="1344" height="2" fill="#212430"/>
+
+        <!-- 左列 -->
+        <g>
+          <rect x="28" y="104" width="658" height="34" fill="#292b36"/>
+          <text x="38" y="127" fill="#a8b3c7" font-size="17" font-family="sans-serif">再生中</text>
+          <rect x="28" y="142" width="658" height="46" fill="#292b36"/>
+          <text x="38" y="172" fill="#f2f5fa" font-size="24" font-family="sans-serif">曲名がここに 1 行だけ</text>
+          <rect x="28" y="196" width="658" height="14" fill="#333845"/>
+          <rect x="28" y="196" width="220" height="14" fill="#59b8f2"/>
+          <text x="38" y="238" fill="#a8b3c7" font-size="17" font-family="sans-serif">1:12</text>
+          <text x="357" y="238" fill="#a8b3c7" font-size="17" font-family="sans-serif" text-anchor="middle">残り 2:22</text>
+          <text x="676" y="238" fill="#a8b3c7" font-size="17" font-family="sans-serif" text-anchor="end">再生中</text>
+
+          <!-- 操作 7 個 -->
+          <g fill="#333845">
+            <rect x="28" y="270" width="150" height="88" rx="4"/>
+            <rect x="194" y="270" width="316" height="88" rx="4" fill="#266ba8"/>
+            <rect x="526" y="270" width="160" height="88" rx="4"/>
+            <rect x="28" y="374" width="150" height="76" rx="4"/>
+            <rect x="194" y="374" width="120" height="76" rx="4"/>
+            <rect x="400" y="374" width="120" height="76" rx="4"/>
+            <rect x="536" y="374" width="150" height="76" rx="4"/>
+          </g>
+          <text x="103" y="322" fill="#f2f5fa" font-size="22" font-family="sans-serif" text-anchor="middle">◀◀</text>
+          <text x="352" y="322" fill="#ffffff" font-size="22" font-family="sans-serif" text-anchor="middle">▶ 再生</text>
+          <text x="606" y="322" fill="#f2f5fa" font-size="22" font-family="sans-serif" text-anchor="middle">▶▶</text>
+          <text x="103" y="420" fill="#f2f5fa" font-size="18" font-family="sans-serif" text-anchor="middle">■ 停止</text>
+          <text x="254" y="420" fill="#f2f5fa" font-size="18" font-family="sans-serif" text-anchor="middle">−</text>
+          <text x="357" y="420" fill="#a8b3c7" font-size="17" font-family="sans-serif" text-anchor="middle">60%</text>
+          <text x="460" y="420" fill="#f2f5fa" font-size="18" font-family="sans-serif" text-anchor="middle">＋</text>
+          <text x="611" y="420" fill="#f2f5fa" font-size="16" font-family="sans-serif" text-anchor="middle">予定を空に</text>
+
+          <!-- 再生予定 4 行 -->
+          <text x="28" y="500" fill="#f2f5fa" font-size="22" font-family="sans-serif">再生予定</text>
+          <g fill="#333845">
+            <rect x="500" y="474" width="86" height="36" rx="3"/>
+            <rect x="600" y="474" width="86" height="36" rx="3"/>
+          </g>
+          <g>
+            <rect x="28" y="522" width="570" height="72" fill="#292b36"/>
+            <rect x="606" y="522" width="80" height="72" fill="#333845"/>
+            <rect x="28" y="602" width="570" height="72" fill="#21232c"/>
+            <rect x="606" y="602" width="80" height="72" fill="#333845"/>
+            <rect x="28" y="682" width="570" height="72" fill="#292b36"/>
+            <rect x="606" y="682" width="80" height="72" fill="#333845"/>
+            <rect x="28" y="762" width="570" height="72" fill="#21232c"/>
+            <rect x="606" y="762" width="80" height="72" fill="#333845"/>
+          </g>
+          <g fill="#f2f5fa" font-size="19" font-family="sans-serif">
+            <text x="44" y="565">♪ 曲名</text><text x="44" y="645">1 曲名</text>
+            <text x="44" y="725">2 曲名</text><text x="44" y="805">3 曲名</text>
+          </g>
+          <text x="28" y="878" fill="#a8b3c7" font-size="17" font-family="sans-serif">行を押すと再生します。</text>
+        </g>
+
+        <!-- 右列 -->
+        <g transform="translate(714,0)">
+          <text x="0" y="128" fill="#f2f5fa" font-size="22" font-family="sans-serif">すべての曲</text>
+          <g fill="#333845">
+            <rect x="472" y="102" width="86" height="36" rx="3"/>
+            <rect x="572" y="102" width="86" height="36" rx="3"/>
+          </g>
+          <g>
+            <rect x="0" y="150" width="570" height="72" fill="#292b36"/><rect x="578" y="150" width="80" height="72" fill="#333845"/>
+            <rect x="0" y="230" width="570" height="72" fill="#21232c"/><rect x="578" y="230" width="80" height="72" fill="#333845"/>
+            <rect x="0" y="310" width="570" height="72" fill="#292b36"/><rect x="578" y="310" width="80" height="72" fill="#333845"/>
+            <rect x="0" y="390" width="570" height="72" fill="#21232c"/><rect x="578" y="390" width="80" height="72" fill="#333845"/>
+            <rect x="0" y="470" width="570" height="72" fill="#292b36"/><rect x="578" y="470" width="80" height="72" fill="#333845"/>
+            <rect x="0" y="550" width="570" height="72" fill="#21232c"/><rect x="578" y="550" width="80" height="72" fill="#333845"/>
+          </g>
+          <g fill="#f2f5fa" font-size="19" font-family="sans-serif">
+            <text x="16" y="193">1 曲名</text><text x="16" y="273">2 曲名</text><text x="16" y="353">3 曲名</text>
+            <text x="16" y="433">4 曲名</text><text x="16" y="513">5 曲名</text><text x="16" y="593">6 曲名</text>
+          </g>
+          <text x="0" y="668" fill="#f2f5fa" font-size="22" font-family="sans-serif">おすすめ</text>
+          <g>
+            <rect x="0" y="690" width="570" height="72" fill="#292b36"/><rect x="578" y="690" width="80" height="72" fill="#333845"/>
+            <rect x="0" y="770" width="570" height="72" fill="#21232c"/><rect x="578" y="770" width="80" height="72" fill="#333845"/>
+            <rect x="0" y="850" width="570" height="72" fill="#292b36"/><rect x="578" y="850" width="80" height="72" fill="#333845"/>
+          </g>
+          <g fill="#f2f5fa" font-size="19" font-family="sans-serif">
+            <text x="16" y="733">▷ 曲名</text><text x="16" y="813">▷ 曲名</text><text x="16" y="893">▷ 曲名</text>
+          </g>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      <b>現在（1400 × 980 px ＝ 1.82 × 1.27 m）。</b>
+      青い枠が「押せるもの」で <b>42 か所</b>。曲名はすべて同じ 19 px、
+      「再生中」の曲名だけが 24 px で、5 px しか差がありません。
+    </figcaption>
+  </figure>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>症状</th><th>数で見ると</th><th>原因</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>どこを見ればいいか分からない</td>
+          <td class="dim">押せる所 42 / 一覧 3 本</td>
+          <td>すべてを同時に出しているため、優先順位が無い</td>
+        </tr>
+        <tr>
+          <td>再生中が目立たない</td>
+          <td class="dim">曲名 24 px（一覧は 19 px）</td>
+          <td>差が 5 px しかなく、離れると読み分けられない</td>
+        </tr>
+        <tr>
+          <td>窮屈</td>
+          <td class="dim">余白 28 px ＝ 3.6 cm</td>
+          <td>行間 8 px、区切りが罫線だけ</td>
+        </tr>
+        <tr>
+          <td>曲を探しにくい</td>
+          <td class="dim">絵 0 枚</td>
+          <td>手がかりが文字だけ。42 件を上から読むしかない</td>
+        </tr>
+        <tr>
+          <td>おすすめがただの一覧</td>
+          <td class="dim">3 行、理由なし</td>
+          <td>なぜ出ているのかが書かれていない</td>
+        </tr>
+        <tr>
+          <td>ボタンの意味が分からない</td>
+          <td class="dim">操作 7 個</td>
+          <td>よく使う 3 個と、めったに使わない 4 個が同列</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ 2 ── -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">02</span>
+    <h2>直し方の方針</h2>
+  </div>
+
+  <div class="col">
+    <p>
+      Spotify・YouTube Music・Steam に共通しているのは
+      <strong>「いま聴いているものを大きく、探すものはカードで、設定は奥へ」</strong>の 3 点です。
+      VRChat 自体の UI も、押せるものが大きく少ないところが同じです。
+      これを VR の制約（腕の届く距離・2 m 先の可読性）に合わせて持ち込みます。
+    </p>
+  </div>
+
+  <div class="rules">
+    <div class="rule">
+      <h3>一度に見せる一覧は 1 本だけ</h3>
+      <p>「すべての曲 / おすすめ / 再生予定」をタブで切り替えます。同時に見える行が 13 → 5 になり、1 行あたりに使える面積が 2 倍以上になります。</p>
+      <p>タブは <strong>いま何件あるか</strong>も出します（「再生予定 3」）。切り替えないと分からない、を防ぎます。</p>
+    </div>
+    <div class="rule">
+      <h3>再生中を、パネルの主役にする</h3>
+      <p>左半分をまるごと使い、<strong>73 × 41 cm のサムネイル</strong>を置きます。2 m 離れても何が鳴っているか一目で分かります。曲名は 46 px（6 cm）で、一覧の 2 倍近い大きさです。</p>
+    </div>
+    <div class="rule">
+      <h3>大きいボタンは 3 つだけ</h3>
+      <p>前へ・再生 / 一時停止・次へ。この 3 つが操作の 9 割です。<strong>停止と「予定を空に」は「…」の中へ</strong>移します。音量は −／＋ の 2 つに減らして 1 行に収めます。</p>
+    </div>
+    <div class="rule">
+      <h3>行にサムネイルと 2 段組を入れる</h3>
+      <p>1 行 112 px（14.6 cm）。左に 160 × 90 の絵、右上に曲名、右下にチャンネルとジャンル。<strong>絵とジャンルの色で、読まずに見分けられます。</strong></p>
+    </div>
+    <div class="rule">
+      <h3>おすすめは「理由」を添える</h3>
+      <p>ただ並べるのをやめ、<strong>「○○ と同じチャンネル」「同じ Vocaloid」</strong>のように、なぜ出ているかを 1 行で書きます。Phase6-4 の関連生成がすでにこの情報を持っています。</p>
+    </div>
+    <div class="rule">
+      <h3>余白を 3.6 cm → 5.7 cm に</h3>
+      <p>外周 44 px、区切り 36 px、行間 10 px。<strong>罫線を減らして余白で区切ります</strong>。開発ツールらしさの大半は、詰まった罫線から来ています。</p>
+    </div>
+  </div>
+
+  <div class="note">
+    <span class="note-label">VR の制約は守ります</span>
+    <p>
+      押せるものはすべて <code>4.5 cm</code> 以上（Phase5-5 で決めた <code>ComfortableTouchMeters</code>）。
+      パネルは <strong>1.82 m 幅</strong>のまま — これ以上広げると首を振らないと端が見えません。
+      レイキャストが通らない実機に備えて、<strong>uGUI と「使う」の両対応も維持</strong>します。
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ 3 ── -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">03</span>
+    <h2>新しい壁パネル</h2>
+  </div>
+
+  <div class="col">
+    <p>
+      1400 × 860 px ＝ <strong>1.82 × 1.12 m</strong>。幅は今のまま、縦を 1.27 m から縮めて
+      目の高さの帯に収めます。左が「いま」、右が「これから」です。
+    </p>
+  </div>
+
+  <figure>
+    <div class="plate">
+      <svg viewBox="-6 -6 1412 940" role="img" aria-label="新しい壁パネルのワイヤーフレーム">
+        <defs>
+          <linearGradient id="art" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#2d3f5c"/>
+            <stop offset="100%" stop-color="#1b2536"/>
+          </linearGradient>
+          <linearGradient id="art2" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#3a3350"/>
+            <stop offset="100%" stop-color="#201e2e"/>
+          </linearGradient>
+        </defs>
+
+        <rect x="0" y="0" width="1400" height="860" fill="#12141a" rx="6"/>
+
+        <!-- ── 左列 ─────────────────────── -->
+        <g transform="translate(42,42)">
+          <!-- アートワーク 560×315 -->
+          <rect width="560" height="315" rx="5" fill="url(#art)"/>
+          <circle cx="280" cy="157" r="52" fill="none" stroke="#59b8f2" stroke-width="2" opacity=".5"/>
+          <path d="M266 133 L266 181 L306 157 Z" fill="#59b8f2" opacity=".5"/>
+          <text x="280" y="230" fill="#8fa3bd" font-size="15" font-family="sans-serif" text-anchor="middle">アートワーク 560 × 315 px（73 × 41 cm）</text>
+
+          <!-- 曲名 -->
+          <text x="0" y="392" fill="#f2f5fa" font-size="46" font-family="sans-serif" font-weight="bold">アイドル</text>
+          <text x="0" y="440" fill="#a8b3c7" font-size="28" font-family="sans-serif">YOASOBI</text>
+          <rect x="0" y="458" width="86" height="30" rx="15" fill="#1d3346"/>
+          <text x="43" y="479" fill="#59b8f2" font-size="17" font-family="sans-serif" text-anchor="middle">J-POP</text>
+
+          <!-- 進捗 -->
+          <rect x="0" y="512" width="560" height="12" rx="6" fill="#333845"/>
+          <rect x="0" y="512" width="196" height="12" rx="6" fill="#59b8f2"/>
+          <circle cx="196" cy="518" r="9" fill="#f2f5fa"/>
+          <text x="0" y="556" fill="#a8b3c7" font-size="19" font-family="sans-serif">1:12</text>
+          <text x="560" y="556" fill="#a8b3c7" font-size="19" font-family="sans-serif" text-anchor="end">残り 2:22</text>
+
+          <!-- 操作 3 + … -->
+          <g>
+            <rect x="0" y="588" width="120" height="116" rx="10" fill="#333845"/>
+            <rect x="136" y="588" width="220" height="116" rx="10" fill="#59b8f2"/>
+            <rect x="372" y="588" width="120" height="116" rx="10" fill="#333845"/>
+            <rect x="508" y="588" width="52" height="116" rx="10" fill="#21242e"/>
+          </g>
+          <text x="60" y="656" fill="#f2f5fa" font-size="34" font-family="sans-serif" text-anchor="middle">◀◀</text>
+          <text x="246" y="650" fill="#0d1b26" font-size="30" font-family="sans-serif" font-weight="bold" text-anchor="middle">⏸</text>
+          <text x="246" y="682" fill="#0d1b26" font-size="19" font-family="sans-serif" text-anchor="middle">一時停止</text>
+          <text x="432" y="656" fill="#f2f5fa" font-size="34" font-family="sans-serif" text-anchor="middle">▶▶</text>
+          <text x="534" y="656" fill="#a8b3c7" font-size="30" font-family="sans-serif" text-anchor="middle">…</text>
+
+          <!-- 音量 -->
+          <text x="0" y="758" fill="#a8b3c7" font-size="18" font-family="sans-serif">音量</text>
+          <rect x="0" y="716" width="88" height="60" rx="8" fill="none"/>
+          <g>
+            <rect x="70" y="716" width="88" height="60" rx="8" fill="#21242e"/>
+            <rect x="472" y="716" width="88" height="60" rx="8" fill="#21242e"/>
+          </g>
+          <text x="114" y="754" fill="#f2f5fa" font-size="26" font-family="sans-serif" text-anchor="middle">−</text>
+          <text x="516" y="754" fill="#f2f5fa" font-size="26" font-family="sans-serif" text-anchor="middle">＋</text>
+          <rect x="176" y="740" width="280" height="10" rx="5" fill="#333845"/>
+          <rect x="176" y="740" width="168" height="10" rx="5" fill="#a8b3c7"/>
+        </g>
+
+        <!-- ── 右列 ─────────────────────── -->
+        <g transform="translate(638,42)">
+          <!-- タブ -->
+          <rect x="0" y="0" width="234" height="76" rx="8" fill="#1d3346"/>
+          <rect x="0" y="70" width="234" height="6" rx="3" fill="#59b8f2"/>
+          <rect x="242" y="0" width="234" height="76" rx="8" fill="#1a1c24"/>
+          <rect x="484" y="0" width="236" height="76" rx="8" fill="#1a1c24"/>
+          <text x="117" y="48" fill="#f2f5fa" font-size="24" font-family="sans-serif" font-weight="bold" text-anchor="middle">すべての曲</text>
+          <text x="359" y="48" fill="#a8b3c7" font-size="24" font-family="sans-serif" text-anchor="middle">おすすめ</text>
+          <text x="602" y="48" fill="#a8b3c7" font-size="24" font-family="sans-serif" text-anchor="middle">再生予定 3</text>
+
+          <!-- 行 × 5 -->
+          <g>
+            <!-- row 1 : 再生中 -->
+            <rect x="0" y="92" width="720" height="112" rx="8" fill="#1d3346"/>
+            <rect x="0" y="92" width="6" height="112" rx="3" fill="#59b8f2"/>
+            <rect x="22" y="103" width="160" height="90" rx="4" fill="url(#art)"/>
+            <text x="202" y="140" fill="#ffffff" font-size="26" font-family="sans-serif" font-weight="bold">アイドル</text>
+            <text x="202" y="174" fill="#a8b3c7" font-size="19" font-family="sans-serif">YOASOBI · J-POP</text>
+            <text x="556" y="156" fill="#a8b3c7" font-size="19" font-family="sans-serif" text-anchor="end">3:34</text>
+            <rect x="600" y="104" width="88" height="88" rx="8" fill="#2b3d52"/>
+            <text x="644" y="158" fill="#59b8f2" font-size="30" font-family="sans-serif" text-anchor="middle">♪</text>
+
+            <!-- row 2 -->
+            <rect x="0" y="214" width="720" height="112" rx="8" fill="#191b23"/>
+            <rect x="22" y="225" width="160" height="90" rx="4" fill="url(#art2)"/>
+            <text x="202" y="262" fill="#f2f5fa" font-size="26" font-family="sans-serif">夜に駆ける</text>
+            <text x="202" y="296" fill="#a8b3c7" font-size="19" font-family="sans-serif">YOASOBI · J-POP</text>
+            <text x="556" y="278" fill="#a8b3c7" font-size="19" font-family="sans-serif" text-anchor="end">4:23</text>
+            <rect x="600" y="226" width="88" height="88" rx="8" fill="#282b36"/>
+            <text x="644" y="282" fill="#f2f5fa" font-size="32" font-family="sans-serif" text-anchor="middle">＋</text>
+
+            <!-- row 3 -->
+            <rect x="0" y="336" width="720" height="112" rx="8" fill="#16181f"/>
+            <rect x="22" y="347" width="160" height="90" rx="4" fill="url(#art)"/>
+            <text x="202" y="384" fill="#f2f5fa" font-size="26" font-family="sans-serif">メルト</text>
+            <text x="202" y="418" fill="#a8b3c7" font-size="19" font-family="sans-serif">初音ミク · Vocaloid</text>
+            <text x="556" y="400" fill="#a8b3c7" font-size="19" font-family="sans-serif" text-anchor="end">4:04</text>
+            <rect x="600" y="348" width="88" height="88" rx="8" fill="#282b36"/>
+            <text x="644" y="404" fill="#f2f5fa" font-size="32" font-family="sans-serif" text-anchor="middle">＋</text>
+
+            <!-- row 4 -->
+            <rect x="0" y="458" width="720" height="112" rx="8" fill="#191b23"/>
+            <rect x="22" y="469" width="160" height="90" rx="4" fill="url(#art2)"/>
+            <text x="202" y="506" fill="#f2f5fa" font-size="26" font-family="sans-serif">Faded</text>
+            <text x="202" y="540" fill="#a8b3c7" font-size="19" font-family="sans-serif">Alan Walker · EDM</text>
+            <text x="556" y="522" fill="#a8b3c7" font-size="19" font-family="sans-serif" text-anchor="end">3:32</text>
+            <rect x="600" y="470" width="88" height="88" rx="8" fill="#282b36"/>
+            <text x="644" y="526" fill="#f2f5fa" font-size="32" font-family="sans-serif" text-anchor="middle">＋</text>
+
+            <!-- row 5 -->
+            <rect x="0" y="580" width="720" height="112" rx="8" fill="#16181f"/>
+            <rect x="22" y="591" width="160" height="90" rx="4" fill="url(#art)"/>
+            <text x="202" y="628" fill="#f2f5fa" font-size="26" font-family="sans-serif">Victory</text>
+            <text x="202" y="662" fill="#a8b3c7" font-size="19" font-family="sans-serif">Two Steps From Hell · Epic</text>
+            <text x="556" y="644" fill="#a8b3c7" font-size="19" font-family="sans-serif" text-anchor="end">5:12</text>
+            <rect x="600" y="592" width="88" height="88" rx="8" fill="#282b36"/>
+            <text x="644" y="648" fill="#f2f5fa" font-size="32" font-family="sans-serif" text-anchor="middle">＋</text>
+          </g>
+
+          <!-- 下の帯 -->
+          <text x="0" y="746" fill="#a8b3c7" font-size="19" font-family="sans-serif">1〜5 / 42 件</text>
+          <g>
+            <rect x="452" y="716" width="80" height="60" rx="8" fill="#21242e"/>
+            <rect x="544" y="716" width="80" height="60" rx="8" fill="#21242e"/>
+            <rect x="636" y="716" width="84" height="60" rx="8" fill="#21242e"/>
+          </g>
+          <text x="492" y="754" fill="#a8b3c7" font-size="20" font-family="sans-serif" text-anchor="middle">▲▲</text>
+          <text x="584" y="754" fill="#f2f5fa" font-size="22" font-family="sans-serif" text-anchor="middle">▲</text>
+          <text x="678" y="754" fill="#f2f5fa" font-size="22" font-family="sans-serif" text-anchor="middle">▼</text>
+        </g>
+
+        <!-- 寸法線 -->
+        <g stroke="#4a5568" stroke-width="1" fill="#78849a" font-family="monospace" font-size="14">
+          <line x1="0" y1="882" x2="1400" y2="882"/>
+          <line x1="0" y1="874" x2="0" y2="890"/><line x1="1400" y1="874" x2="1400" y2="890"/>
+          <text x="700" y="906" text-anchor="middle" stroke="none">1400 px ＝ 1.82 m</text>
+          <line x1="1372" y1="0" x2="1372" y2="0" stroke="none"/>
+        </g>
+        <g stroke="#4a5568" stroke-width="1" fill="#78849a" font-family="monospace" font-size="14">
+          <line x1="-24" y1="0" x2="-24" y2="860"/>
+          <line x1="-32" y1="0" x2="-16" y2="0"/><line x1="-32" y1="860" x2="-16" y2="860"/>
+          <text x="-28" y="436" text-anchor="middle" stroke="none" transform="rotate(-90,-28,436)">860 px ＝ 1.12 m</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      <b>新しい壁パネル（1400 × 860 px ＝ 1.82 × 1.12 m）。</b>
+      押せるものは <b>22 か所</b>。左に「いま鳴っているもの」、右に「これから選ぶもの」。
+      行の左端の青い縦棒が、いま鳴っている曲の目印です。
+    </figcaption>
+  </figure>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th>要素</th><th class="num">px</th><th class="num">実寸</th><th>ねらい</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>アートワーク</td><td class="dim">560 × 315</td><td class="dim">73 × 41 cm</td><td>2 m 先から何が鳴っているか分かる大きさ</td></tr>
+        <tr><td>曲名（再生中）</td><td class="dim">46</td><td class="dim">6.0 cm</td><td>一覧の 26 px に対して 1.8 倍</td></tr>
+        <tr><td>再生 / 一時停止</td><td class="dim">220 × 116</td><td class="dim">29 × 15 cm</td><td>前後ボタンの 1.8 倍。まずここを狙える</td></tr>
+        <tr><td>前へ / 次へ</td><td class="dim">120 × 116</td><td class="dim">16 × 15 cm</td><td>—</td></tr>
+        <tr><td>「…」（停止・予定を空に）</td><td class="dim">52 × 116</td><td class="dim">6.8 × 15 cm</td><td>4.5 cm を超える最小。押せるが目立たない</td></tr>
+        <tr><td>タブ</td><td class="dim">234 × 76</td><td class="dim">30 × 9.9 cm</td><td>3 等分。件数も出す</td></tr>
+        <tr><td>一覧の行</td><td class="dim">720 × 112</td><td class="dim">94 × 14.6 cm</td><td>いまの 72 px から 1.6 倍</td></tr>
+        <tr><td>行のサムネイル</td><td class="dim">160 × 90</td><td class="dim">21 × 12 cm</td><td>離れても絵柄が分かる下限</td></tr>
+        <tr><td>「＋」（予定に追加）</td><td class="dim">88 × 88</td><td class="dim">11.4 cm</td><td>—</td></tr>
+        <tr><td>外周の余白</td><td class="dim">42</td><td class="dim">5.5 cm</td><td>いまの 3.6 cm から拡大</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ 4 ── -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">04</span>
+    <h2>タブの中身</h2>
+  </div>
+
+  <div class="col">
+    <p>
+      右半分だけがタブで切り替わります。<strong>左の「再生中」は常に出たまま</strong>なので、
+      探している間も何が鳴っているか見失いません。
+    </p>
+  </div>
+
+  <div class="pair">
+    <figure>
+      <div class="plate">
+        <svg viewBox="0 0 720 470" role="img" aria-label="おすすめタブ">
+          <rect width="720" height="470" fill="#12141a"/>
+          <rect x="0" y="0" width="234" height="60" rx="7" fill="#1a1c24"/>
+          <rect x="242" y="0" width="234" height="60" rx="7" fill="#1d3346"/>
+          <rect x="242" y="54" width="234" height="6" rx="3" fill="#59b8f2"/>
+          <rect x="484" y="0" width="236" height="60" rx="7" fill="#1a1c24"/>
+          <text x="117" y="38" fill="#a8b3c7" font-size="21" font-family="sans-serif" text-anchor="middle">すべての曲</text>
+          <text x="359" y="38" fill="#f2f5fa" font-size="21" font-family="sans-serif" font-weight="bold" text-anchor="middle">おすすめ</text>
+          <text x="602" y="38" fill="#a8b3c7" font-size="21" font-family="sans-serif" text-anchor="middle">再生予定 3</text>
+
+          <text x="0" y="102" fill="#a8b3c7" font-size="18" font-family="sans-serif">「アイドル」を聴いている人へ</text>
+
+          <rect x="0" y="118" width="352" height="164" rx="8" fill="#191b23"/>
+          <rect x="14" y="132" width="324" height="86" rx="4" fill="#2d3f5c"/>
+          <text x="14" y="248" fill="#f2f5fa" font-size="23" font-family="sans-serif">夜に駆ける</text>
+          <text x="14" y="272" fill="#59b8f2" font-size="16" font-family="sans-serif">同じ YOASOBI</text>
+
+          <rect x="368" y="118" width="352" height="164" rx="8" fill="#191b23"/>
+          <rect x="382" y="132" width="324" height="86" rx="4" fill="#3a3350"/>
+          <text x="382" y="248" fill="#f2f5fa" font-size="23" font-family="sans-serif">怪物</text>
+          <text x="382" y="272" fill="#59b8f2" font-size="16" font-family="sans-serif">同じ J-POP・同じタグ 2 つ</text>
+
+          <rect x="0" y="298" width="352" height="164" rx="8" fill="#191b23"/>
+          <rect x="14" y="312" width="324" height="86" rx="4" fill="#1b3a44"/>
+          <text x="14" y="428" fill="#f2f5fa" font-size="23" font-family="sans-serif">メルト</text>
+          <text x="14" y="452" fill="#59b8f2" font-size="16" font-family="sans-serif">同じタグ「ボカロ」</text>
+
+          <rect x="368" y="298" width="352" height="164" rx="8" fill="#191b23"/>
+          <rect x="382" y="312" width="324" height="86" rx="4" fill="#3d2b2b"/>
+          <text x="382" y="428" fill="#f2f5fa" font-size="23" font-family="sans-serif">Victory</text>
+          <text x="382" y="452" fill="#59b8f2" font-size="16" font-family="sans-serif">同じ Epic</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>おすすめ</b> — 一覧ではなく <b>2 × 2 のカード</b>。
+        絵を大きく（324 × 86 px ＝ 42 × 11 cm）、青字で<b>なぜ出ているか</b>を添えます。
+        理由は Phase6-4 の関連生成がすでに持っている情報です。
+      </figcaption>
+    </figure>
+
+    <figure>
+      <div class="plate">
+        <svg viewBox="0 0 720 470" role="img" aria-label="再生予定タブ">
+          <rect width="720" height="470" fill="#12141a"/>
+          <rect x="0" y="0" width="234" height="60" rx="7" fill="#1a1c24"/>
+          <rect x="242" y="0" width="234" height="60" rx="7" fill="#1a1c24"/>
+          <rect x="484" y="0" width="236" height="60" rx="7" fill="#1d3346"/>
+          <rect x="484" y="54" width="236" height="6" rx="3" fill="#59b8f2"/>
+          <text x="117" y="38" fill="#a8b3c7" font-size="21" font-family="sans-serif" text-anchor="middle">すべての曲</text>
+          <text x="359" y="38" fill="#a8b3c7" font-size="21" font-family="sans-serif" text-anchor="middle">おすすめ</text>
+          <text x="602" y="38" fill="#f2f5fa" font-size="21" font-family="sans-serif" font-weight="bold" text-anchor="middle">再生予定 3</text>
+
+          <rect x="0" y="80" width="720" height="100" rx="8" fill="#1d3346"/>
+          <rect x="0" y="80" width="6" height="100" rx="3" fill="#59b8f2"/>
+          <rect x="20" y="90" width="142" height="80" rx="4" fill="#2d3f5c"/>
+          <text x="182" y="124" fill="#ffffff" font-size="24" font-family="sans-serif" font-weight="bold">アイドル</text>
+          <text x="182" y="154" fill="#59b8f2" font-size="17" font-family="sans-serif">いま鳴っています</text>
+
+          <rect x="0" y="190" width="720" height="100" rx="8" fill="#191b23"/>
+          <rect x="20" y="200" width="142" height="80" rx="4" fill="#3a3350"/>
+          <text x="182" y="234" fill="#f2f5fa" font-size="24" font-family="sans-serif">次: 夜に駆ける</text>
+          <text x="182" y="264" fill="#a8b3c7" font-size="17" font-family="sans-serif">YOASOBI · 4:23</text>
+          <rect x="612" y="200" width="80" height="80" rx="8" fill="#282b36"/>
+          <text x="652" y="250" fill="#a8b3c7" font-size="26" font-family="sans-serif" text-anchor="middle">×</text>
+
+          <rect x="0" y="300" width="720" height="100" rx="8" fill="#16181f"/>
+          <rect x="20" y="310" width="142" height="80" rx="4" fill="#1b3a44"/>
+          <text x="182" y="344" fill="#f2f5fa" font-size="24" font-family="sans-serif">メルト</text>
+          <text x="182" y="374" fill="#a8b3c7" font-size="17" font-family="sans-serif">初音ミク · 4:04</text>
+          <rect x="612" y="310" width="80" height="80" rx="8" fill="#282b36"/>
+          <text x="652" y="360" fill="#a8b3c7" font-size="26" font-family="sans-serif" text-anchor="middle">×</text>
+
+          <text x="0" y="446" fill="#a8b3c7" font-size="18" font-family="sans-serif">このあと 2 曲 · 8 分</text>
+        </svg>
+      </div>
+      <figcaption>
+        <b>再生予定</b> — 先頭に「いま鳴っています」、2 番目に「次:」と書きます。
+        <b>順番が読まなくても分かる</b>ようにするためです。
+        下に残り時間の合計を出します。
+      </figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ 5 ── -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">05</span>
+    <h2>手持ちリモコン</h2>
+  </div>
+
+  <div class="col">
+    <p>
+      <strong>一覧を持ちません。</strong>手元で見るのは「いま何が鳴っているか」と
+      「止める・飛ばす」だけです。曲を選びたくなったら壁パネルへ行きます。
+    </p>
+  </div>
+
+  <figure style="max-width: 560px">
+    <div class="plate">
+      <svg viewBox="0 0 700 520" role="img" aria-label="リモコンのワイヤーフレーム">
+        <rect width="700" height="520" rx="8" fill="#12141a"/>
+        <g transform="translate(30,30)">
+          <rect width="240" height="135" rx="5" fill="#2d3f5c"/>
+          <circle cx="120" cy="67" r="26" fill="none" stroke="#59b8f2" stroke-width="2" opacity=".5"/>
+          <path d="M113 55 L113 79 L133 67 Z" fill="#59b8f2" opacity=".5"/>
+
+          <text x="264" y="42" fill="#f2f5fa" font-size="32" font-family="sans-serif" font-weight="bold">アイドル</text>
+          <text x="264" y="78" fill="#a8b3c7" font-size="22" font-family="sans-serif">YOASOBI</text>
+          <rect x="264" y="96" width="76" height="26" rx="13" fill="#1d3346"/>
+          <text x="302" y="115" fill="#59b8f2" font-size="15" font-family="sans-serif" text-anchor="middle">J-POP</text>
+          <text x="640" y="160" fill="#a8b3c7" font-size="17" font-family="sans-serif" text-anchor="end">1:12 / 3:34</text>
+
+          <rect x="0" y="182" width="640" height="10" rx="5" fill="#333845"/>
+          <rect x="0" y="182" width="224" height="10" rx="5" fill="#59b8f2"/>
+
+          <rect x="0" y="228" width="140" height="104" rx="10" fill="#333845"/>
+          <rect x="156" y="228" width="248" height="104" rx="10" fill="#59b8f2"/>
+          <rect x="420" y="228" width="140" height="104" rx="10" fill="#333845"/>
+          <rect x="576" y="228" width="64" height="104" rx="10" fill="#21242e"/>
+          <text x="70" y="290" fill="#f2f5fa" font-size="32" font-family="sans-serif" text-anchor="middle">◀◀</text>
+          <text x="280" y="290" fill="#0d1b26" font-size="30" font-family="sans-serif" font-weight="bold" text-anchor="middle">⏸ 一時停止</text>
+          <text x="490" y="290" fill="#f2f5fa" font-size="32" font-family="sans-serif" text-anchor="middle">▶▶</text>
+          <text x="608" y="290" fill="#a8b3c7" font-size="28" font-family="sans-serif" text-anchor="middle">…</text>
+
+          <rect x="0" y="356" width="640" height="76" rx="10" fill="#191b23"/>
+          <text x="24" y="392" fill="#f2f5fa" font-size="22" font-family="sans-serif">次: 夜に駆ける</text>
+          <text x="24" y="418" fill="#a8b3c7" font-size="17" font-family="sans-serif">このあと 2 曲 · 8 分</text>
+        </g>
+      </svg>
+    </div>
+    <figcaption>
+      <b>リモコン（700 × 520 px ＝ 0.67 × 0.49 m）。</b>
+      押せるものは <b>4 か所</b>だけ。いまの 0.65 × 0.65 m より小さく、手に持ったとき視界を塞ぎません。
+    </figcaption>
+  </figure>
+</section>
+
+<!-- ══════════════════════════════════════ 6 ── -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">06</span>
+    <h2>決めていただきたいこと — サムネイルをどう出すか</h2>
+  </div>
+
+  <div class="note decide">
+    <span class="note-label">ここだけ判断が要ります</span>
+    <p>
+      <strong>いまサムネイルはワールドに入っていません。</strong>
+      Phase6-5 で「Editor だけで持ち、ワールドの容量を増やさない」と決めたためです。
+      上の案は絵が主役なので、<strong>絵をワールドへ持ち込む方法を決めないと成立しません</strong>。
+      3 つの道があります。
+    </p>
+  </div>
+
+  <div class="options">
+    <div class="option pick">
+      <div class="option-head">
+        <h3>A. 編集時に焼き込む</h3>
+        <span class="tag rec">おすすめ</span>
+        <span class="tag">+3.6 MB / 200 曲</span>
+      </div>
+      <p style="color:var(--ink-2);font-size:14.5px;margin:0 0 8px">
+        <code>VRCUrl</code> と同じやり方です。Catalog Builder がすでに絵を持っているので、
+        <code>256 × 144</code> に縮めて <code>Texture2D</code> の配列に焼きます。
+      </p>
+      <ul>
+        <li><strong>確実に出ます。</strong>通信も待ち時間もありません</li>
+        <li>すでにある「③ VRCUrl へ焼く」に相乗りするだけ</li>
+        <li>200 曲で約 3.6 MB（DXT1 圧縮）。ワールドの上限には十分収まります</li>
+        <li>曲を足したら焼き直しが要ります（URL と同じなので手間は増えません）</li>
+      </ul>
+    </div>
+
+    <div class="option">
+      <div class="option-head">
+        <h3>B. 実行時にダウンロードする</h3>
+        <span class="tag">容量 0</span>
+      </div>
+      <ul>
+        <li>ワールドの容量は増えません</li>
+        <li><strong>画像の URL も <code>VRCUrl</code> なので、結局 200 本ぶん焼く必要があります</strong>（手間は A と変わらない）</li>
+        <li>読み込みに数秒かかり、失敗することもあります</li>
+        <li>ワールドに入った直後は絵が出そろいません</li>
+      </ul>
+    </div>
+
+    <div class="option">
+      <div class="option-head">
+        <h3>C. 絵をあきらめる</h3>
+        <span class="tag">容量 0・作業 0</span>
+      </div>
+      <ul>
+        <li>絵の代わりに<strong>ジャンルの色</strong>（Phase6-6 の 23 ジャンル）で塗り分けます</li>
+        <li>レイアウトはそのまま使えます。絵の枠が色の面になるだけです</li>
+        <li>「見ただけで分かる」度合いは A に届きません</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="col">
+    <p style="margin-top:22px">
+      <strong>A をおすすめします。</strong>
+      いちばんの目的が「曲を探しやすくする」ことなので、絵は効果が大きく、
+      3.6 MB は VRChat のワールド容量（PC 版で数百 MB）から見れば小さい負担です。
+      <strong>C でも上のレイアウトはそのまま作れます</strong>ので、
+      迷う場合は C で作って、あとから A を足すこともできます。
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ 7 ── -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">07</span>
+    <h2>作る順番</h2>
+  </div>
+
+  <div class="tbl-wrap">
+    <table>
+      <thead>
+        <tr><th class="num">段</th><th>やること</th><th>触るところ</th><th>確かめ方</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="dim">7-1</td>
+          <td>タブと新しい行の形（絵なし）</td>
+          <td class="dim">UdonMediaPanelBuilder<br>UdonMediaListRow</td>
+          <td>実機で「1 本ずつ切り替わる」こと</td>
+        </tr>
+        <tr>
+          <td class="dim">7-2</td>
+          <td>再生中エリアの作り直し・操作 3 つ</td>
+          <td class="dim">UdonNowPlayingView<br>UdonTransportView</td>
+          <td>2 m 離れて曲名が読めること</td>
+        </tr>
+        <tr>
+          <td class="dim">7-3</td>
+          <td>おすすめのカード化・理由の表示</td>
+          <td class="dim">UdonCatalogStore<br>（理由の受け渡し）</td>
+          <td>理由が正しく出ること</td>
+        </tr>
+        <tr>
+          <td class="dim">7-4</td>
+          <td>サムネイルの焼き込み（A を選んだ場合）</td>
+          <td class="dim">CatalogUrlTableBridge<br>UdonMediaCatalog</td>
+          <td>ワールド容量の増分を測る</td>
+        </tr>
+        <tr>
+          <td class="dim">7-5</td>
+          <td>リモコンの作り直し</td>
+          <td class="dim">UdonMediaPanelBuilder</td>
+          <td>手に持って視界を塞がないこと</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="note keep">
+    <span class="note-label">変わらないもの</span>
+    <p>
+      <strong>責務の分け方は 1 つも動かしません。</strong>
+      <code>PlayerSession</code> / <code>BackendAdapter</code> / <code>Queue</code> /
+      <code>Recommendation</code> / <code>VideoBackend</code> はそのままです。
+      <code>VRCUrl</code> を知るのも <code>VideoBackend</code> 層だけのままです。
+    </p>
+    <p style="margin-bottom:0">
+      変えるのは <strong>「どう並べるか」を決めている <code>UdonMediaPanelBuilder</code> と、
+      表示だけを持つ 5 つのクラス</strong>です。
+      判断ロジック（<code>PlaybackModel</code> / <code>ListScrollModel</code>）にも触りません。
+      既存のパネルは<strong>作り直しになります</strong>が、
+      <code>Core</code> を挿し直すだけで動きます。
+    </p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════ -->
+<footer class="ask">
+  <h2>お返事をいただきたいのは 2 つです</h2>
+  <div class="col">
+    <ul class="plain">
+      <li><strong>① この画面構成で進めてよいか。</strong>
+          直したいところ（行数・ボタンの並び・タブの名前など）があれば教えてください。</li>
+      <li><strong>② サムネイルは A / B / C のどれにするか。</strong>
+          決まらない場合は <strong>C（色分け）で作り始めて、あとから A を足す</strong>のが安全です。</li>
+    </ul>
+    <p style="color:var(--ink-3);font-size:14px;margin-top:22px">
+      なお、Phase5-4（同期）以降の実機での確認結果をまだ伺えていません。
+      Phase7 はパネルを作り直す段なので、<strong>いまのパネルが実機で問題なく押せているか</strong>だけ、
+      先に教えていただけると安心して進められます。
+    </p>
+  </div>
+</footer>
+
+</div>
+
+</body>
+</html>
