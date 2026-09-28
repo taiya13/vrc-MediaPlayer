@@ -150,6 +150,11 @@ namespace SmartMediaPlatform.World.Udon.UI
                     Transport.Options.Session = Session;
                     if (Session != null) Session.Options = Transport.Options;
                 }
+                // URL の結果は、パネルの状態の行にも出す。
+                if (Transport.Options != null && Transport.Options.Panel == null)
+                {
+                    Transport.Options.Panel = this;
+                }
                 if (Transport.Screen == null) Transport.Screen = Screen;
                 if (Transport.Panel == null) Transport.Panel = this;
             }
@@ -164,6 +169,9 @@ namespace SmartMediaPlatform.World.Udon.UI
                     if (list.Controller == null) list.Controller = Controller;
                     if (list.Session == null) list.Session = Session;
                     if (list.Store == null) list.Store = Store;
+
+                    // 再生予定の一覧は、あとで流す URL も先頭に出す。
+                    if (list.Options == null && Transport != null) list.Options = Transport.Options;
 
                     // 好み(お気に入り・履歴)は Session が持っている所から借りる。
                     // パネルは何枚でも置けるので、各自が別々に持つと食い違います。

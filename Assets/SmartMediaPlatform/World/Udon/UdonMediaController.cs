@@ -251,6 +251,28 @@ namespace SmartMediaPlatform.World.Udon
             return ok;
         }
 
+        /// <summary>再生予定に積んだ URL の <paramref name="position"/> 番目を、いま流す。</summary>
+        public bool PlayQueuedUrl(int position)
+        {
+            if (!Begin()) return false;
+
+            bool ok = Session != null && Session.Options != null
+                      && Session.Options.PlayExternalAt(position);
+            Done(ok);
+            return ok;
+        }
+
+        /// <summary>再生予定に積んだ URL の <paramref name="position"/> 番目を外す。</summary>
+        public bool RemoveQueuedUrl(int position)
+        {
+            if (!Begin()) return false;
+
+            bool ok = Session != null && Session.Options != null
+                      && Session.Options.RemoveExternalAt(position);
+            Done(ok);
+            return ok;
+        }
+
         /// <summary>Queue の <paramref name="position"/> 番目を外す。</summary>
         public bool RemoveFromQueue(int position)
         {

@@ -113,6 +113,10 @@ namespace SmartMediaPlatform.World.Udon
         // 続けて失敗した回数。実際に鳴り始めたら 0 に戻す。
         private int _consecutiveErrors;
 
+        // カタログに無い URL を流しているか。カタログの曲へ移ると(_currentIndex >= 0)自然に外れる。
+        private bool _externalPlaying;
+        private string _externalLabel = "";
+
         private bool _initialized;
 
         void Start()
@@ -154,6 +158,19 @@ namespace SmartMediaPlatform.World.Udon
         }
 
         public bool IsPlaying { get { return _isPlaying; } }
+
+        /// <summary>
+        /// <b>カタログに無い URL を流しているか。</b>
+        /// このときは <see cref="CurrentIndex"/> が -1 でも「何かが鳴っている」状態です
+        /// (再生バー・一時停止・停止が効くようにするため)。
+        /// </summary>
+        public bool IsExternal { get { return _externalPlaying && _currentIndex < 0; } }
+
+        /// <summary>URL を流しているときの見出し(打ち込まれた URL そのもの)。</summary>
+        public string ExternalLabel { get { return IsExternal ? _externalLabel : ""; } }
+
+        /// <summary>カタログの曲か URL の、どちらかが「いまの曲」としてあるか。</summary>
+        public bool HasCurrent { get { return _currentIndex >= 0 || IsExternal; } }
 
         public bool IsExhausted { get { return _exhausted; } }
 
@@ -232,7 +249,13 @@ namespace SmartMediaPlatform.World.Udon
             // 「もう駄目」と諦めたあとでも、もう一度試せるようにするため。
             _consecutiveErrors = 0;
 
-            if (_currentIndex < 0)
+            if (IsExternal)
+            {
+                // URL を一時停止していた。続きから鳴らす。
+                UdonVideoBackend resumed = ActiveBackend();
+                if (resumed != null) resumed.Play();
+            }
+            else if (_currentIndex < 0)
             {
                 // まだ何も鳴っていないなら、再生予定の先頭を取り出して始める。
                 if (_queueCount == 0) return false;
@@ -256,7 +279,7 @@ namespace SmartMediaPlatform.World.Udon
         public bool Stop()
         {
             EnsureInitialized();
-            if (_currentIndex < 0) return false;
+            if (!HasCurrent) return false;
 
             _isPlaying = false;
 
@@ -271,7 +294,7 @@ namespace SmartMediaPlatform.World.Udon
         public bool TogglePlayPause()
         {
             EnsureInitialized();
-            if (_currentIndex < 0 && _queueCount == 0) return false;
+            if (!HasCurrent && _queueCount == 0) return false;
 
             if (_isPlaying)
             {
@@ -299,6 +322,9 @@ namespace SmartMediaPlatform.World.Udon
 
             // 最後まで聴かずに送ったなら、それは「飛ばした」ということ(Phase7-8)。
             if (Profile != null && _currentIndex >= 0) Profile.NoteSkipped(_currentIndex);
+
+            // 「あとで流す」に積んだ URL が先。再生予定の一覧でも先頭に出ている。
+            if (Options != null && Options.TryPlayNextExternal()) return true;
 
             if (_queueCount > 0) return TakeFromQueue(0);
 
@@ -459,6 +485,9 @@ namespace SmartMediaPlatform.World.Udon
 
             int removed = _queueCount;
             _queueCount = 0;
+
+            // 「あとで流す」URL も再生予定の一覧に出ているので、一緒に空にする。
+            if (Options != null) removed += Options.ClearExternal();
             return removed;
         }
 
@@ -467,6 +496,7 @@ namespace SmartMediaPlatform.World.Udon
         {
             EnsureInitialized();
             _queueCount = 0;
+            _externalPlaying = false;
             _currentIndex = -1;
             _requestedIndex = -1;
             _isPlaying = false;
@@ -487,24 +517,31 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>続けて失敗した回数(診断用)。</summary>
         public int ConsecutiveErrors { get { return _consecutiveErrors; } }
 
-        /// <summary>実際に鳴り始めた。ここで失敗の数を戻す。</summary>
         /// <summary>
-        /// <b>カタログに無い URL が鳴り始めた。</b>Phase7-9。
-        /// 「いま鳴っているもの」を空にします —— カタログの何番でもないので、
+        /// <b>カタログに無い URL を鳴らし始める。</b>Phase7-9。
+        /// カタログの番号は空にします —— カタログの何番でもないので、
         /// 一覧が別の曲を鳴っていることにしてしまわないためです。
+        /// 代わりに <see cref="IsExternal"/> が立ち、再生バーや一時停止はそのまま効きます。
         /// </summary>
-        public void NotifyExternalPlayback()
+        /// <param name="label">見出しに出す文字(打ち込まれた URL)。</param>
+        public void NotifyExternalPlayback(string label)
         {
             EnsureInitialized();
+
+            // 重ねている最中なら、裏の曲はやめる(URL は表のプレイヤーで鳴らすため)。
+            if (Crossfade != null) Crossfade.CancelFade();
 
             if (_currentIndex >= 0) PushHistory(_currentIndex);
 
             _currentIndex = -1;
             _requestedIndex = -1;
+            _externalPlaying = true;
+            _externalLabel = label == null ? "" : label;
             _isPlaying = true;
             _exhausted = false;
         }
 
+        /// <summary>実際に鳴り始めた。ここで失敗の数を戻す。</summary>
         public void NotifyStarted()
         {
             _consecutiveErrors = 0;
@@ -661,6 +698,7 @@ namespace SmartMediaPlatform.World.Udon
 
             // 持ち主が読み込ませているものが、そのまま「再生中」になる(Phase7-3)。
             _currentIndex = loadedIndex;
+            _externalPlaying = false;
 
             _isPlaying = isPlaying;
             if (isPlaying) _exhausted = false;

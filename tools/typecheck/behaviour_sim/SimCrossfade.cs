@@ -569,8 +569,139 @@ public static class SimCrossfade
         }
     }
 
+    // ───────── URL(カタログに無い動画)─────────
+
+    /// <summary>URL 欄に URL を貼ったことにする。動画の長さも決めておく。</summary>
+    static void PasteUrl(XWorld w, string url, float duration)
+    {
+        if (w.Options.UrlField == null)
+        {
+            w.Options.UrlField = new GameObject("UrlField").AddComponent<VRC.SDK3.Components.VRCUrlInputField>();
+        }
+        w.Media[url] = new SimMedia { Duration = duration };
+        w.Options.UrlField.SimText = url;
+    }
+
+    /// <summary>いま表のプレイヤーが読んでいる URL。</summary>
+    static string FrontUrl(XWorld w)
+    {
+        UdonVideoBackend front = w.Session.ActiveBackend();
+        var player = front != null ? front.Player as SimPlayer : null;
+        return player != null ? player.Url : null;
+    }
+
+    static bool FrontAudible(XWorld w)
+    {
+        UdonVideoBackend front = w.Session.ActiveBackend();
+        var player = front != null ? front.Player as SimPlayer : null;
+        return player != null && player.Audible;
+    }
+
+    static void RunUrlScenarios()
+    {
+        Sim.Scenario("[URL] URL を流している間も「いまの曲」があり、バーの位置が進み、一時停止と再開が効く", () =>
+        {
+            var w = Build(6, 120f, true, true);
+            Start(w);
+            Check(RunUntil(w, () => FrontAudible(w), 10f), "曲 0 が鳴り始める");
+
+            PasteUrl(w, "https://example.com/a", 90f);
+            w.Options.PlayUrl();
+
+            Check(w.Session.IsExternal, "URL を流している印が立つ");
+            Check(w.Session.HasCurrent, "カタログの番号が -1 でも「いまの曲」がある(バーが動く条件)");
+            Equal("https://example.com/a", w.Session.ExternalLabel, "見出しに URL が出る");
+
+            Check(RunUntil(w, () => FrontUrl(w) == "https://example.com/a" && FrontAudible(w), 15f),
+                  "URL が鳴り始める");
+            float t0 = w.Session.ActiveBackend().GetTime();
+            Run(w, 2f);
+            Check(w.Session.ActiveBackend().GetTime() > t0 + 1.5f, "再生位置が進む(バーが動く)");
+
+            Check(w.Session.TogglePlayPause(), "一時停止を押せる");
+            Run(w, 0.5f);
+            Check(!w.Session.IsPlaying && !w.Session.ActiveBackend().IsPlaying, "URL が止まる");
+            Check(w.Session.IsExternal, "止めても URL のまま(別の曲へ飛ばない)");
+
+            Check(w.Session.TogglePlayPause(), "再開を押せる");
+            Run(w, 0.5f);
+            Check(w.Session.IsPlaying && FrontUrl(w) == "https://example.com/a" && FrontAudible(w),
+                  "同じ URL の続きから鳴る");
+
+            Check(w.Session.Stop(), "停止を押せる");
+            Run(w, 0.2f);
+            Check(!w.Session.ActiveBackend().IsPlaying, "停止で止まる");
+        });
+
+        Sim.Scenario("[URL] 曲を選んだ直後に URL を流しても、読み込みの間隔を空けて、ちゃんと鳴る", () =>
+        {
+            var w = Build(6, 120f, true, true);
+            Start(w);
+            Run(w, 0.5f);
+
+            PasteUrl(w, "https://example.com/quick", 90f);
+            w.Options.PlayUrl();
+
+            Check(RunUntil(w, () => FrontUrl(w) == "https://example.com/quick" && FrontAudible(w), 15f),
+                  "URL が鳴り始める");
+            Check(MinLoadGap() >= 4.99f, "読み込みの間隔は 5 秒以上空いている(" + MinLoadGap().ToString("0.0") + ")");
+            Check(w.Session.IsExternal, "URL を流している印のまま");
+        });
+
+        Sim.Scenario("[URL] 「予定へ」の URL は数えられ、同じ URL は二重に入らず、曲の終わりで先に流れる", () =>
+        {
+            var w = Build(6, 60f, false, true);
+            Start(w, 3);
+            Check(RunUntil(w, () => FrontAudible(w), 10f), "曲 0 が鳴り始める");
+
+            PasteUrl(w, "https://example.com/b", 60f);
+            w.Options.EnqueueUrl();
+            w.Options.EnqueueUrl();
+            Equal(1, w.Options.ExternalCount, "同じ URL を 2 回押しても 1 件");
+            Equal("https://example.com/b", w.Options.ExternalTextAt(0), "一覧に出す文字は URL");
+
+            Check(RunUntil(w, () => FrontUrl(w) == "https://example.com/b", 70f), "曲 0 のあと URL が流れる");
+            Check(w.Session.IsExternal, "URL を流している印が立つ");
+            Equal(0, w.Options.ExternalCount, "流した URL は再生予定から外れる");
+            Equal("3", QueueText(w), "再生予定の曲はそのまま残る");
+
+            Check(RunUntil(w, () => w.Session.CurrentIndex == 3, 80f), "URL が終わると再生予定の曲 3 へ進む");
+            Check(!w.Session.IsExternal, "カタログの曲へ移ったら URL の印は外れる");
+        });
+
+        Sim.Scenario("[URL] ▶▶ を押すと、積んだ URL が再生予定の曲より先に流れる / 外せる / 空にできる", () =>
+        {
+            var w = Build(6, 120f, true, true);
+            Start(w, 2);
+            Check(RunUntil(w, () => FrontAudible(w), 10f), "曲 0 が鳴り始める");
+
+            PasteUrl(w, "https://example.com/c", 90f);
+            w.Options.EnqueueUrl();
+            PasteUrl(w, "https://example.com/d", 90f);
+            w.Options.EnqueueUrl();
+            Equal(2, w.Options.ExternalCount, "2 件積める");
+
+            Check(w.Options.RemoveExternalAt(0), "1 件目を外せる");
+            Equal("https://example.com/d", w.Options.ExternalTextAt(0), "残ったのは 2 件目");
+
+            Run(w, 6f);
+            Check(w.Session.Next(), "▶▶ を押せる");
+            Check(RunUntil(w, () => FrontUrl(w) == "https://example.com/d" && FrontAudible(w), 15f),
+                  "URL が先に流れる");
+            Equal("2", QueueText(w), "再生予定の曲は残る");
+
+            PasteUrl(w, "https://example.com/e", 90f);
+            w.Options.EnqueueUrl();
+            w.Session.ClearUpcoming();
+            Equal(0, w.Options.ExternalCount, "「予定を空に」で URL も空になる");
+            Equal(0, w.Session.QueueCount, "「予定を空に」で曲も空になる");
+        });
+    }
+
     public static void Run()
     {
+        RunUrlScenarios();
+
         Sim.Scenario("[おすすめ] カードの「＋」を押しても曲は変わらない(カードの「再生」が一緒に届いても)", () =>
         {
             var w = Build(10, 60f);

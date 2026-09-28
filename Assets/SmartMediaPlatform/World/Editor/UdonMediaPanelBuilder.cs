@@ -100,6 +100,15 @@ namespace SmartMediaPlatform.World.EditorTools
         private const float SearchHeight = 60f;
         private const float TabHeight = 60f;
 
+        /// <summary>
+        /// 探す欄の右に並べる URL 欄の幅(2026-09-28)。
+        /// URL はよく使うので「…」の奥から出しました。欄 + 「▶ 再生」+「＋ 予定」。
+        /// </summary>
+        private const float UrlBarWidth = 600f;
+
+        /// <summary>URL 欄の右の 2 つのボタンの幅。</summary>
+        private const float UrlButtonWidth = 112f;
+
         /// <summary>アーティストのレールの幅(Phase8-2)。</summary>
         private const float RailWidth = 260f;
 
@@ -212,8 +221,10 @@ namespace SmartMediaPlatform.World.EditorTools
             //    探すのは<b>タブを選ぶより前</b>の行動なので、この順に積みます。
             float browserTop = Pad + BandHeight + UdonMediaTheme.Space2;
 
+            // URL 欄は探す欄の右に常に出す(「…」の中には入れない)。
             var tabs = BuildTabbedLists(
-                body, panel, Pad, browserTop, inner, H - Pad - browserTop);
+                body, panel, Pad, browserTop, inner, H - Pad - browserTop,
+                transport != null ? transport.Options : null);
             if (NeedsCompile) return panel;
 
             // ── 状態と「誰が操作しているか」は<b>時刻の行に相乗り</b>させます。
@@ -532,26 +543,38 @@ namespace SmartMediaPlatform.World.EditorTools
         {
             const float RowHeight = 64f;
             const float Gap = 10f;
+            const float StatusHeight = 22f;
 
             float pad = UdonMediaTheme.Space2;
             float inner = width - pad * 2f;
+            float half = (inner - Gap) * 0.5f;
 
-            // 上から:URL 欄 → 再生 / 予定へ → 繰り返し → おやすみ → 停止 / 予定を空に → 閉じる
-            float sheetHeight = pad * 2f + RowHeight * 6f + Gap * 5f + 28f;
+            // ── 壁パネルでは URL 欄を探す欄の右に常に出しているので、ここには置きません
+            //    (2026-09-28)。一覧を持たないリモコンだけ、ここに URL 欄を残します。
+            bool withUrl = !wide;
+
+            // 上から:(URL の説明 → URL 欄 → 再生 / 予定へ → 結果の 1 行)→ 繰り返し → おやすみ
+            //         → 停止 / 予定を空に → 閉じる
+            float top = pad + 20f;
+            float urlBlock = withUrl
+                ? 26f + RowHeight + Gap + RowHeight + 4f + StatusHeight + Gap
+                : 0f;
+            float sheetHeight = top + urlBlock + RowHeight * 4f + Gap * 3f + pad;
 
             RectTransform sheet = UdonWorldUiKit.Place(
                 section, "MoreSheet", 0f, height + UdonMediaTheme.Space1, width, sheetHeight);
 
-            // ── しっかり手前へ出す(Phase7-10)。
-            //    <b>1 枚ぶんでは足りませんでした。</b>後ろの一覧と重なって
-            //    文字が透けて見えるので、はっきり浮かせます
-            //    (30px ≒ 4 cm。近すぎず、板から浮きすぎない距離)。
+            // ── しっかり手前へ出す(Phase7-10)。z が効くのは「使う」の当たり判定だけで、
+            //    見た目の重なりは Finish の BringToFront(描く順)で決まります。
             sheet.localPosition = new Vector3(
                 sheet.localPosition.x, sheet.localPosition.y, -30f);
 
+            // ── <b>透けない板にします</b>(2026-09-28)。
+            //    半透明だと、下の一覧・音量・ボタンの文字が透けて混ざり、どちらも読めませんでした。
+            //    ボタンの面も板より一段暗くして、形が見えるようにします。
             UdonWorldUiKit.GlassCard(
                 sheet, "Back", 0f, 0f, width, sheetHeight,
-                UdonMediaTheme.SurfaceRaised, UdonMediaTheme.RadiusLarge).raycastTarget = false;
+                UdonMediaTheme.SheetSolid, UdonMediaTheme.RadiusLarge).raycastTarget = false;
 
             // つまんで下ろす取っ手。<b>形だけ</b>ですが、
             // 「これは下から出てきた板だ」と伝えるのはこの 1 本です。
@@ -562,17 +585,8 @@ namespace SmartMediaPlatform.World.EditorTools
             var options = Add<UdonPlayerOptions>(sheet.gameObject);
 
             // ── 隙間をふさぐ(Phase8-2)。
-            //
-            //    シートの当たり判定はボタンにしか無く、背景は素通しでした。
-            //    ボタンとボタンの間(1〜2 cm)を「使う」で押すと、
-            //    レーザーが<b>奥にある曲の行やタブまで抜けて</b>、
-            //    シートを見ているつもりで曲が変わってしまいます。
-            //    帯を組み直してシートが一覧とタブの上に重なるようになったので、
-            //    ここで止めます。
-            //
-            //    押しても何もしない(イベント名が空)当たり判定を、
-            //    <b>シートのボタンより奥・一覧より手前</b>に全面へ敷きます。
-            //    InteractArea は既定で 2 だけ手前に出るので、逆に奥へ戻します。
+            //    ボタンとボタンの間を「使う」で押すと、奥の曲の行やタブまで抜けて曲が変わるので、
+            //    押しても何もしない当たり判定を、シートのボタンより奥・一覧より手前に全面へ敷きます。
             if (options != null)
             {
                 UdonMediaControlButton blocker = UdonWorldUiKit.InteractArea(
@@ -585,77 +599,84 @@ namespace SmartMediaPlatform.World.EditorTools
                 }
             }
 
-            float y = pad + 20f;
+            float y = top;
             Text unused;
 
-            // ── URL
-            UdonWorldUiKit.Label(
-                sheet, "UrlCaption", pad, y - 4f, inner, 24f,
-                UdonMediaTheme.TextCaption, TextAnchor.LowerLeft, UdonMediaTheme.TextMuted)
-                .text = "YouTube の URL を貼り付けて再生";
+            VRCUrlInputField urlField = null;
+            Text urlStatus = null;
+            Button playUrl = null;
+            Button queueUrl = null;
 
-            y += 26f;
-
-            RectTransform fieldRect = UdonWorldUiKit.Place(
-                sheet, "UrlField", pad, y, inner, RowHeight);
-
-            Image fieldBack = fieldRect.gameObject.AddComponent<Image>();
-            fieldBack.color = UdonMediaTheme.Surface;
-            UdonWorldUiKit.ApplyRadius(fieldBack, UdonMediaTheme.RadiusMedium);
-
-            var urlField = fieldRect.gameObject.AddComponent<VRCUrlInputField>();
-
-            Text typed = UdonWorldUiKit.Label(
-                fieldRect, "Text", UdonMediaTheme.Space2, 0f,
-                inner - UdonMediaTheme.Space4, RowHeight,
-                UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
-            typed.raycastTarget = false;
-
-            Text placeholder = UdonWorldUiKit.Label(
-                fieldRect, "Placeholder", UdonMediaTheme.Space2, 0f,
-                inner - UdonMediaTheme.Space4, RowHeight,
-                UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
-            placeholder.text = "https://www.youtube.com/watch?v=…";
-            placeholder.raycastTarget = false;
-
-            urlField.textComponent = typed;
-            urlField.placeholder = placeholder;
-            urlField.targetGraphic = fieldBack;
-
-            // 枠のどこを「使う」でも VRChat のキーボードが開くようにする。
-            if (options != null)
+            if (withUrl)
             {
-                UdonWorldUiKit.InteractArea(
-                    sheet, "UrlHit", pad, y, inner, RowHeight,
-                    options, "OpenUrlKeyboard", "URL を打つ");
+                UdonWorldUiKit.Label(
+                    sheet, "UrlCaption", pad, y - 4f, inner, 24f,
+                    UdonMediaTheme.TextCaption, TextAnchor.LowerLeft, UdonMediaTheme.TextMuted)
+                    .text = "YouTube の URL を貼り付けて再生";
+
+                y += 26f;
+
+                RectTransform fieldRect = UdonWorldUiKit.Place(
+                    sheet, "UrlField", pad, y, inner, RowHeight);
+
+                Image fieldBack = fieldRect.gameObject.AddComponent<Image>();
+                fieldBack.color = UdonMediaTheme.Fill;
+                UdonWorldUiKit.ApplyRadius(fieldBack, UdonMediaTheme.RadiusMedium);
+
+                urlField = fieldRect.gameObject.AddComponent<VRCUrlInputField>();
+
+                Text typed = UdonWorldUiKit.Label(
+                    fieldRect, "Text", UdonMediaTheme.Space2, 0f,
+                    inner - UdonMediaTheme.Space4, RowHeight,
+                    UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
+                typed.raycastTarget = false;
+
+                Text placeholder = UdonWorldUiKit.Label(
+                    fieldRect, "Placeholder", UdonMediaTheme.Space2, 0f,
+                    inner - UdonMediaTheme.Space4, RowHeight,
+                    UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
+                placeholder.text = "https://www.youtube.com/watch?v=…";
+                placeholder.raycastTarget = false;
+
+                urlField.textComponent = typed;
+                urlField.placeholder = placeholder;
+                urlField.targetGraphic = fieldBack;
+
+                if (options != null)
+                {
+                    UdonWorldUiKit.InteractArea(
+                        sheet, "UrlHit", pad, y, inner, RowHeight,
+                        options, "OpenUrlKeyboard", "URL を打つ");
+                }
+
+                y += RowHeight + Gap;
+
+                playUrl = UdonWorldUiKit.RoundedButton(
+                    sheet, "UrlPlay", pad, y, half, RowHeight, "▶ 再生",
+                    UdonMediaTheme.TextBody, UdonMediaTheme.Accent,
+                    UdonMediaTheme.RadiusMedium, out unused);
+
+                queueUrl = UdonWorldUiKit.RoundedButton(
+                    sheet, "UrlQueue", pad + half + Gap, y, half, RowHeight, "＋ 予定へ",
+                    UdonMediaTheme.TextBody, UdonMediaTheme.Fill,
+                    UdonMediaTheme.RadiusMedium, out unused);
+
+                y += RowHeight + 4f;
+
+                // 結果の 1 行。<b>ボタンの下に専用の高さを取ります</b>
+                // (以前は次のボタンと重なる位置にあり、文字がボタンに被っていました)。
+                urlStatus = UdonWorldUiKit.Label(
+                    sheet, "UrlStatus", pad, y, inner, StatusHeight,
+                    UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
+
+                y += StatusHeight + Gap;
             }
-
-            y += RowHeight + Gap;
-
-            // ── 再生 / 予定へ
-            float half = (inner - Gap) * 0.5f;
-
-            Button playUrl = UdonWorldUiKit.RoundedButton(
-                sheet, "UrlPlay", pad, y, half, RowHeight, "▶ 再生",
-                UdonMediaTheme.TextBody, UdonMediaTheme.Accent,
-                UdonMediaTheme.RadiusMedium, out unused);
-
-            Button queueUrl = UdonWorldUiKit.RoundedButton(
-                sheet, "UrlQueue", pad + half + Gap, y, half, RowHeight, "＋ 予定へ",
-                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
-                UdonMediaTheme.RadiusMedium, out unused);
-
-            y += RowHeight + Gap;
-
-            Text urlStatus = UdonWorldUiKit.Label(
-                sheet, "UrlStatus", pad, y - Gap, inner, 22f,
-                UdonMediaTheme.TextCaption, TextAnchor.UpperLeft, UdonMediaTheme.TextMuted);
 
             // ── 繰り返し
             Text repeatLabel;
             Button repeat = UdonWorldUiKit.RoundedButton(
                 sheet, "Repeat", pad, y, inner, RowHeight, "繰り返し:切",
-                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.TextBody, UdonMediaTheme.Fill,
                 UdonMediaTheme.RadiusMedium, out repeatLabel);
 
             y += RowHeight + Gap;
@@ -664,7 +685,7 @@ namespace SmartMediaPlatform.World.EditorTools
             Text sleepLabel;
             Button sleep = UdonWorldUiKit.RoundedButton(
                 sheet, "Sleep", pad, y, inner, RowHeight, "おやすみ:切",
-                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.TextBody, UdonMediaTheme.Fill,
                 UdonMediaTheme.RadiusMedium, out sleepLabel);
 
             y += RowHeight + Gap;
@@ -672,12 +693,12 @@ namespace SmartMediaPlatform.World.EditorTools
             // ── 停止 / 予定を空に
             Button stop = UdonWorldUiKit.RoundedButton(
                 sheet, "Stop", pad, y, half, RowHeight, "■ 停止",
-                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.TextBody, UdonMediaTheme.Fill,
                 UdonMediaTheme.RadiusMedium, out unused);
 
             Button clear = UdonWorldUiKit.RoundedButton(
                 sheet, "ClearUpcoming", pad + half + Gap, y, half, RowHeight, "予定を空に",
-                UdonMediaTheme.TextBody, UdonMediaTheme.Surface,
+                UdonMediaTheme.TextBody, UdonMediaTheme.Fill,
                 UdonMediaTheme.RadiusMedium, out unused);
 
             y += RowHeight + Gap;
@@ -685,7 +706,7 @@ namespace SmartMediaPlatform.World.EditorTools
             // ── 閉じる
             Button close = UdonWorldUiKit.RoundedButton(
                 sheet, "Close", pad, y, inner, RowHeight, "閉じる",
-                UdonMediaTheme.TextBody, UdonMediaTheme.Base,
+                UdonMediaTheme.TextBody, UdonMediaTheme.Fill,
                 UdonMediaTheme.RadiusMedium, out unused);
 
             UdonWorldUiKit.Wire(stop, view, "Stop", "停止");
@@ -694,13 +715,17 @@ namespace SmartMediaPlatform.World.EditorTools
             if (options != null)
             {
                 options.Sheet = sheet.gameObject;
-                options.UrlField = urlField;
-                options.UrlStatus = urlStatus;
                 options.RepeatLabel = repeatLabel;
                 options.SleepLabel = sleepLabel;
 
-                UdonWorldUiKit.Wire(playUrl, options, "PlayUrl", "この URL を再生");
-                UdonWorldUiKit.Wire(queueUrl, options, "EnqueueUrl", "この URL をあとで");
+                if (withUrl)
+                {
+                    options.UrlField = urlField;
+                    options.UrlStatus = urlStatus;
+
+                    UdonWorldUiKit.Wire(playUrl, options, "PlayUrl", "この URL を再生");
+                    UdonWorldUiKit.Wire(queueUrl, options, "EnqueueUrl", "この URL を再生予定へ");
+                }
                 UdonWorldUiKit.Wire(repeat, options, "CycleRepeat", "繰り返しを変える");
                 UdonWorldUiKit.Wire(sleep, options, "CycleSleep", "おやすみタイマー");
                 UdonWorldUiKit.Wire(close, options, "Close", "閉じる");
@@ -784,7 +809,7 @@ namespace SmartMediaPlatform.World.EditorTools
         /// </summary>
         private static UdonMediaTabs BuildTabbedLists(
             RectTransform body, UdonMediaPanel panel,
-            float x, float y, float width, float height)
+            float x, float y, float width, float height, UdonPlayerOptions urlOptions)
         {
             const float TabGap = 9f;
             const int TabCount = 6;
@@ -939,7 +964,17 @@ namespace SmartMediaPlatform.World.EditorTools
 
             // ── 探す欄をいちばん上に置き、曲の一覧へ繋ぐ。
             //    <b>絞り込むのは「曲」だけ</b>なので、繋ぎ先はそこ 1 つです。
-            if (songList != null) BuildSearchBar(section, songList, width);
+            //    URL 欄を持っていれば、探す欄を縮めて右に並べます。
+            float searchWidth = urlOptions != null
+                ? width - UrlBarWidth - UdonMediaTheme.Space2
+                : width;
+
+            if (songList != null) BuildSearchBar(section, songList, searchWidth);
+
+            if (urlOptions != null)
+            {
+                BuildUrlBar(section, urlOptions, width - UrlBarWidth, UrlBarWidth);
+            }
 
             panel.Tabs = tabs;
 
@@ -1507,6 +1542,85 @@ namespace SmartMediaPlatform.World.EditorTools
             UdonWorldUiKit.ValueStrip(
                 page, "ScrollStrip", width - BarWidth, listTop, BarWidth, listHeight,
                 ScrollSegments, null, null, scroller, false, null, "", "");
+        }
+
+        /// <summary>
+        /// <b>URL 欄。</b>2026-09-28。探す欄の右に常に出します。
+        ///
+        /// 以前は「…」の中にあり、<b>開く → 貼る → 押す → 閉じる</b>の 4 手でした。
+        /// URL はよく使うと分かったので、<b>貼る → 押す</b>の 2 手で済む場所へ出しました。
+        ///
+        /// <code>
+        /// ┌──────────────────────────┐┌────────┐┌────────┐
+        /// │ URL  https://www.youtu…  ││ ▶ 再生 ││ ＋ 予定 │
+        /// └──────────────────────────┘└────────┘└────────┘
+        /// </code>
+        /// </summary>
+        private static void BuildUrlBar(
+            RectTransform parent, UdonPlayerOptions options, float x, float width)
+        {
+            const float Height = 64f;
+            const float TagWidth = 48f;
+            float gap = UdonMediaTheme.Space1;
+
+            float fieldWidth = width - UrlButtonWidth * 2f - gap * 2f;
+            int radius = Mathf.RoundToInt(Height * 0.5f);
+
+            RectTransform bar = UdonWorldUiKit.Place(parent, "UrlBar", x, 0f, width, Height);
+
+            Image back = UdonWorldUiKit.GlassPlate(
+                bar, "Back", 0f, 0f, fieldWidth, Height, UdonMediaTheme.SurfaceRaised, radius);
+            back.raycastTarget = false;
+
+            // 「URL」の札。探す欄の虫めがねと同じ位置に置き、何を打つ欄かを示す。
+            UdonWorldUiKit.Label(
+                bar, "Tag", UdonMediaTheme.Space2, 0f, TagWidth, Height,
+                UdonMediaTheme.TextCaption, TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted)
+                .text = "URL";
+
+            float textX = UdonMediaTheme.Space2 + TagWidth;
+            float textWidth = fieldWidth - textX - UdonMediaTheme.Space2;
+
+            RectTransform fieldRect = UdonWorldUiKit.Place(
+                bar, "UrlField", textX, 0f, textWidth, Height);
+
+            Image fieldBack = fieldRect.gameObject.AddComponent<Image>();
+            fieldBack.color = new Color(0f, 0f, 0f, 0.001f);
+
+            var urlField = fieldRect.gameObject.AddComponent<VRCUrlInputField>();
+
+            Text typed = UdonWorldUiKit.Label(
+                fieldRect, "Text", 0f, 0f, textWidth, Height, UdonMediaTheme.TextCaption,
+                TextAnchor.MiddleLeft, UdonMediaTheme.TextPrimary);
+            typed.raycastTarget = false;
+
+            Text placeholder = UdonWorldUiKit.Label(
+                fieldRect, "Placeholder", 0f, 0f, textWidth, Height, UdonMediaTheme.TextCaption,
+                TextAnchor.MiddleLeft, UdonMediaTheme.TextMuted);
+            placeholder.text = "YouTube などの URL を貼る";
+            placeholder.raycastTarget = false;
+
+            urlField.textComponent = typed;
+            urlField.placeholder = placeholder;
+            urlField.targetGraphic = fieldBack;
+
+            // 枠のどこを「使う」でも VRChat のキーボードが開くようにする。
+            UdonWorldUiKit.InteractArea(
+                bar, "UrlHit", 0f, 0f, fieldWidth, Height, options, "OpenUrlKeyboard", "URL を貼る");
+
+            Text unused;
+            Button play = UdonWorldUiKit.RoundedButton(
+                bar, "UrlPlay", fieldWidth + gap, 0f, UrlButtonWidth, Height, "▶ 再生",
+                UdonMediaTheme.TextBody, UdonMediaTheme.SurfaceRaised, radius, out unused);
+
+            Button queue = UdonWorldUiKit.RoundedButton(
+                bar, "UrlQueue", fieldWidth + gap * 2f + UrlButtonWidth, 0f, UrlButtonWidth, Height,
+                "＋ 予定", UdonMediaTheme.TextBody, UdonMediaTheme.SurfaceRaised, radius, out unused);
+
+            UdonWorldUiKit.Wire(play, options, "PlayUrl", "この URL を再生");
+            UdonWorldUiKit.Wire(queue, options, "EnqueueUrl", "この URL を再生予定へ");
+
+            options.UrlField = urlField;
         }
 
         /// <summary>

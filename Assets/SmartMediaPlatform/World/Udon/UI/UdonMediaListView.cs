@@ -128,6 +128,17 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("表示用データの窓口(URL は見えない)")]
         public UdonCatalogStore Store;
 
+        /// <summary>
+        /// <b>再生予定の一覧の先頭に、あとで流す URL を出すために読みます。</b>
+        /// 空なら URL は出ません。<c>UdonMediaPanel</c> が「…」の中身から入れます。
+        /// URL は、曲が終わったときに再生予定の曲より先に流れるので、先頭に並べます。
+        /// </summary>
+        [Tooltip("あとで流す URL を持っている所。UdonMediaPanel が自動で入れる")]
+        public SmartMediaPlatform.World.Udon.UdonPlayerOptions Options;
+
+        /// <summary>URL の行に出す見出し。</summary>
+        public string ExternalRowTitle = "URL の動画";
+
         [Header("行(この数がそのまま一度に見える行数)")]
         public UdonMediaListRow[] Rows;
 
@@ -271,7 +282,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         /// <summary>この一覧の総件数(見出しの行も 1 つと数える)。</summary>
         public int TotalCount()
         {
-            if (Source == SourceQueue) return Session != null ? Session.QueueCount : 0;
+            if (Source == SourceQueue) return ExternalRows() + (Session != null ? Session.QueueCount : 0);
             if (Source == SourceFavorite) return Profile != null ? Profile.FavoriteCount : 0;
             if (Source == SourceHistory) return Profile != null ? Profile.HistoryCount : 0;
             if (Source == SourcePlaylist) return Shelf != null ? Shelf.Count : 0;
@@ -773,7 +784,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             }
             else if (Source == SourceQueue)
             {
-                total = Session != null ? Session.QueueCount : 0;
+                total = TotalCount();
             }
             else if (Source == SourceFavorite || Source == SourceHistory
                      || Source == SourcePlaylist)
@@ -831,7 +842,16 @@ namespace SmartMediaPlatform.World.Udon.UI
                 }
                 else if (Source == SourceQueue)
                 {
-                    if (Session != null) catalogIndex = Session.GetQueueAt(position);
+                    int urls = ExternalRows();
+                    if (position >= 0 && position < urls)
+                    {
+                        ShowExternalRow(target, position);
+                        _shown[row] = -1;
+                        target.SetPressed(pressedStillOn && position == _touchedPosition);
+                        continue;
+                    }
+
+                    if (Session != null) catalogIndex = Session.GetQueueAt(position - urls);
                 }
                 else if (Source == SourceFavorite)
                 {
@@ -952,7 +972,16 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             if (Source == SourceQueue)
             {
-                Report(Controller.JumpInQueue(Offset + row), "移動", title);
+                int position = Offset + row;
+                int urls = ExternalRows();
+
+                if (position < urls)
+                {
+                    Report(Controller.PlayQueuedUrl(position), "再生", ExternalRowTitle);
+                    return;
+                }
+
+                Report(Controller.JumpInQueue(position - urls), "移動", title);
                 return;
             }
 
@@ -979,6 +1008,14 @@ namespace SmartMediaPlatform.World.Udon.UI
                 return;
             }
 
+            // URL の行は曲ではない(_shown が -1)ので、曲かどうかを見る前に分けます。
+            if (Source == SourceQueue && Offset + row < ExternalRows())
+            {
+                MarkTouched(Offset + row);
+                Report(Controller.RemoveQueuedUrl(Offset + row), "再生予定から削除", ExternalRowTitle);
+                return;
+            }
+
             if (_shown != null && row < _shown.Length && _shown[row] < 0) return;
 
             string title = TitleAt(row);
@@ -987,7 +1024,7 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             if (Source == SourceQueue)
             {
-                Report(Controller.RemoveFromQueue(Offset + row), "Queue から削除", title);
+                Report(Controller.RemoveFromQueue(Offset + row - ExternalRows()), "Queue から削除", title);
                 return;
             }
 
@@ -1482,7 +1519,11 @@ namespace SmartMediaPlatform.World.Udon.UI
             int current = Session.CurrentIndex;
             if (current < 0) return -1;
 
-            if (Source == SourceQueue) return Session.IndexInQueue(current);
+            if (Source == SourceQueue)
+            {
+                int inQueue = Session.IndexInQueue(current);
+                return inQueue < 0 ? -1 : inQueue + ExternalRows();
+            }
 
             if (Source == SourceLibrary && UsesView())
             {
@@ -1915,6 +1956,28 @@ namespace SmartMediaPlatform.World.Udon.UI
         private bool HasSecondary(int position)
         {
             return true;
+        }
+
+        /// <summary>再生予定の一覧の先頭に出す URL の数。再生予定以外では 0。</summary>
+        private int ExternalRows()
+        {
+            if (Source != SourceQueue || Options == null) return 0;
+            return Options.ExternalCount;
+        }
+
+        /// <summary>URL の行を描く。♥ は出しません(お気に入りはカタログの曲だけ)。</summary>
+        private void ShowExternalRow(UdonMediaListRow target, int position)
+        {
+            target.ShowItem(
+                IndexLabel(position),
+                ExternalRowTitle,
+                Options != null ? Options.ExternalTextAt(position) : "",
+                "",
+                false,
+                true,
+                SecondaryLabel());
+
+            target.ShowFavorite(false, false);
         }
 
         private string TitleAt(int row)

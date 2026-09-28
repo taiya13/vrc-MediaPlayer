@@ -78,6 +78,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         public string StoppedLabel = "■ 停止";
         public string ExhaustedLabel = "次がありません";
         public string LoadingLabel = "読み込み中…";
+        public string ExternalTitle = "URL の動画";
 
         /// <summary>
         /// <b>バーと時間だけを毎フレーム動かす。</b>Phase7-2。
@@ -100,7 +101,9 @@ namespace SmartMediaPlatform.World.Udon.UI
         void Update()
         {
             if (Session == null) return;
-            if (Session.CurrentIndex < 0) return;
+
+            // URL を流しているときもバーを動かす(カタログの番号は -1 のまま)。
+            if (!Session.HasCurrent) return;
 
             UdonVideoBackend backend = ResolveBackend();
             if (backend == null) return;
@@ -152,7 +155,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         {
             if (_writingSeek) return;
             if (SeekSlider == null || Session == null) return;
-            if (Session.CurrentIndex < 0) return;
+            if (!Session.HasCurrent) return;
 
             _seekValue = Mathf.Clamp01(SeekSlider.value);
             _seekPending = true;
@@ -206,16 +209,27 @@ namespace SmartMediaPlatform.World.Udon.UI
 
             int current = Session.CurrentIndex;
 
-            if (current < 0)
+            if (!Session.HasCurrent)
             {
                 ShowNothing(Session.IsExhausted ? ExhaustedLabel : StoppedLabel);
                 return;
             }
 
-            SetText(TitleText, Store != null ? Store.GetTitle(current) : "");
-            SetText(ArtistText, Store != null ? Store.GetArtist(current) : "");
+            if (Session.IsExternal)
+            {
+                // ── URL の動画。題名は動画プレイヤーから取れないので、
+                //    見出しは決まった文言にして、2 行目に URL そのものを出します。
+                SetText(TitleText, ExternalTitle);
+                SetText(ArtistText, Session.ExternalLabel);
+                ShowGenre("");
+            }
+            else
+            {
+                SetText(TitleText, Store != null ? Store.GetTitle(current) : "");
+                SetText(ArtistText, Store != null ? Store.GetArtist(current) : "");
 
-            ShowGenre(Store != null ? Store.GetGenre(current) : "");
+                ShowGenre(Store != null ? Store.GetGenre(current) : "");
+            }
 
             // Phase7-3 から QueueCount は「これから流すもの」だけの数。
             // 鳴っているものは入っていないので、引き算は要らない。
@@ -287,6 +301,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         private string FormatLength(float seconds, int catalogIndex)
         {
             if (seconds > 0f) return FormatSeconds(seconds);
+            if (catalogIndex < 0) return "--:--";
             return Duration(catalogIndex);
         }
 

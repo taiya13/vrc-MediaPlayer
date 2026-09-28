@@ -85,6 +85,9 @@ namespace SmartMediaPlatform.World.Udon
         // 読み込みの間隔をあけるための状態
         private int _pendingIndex = -1;
         private float _lastLoadAt = -999f;
+
+        // 待たせている URL(カタログに無いもの)。null ならカタログの _pendingIndex を読む。
+        private VRCUrl _pendingExternal;
         private bool _loadScheduled;
 
         // 読み込んでから一度でも鳴ったか(鳴らずに終わったら失敗とみなす)
@@ -113,12 +116,19 @@ namespace SmartMediaPlatform.World.Udon
             }
 
             _pendingIndex = catalogIndex;
+            _pendingExternal = null;
 
             // ── 前の読み込みから間があいていなければ、あとで読む。
             //    VRChat は読み込み回数を制限していて、制限に掛かった読み込みは
             //    「即座に失敗して返る」。それを上位が「失敗 → 次へ」と受けると、
             //    次の読み込みもまた制限に掛かり、フレーム単位で回り続けて固まる。
             //    捨てずに「遅らせる」ので、押した操作は必ず効く。
+            return LoadOrWait();
+        }
+
+        /// <summary>待つ必要があれば読み込みを遅らせ、無ければいま読む。</summary>
+        private bool LoadOrWait()
+        {
             float wait = LoadWait();
             if (wait > 0f)
             {
@@ -177,13 +187,27 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>いま読み込む。待ち時間の判断はしない。</summary>
         private bool LoadNow()
         {
-            if (Player == null || Catalog == null) return false;
-            if (_pendingIndex < 0 || _pendingIndex >= Catalog.Count) return false;
+            if (Player == null) return false;
 
-            VRCUrl url = Catalog.GetUrl(_pendingIndex);
-            if (url == null) return false;
+            VRCUrl url;
+            if (_pendingExternal != null)
+            {
+                // カタログに無い URL。カタログの何番でもないので -1。
+                url = _pendingExternal;
+                _pendingExternal = null;
+                LoadedIndex = -1;
+            }
+            else
+            {
+                if (Catalog == null) return false;
+                if (_pendingIndex < 0 || _pendingIndex >= Catalog.Count) return false;
 
-            LoadedIndex = _pendingIndex;
+                url = Catalog.GetUrl(_pendingIndex);
+                if (url == null) return false;
+
+                LoadedIndex = _pendingIndex;
+            }
+
             LoadCount++;
             IsLoading = true;
             _started = false;
@@ -274,21 +298,17 @@ namespace SmartMediaPlatform.World.Udon
             if (Player == null || url == null) return false;
 
             _pendingIndex = -1;
+            _pendingExternal = url;
             LoadedIndex = -1;
-            LoadCount++;
-            IsLoading = true;
-            _started = false;
-            _ready = false;
             _wantsPlay = true;
-            _lastReportedErrorCode = -1;
-            _lastLoadAt = Time.time;
 
-            _endReported = false;
-            _lastWatchedTime = 0f;
+            // ── カタログの曲と同じく、読み込みの間隔を空けます。
+            //    曲を選んだ直後に URL を流すと、VRChat の読み込み回数の制限に掛かって
+            //    即座に失敗が返り、次の曲へ飛ばされていました。
+            //    待っている間は、前の曲を黙らせておきます(読み込み中に前の曲が鳴り続けないように)。
+            if (LoadWait() > 0f) Player.Pause();
 
-            Player.Pause();
-            Player.LoadURL(url);
-            return true;
+            return LoadOrWait();
         }
 
         public bool Stop()
@@ -489,6 +509,12 @@ namespace SmartMediaPlatform.World.Udon
 
         public override void OnVideoReady()
         {
+            // ── 次の読み込みを待たせている間に、<b>前の読み込み</b>が終わった知らせ。
+            //    ここで鳴らすと、「鳴らしてほしい」の印を前の曲が使ってしまい、
+            //    あとから読み込んだ曲(曲を選んだ直後に流した URL など)が
+            //    <b>読み込まれたまま鳴らなくなります</b>。次の読み込みを待ちます。
+            if (_loadScheduled) return;
+
             IsLoading = false;
             _ready = true;
 

@@ -160,6 +160,19 @@ namespace SmartMediaPlatform.World.EditorTools
         public static readonly Color SurfaceRaised = new Color(1f, 1f, 1f, 0.88f);
 
         /// <summary>
+        /// <b>透けない板。</b>「…」のシートのように、<b>ほかの部品の上に重なって開くもの</b>だけに使います。
+        /// 半透明のままだと、下の一覧やボタンの文字が透けて混ざり、どちらも読めなくなります
+        /// (2026-09-28 に実機の写真で確認)。
+        /// </summary>
+        public static readonly Color SheetSolid = new Color(0.972f, 0.976f, 0.984f, 1f);
+
+        /// <summary>
+        /// <b>透けない板の上のボタンの面。</b>板より一段暗い灰青。
+        /// 板と同じ白にすると、ボタンの形が消えて<b>ただの文字</b>に見えます。
+        /// </summary>
+        public static readonly Color Fill = new Color(0.890f, 0.902f, 0.925f, 1f);
+
+        /// <summary>
         /// <b>硝子の縁の光。</b>カードの上端に 2 px だけ引きます。
         /// これが無いと、半透明の板は<b>ただの「薄い色」</b>にしか見えません。
         /// </summary>

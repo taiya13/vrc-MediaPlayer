@@ -43,8 +43,11 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("人が URL を打ち込む欄。ここ以外から URL は作れない")]
         public VRCUrlInputField UrlField;
 
-        [Tooltip("URL の状態を出す先")]
+        [Tooltip("URL の状態を出す先。空でも動く")]
         public Text UrlStatus;
+
+        [Tooltip("URL の状態を、パネルの状態の行にも出す(壁パネルでは URL 欄が帯の下にあり、専用の行を持たないため)")]
+        public SmartMediaPlatform.World.Udon.UI.UdonMediaPanel Panel;
 
         [Header("表示")]
         public Text RepeatLabel;
@@ -85,6 +88,7 @@ namespace SmartMediaPlatform.World.Udon
         public const int ExternalCapacity = 8;
 
         private VRCUrl[] _external;
+        private string[] _externalText;
         private int _externalCount;
 
         private bool _initialized;
@@ -101,6 +105,7 @@ namespace SmartMediaPlatform.World.Udon
             _initialized = true;
 
             _external = new VRCUrl[ExternalCapacity];
+            _externalText = new string[ExternalCapacity];
         }
 
         // ───────── 開け閉て ─────────
@@ -141,18 +146,7 @@ namespace SmartMediaPlatform.World.Udon
                 return;
             }
 
-            UdonVideoBackend backend = ResolveBackend();
-            if (backend == null)
-            {
-                SetStatus("鳴らす相手がいません");
-                return;
-            }
-
-            // カタログの曲ではないので、上位の「いま鳴っているもの」は空にします。
-            // ここを合わせておかないと、一覧が別の曲を鳴っていることにしてしまいます。
-            if (Session != null) Session.NotifyExternalPlayback();
-
-            if (backend.PlayExternal(url)) SetStatus("再生します");
+            if (StartExternal(url)) SetStatus("URL の動画を再生します");
             else SetStatus("再生できませんでした");
         }
 
@@ -168,21 +162,34 @@ namespace SmartMediaPlatform.World.Udon
                 return;
             }
 
+            // ── 同じ URL を続けて積まない。
+            //    URL 欄は Udon から空にできないので、押し直すと同じものが何度も入ります。
+            string text = url.Get();
+            for (int i = 0; i < _externalCount; i++)
+            {
+                if (_externalText[i] == text)
+                {
+                    SetStatus("この URL はもう再生予定に入っています");
+                    return;
+                }
+            }
+
             if (_externalCount >= ExternalCapacity)
             {
-                SetStatus("これ以上は積めません");
+                SetStatus("URL はこれ以上積めません(" + ExternalCapacity + " 件まで)");
                 return;
             }
 
             _external[_externalCount] = url;
+            _externalText[_externalCount] = text;
             _externalCount++;
 
-            SetStatus("あとで流します(" + _externalCount + " 件)");
+            SetStatus("URL を再生予定に入れました(URL " + _externalCount + " 件)");
         }
 
         /// <summary>
         /// <b>あとで流す URL があれば 1 つ取り出して鳴らす。</b>
-        /// 曲が終わったときに <see cref="UdonPlayerSession"/> から聞かれます。
+        /// 曲が終わったとき・「次へ」を押したときに <see cref="UdonPlayerSession"/> から聞かれます。
         /// </summary>
         /// <returns>鳴らしたら true。</returns>
         public bool TryPlayNextExternal()
@@ -190,21 +197,86 @@ namespace SmartMediaPlatform.World.Udon
             EnsureInitialized();
             if (_externalCount <= 0) return false;
 
-            VRCUrl url = _external[0];
-            for (int i = 0; i < _externalCount - 1; i++) _external[i] = _external[i + 1];
+            return PlayExternalAt(0);
+        }
+
+        /// <summary>
+        /// <b>再生予定の <paramref name="position"/> 番目の URL を、いま流す。</b>
+        /// 一覧から外してから鳴らします(鳴っているものは再生予定に残さない、Phase7-3 と同じ)。
+        /// </summary>
+        public bool PlayExternalAt(int position)
+        {
+            EnsureInitialized();
+            if (position < 0 || position >= _externalCount) return false;
+
+            VRCUrl url = _external[position];
+            RemoveExternalAt(position);
+
+            if (url == null) return false;
+            return StartExternal(url);
+        }
+
+        /// <summary>再生予定から URL を 1 つ外す。</summary>
+        public bool RemoveExternalAt(int position)
+        {
+            EnsureInitialized();
+            if (position < 0 || position >= _externalCount) return false;
+
+            for (int i = position; i < _externalCount - 1; i++)
+            {
+                _external[i] = _external[i + 1];
+                _externalText[i] = _externalText[i + 1];
+            }
+
             _externalCount--;
+            _external[_externalCount] = null;
+            _externalText[_externalCount] = null;
+            return true;
+        }
 
-            UdonVideoBackend backend = ResolveBackend();
-            if (backend == null || url == null) return false;
+        /// <summary>あとで流す URL を全部外す。外した数を返す。</summary>
+        public int ClearExternal()
+        {
+            EnsureInitialized();
 
-            if (Session != null) Session.NotifyExternalPlayback();
-            return backend.PlayExternal(url);
+            int removed = _externalCount;
+            for (int i = 0; i < _externalCount; i++)
+            {
+                _external[i] = null;
+                _externalText[i] = null;
+            }
+            _externalCount = 0;
+            return removed;
         }
 
         /// <summary>あとで流す URL の数。</summary>
         public int ExternalCount
         {
             get { EnsureInitialized(); return _externalCount; }
+        }
+
+        /// <summary>再生予定の一覧に出す文字(打ち込まれた URL そのもの)。</summary>
+        public string ExternalTextAt(int position)
+        {
+            EnsureInitialized();
+            if (position < 0 || position >= _externalCount) return "";
+
+            string text = _externalText[position];
+            return text == null ? "" : text;
+        }
+
+        /// <summary>URL を鳴らす。「いま鳴っているもの」を URL に切り替えてから、動画プレイヤーへ渡す。</summary>
+        private bool StartExternal(VRCUrl url)
+        {
+            // カタログの曲ではないので、上位の「いま鳴っているもの」を URL に切り替えます。
+            // 重ねている最中なら、ここで裏の曲がやめになります。
+            // だから動画プレイヤーは<b>そのあとで</b>選びます(先に選ぶと裏を掴むことがある)。
+            if (Session != null) Session.NotifyExternalPlayback(url.Get());
+
+            UdonVideoBackend backend = ResolveBackend();
+            if (backend == null) return false;
+
+            return backend.PlayExternal(url);
         }
 
         private VRCUrl ReadUrl()
@@ -337,8 +409,8 @@ namespace SmartMediaPlatform.World.Udon
 
         private void SetStatus(string text)
         {
-            if (UrlStatus == null) return;
-            if (UrlStatus.text != text) UrlStatus.text = text;
+            if (UrlStatus != null && UrlStatus.text != text) UrlStatus.text = text;
+            if (Panel != null) Panel.SetStatus(text);
         }
 
         private UdonVideoBackend ResolveBackend()

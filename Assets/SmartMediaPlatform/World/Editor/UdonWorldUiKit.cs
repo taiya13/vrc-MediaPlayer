@@ -728,10 +728,15 @@ namespace SmartMediaPlatform.World.EditorTools
             //    「何も設定していない」と見なして<b>既定の「使う」に戻す</b>ためです。
             //    空白 1 文字なら「設定されている」と見なされ、中身は何もありません。
             //    <b>手のアイコンは VRChat が描くので消せません</b>(文字だけ消えます)。
+            //
+            //    <b>いまは全部のボタンで文字を出しません</b>(2026-09-28)。
+            //    VRChat はこの文字を<b>白</b>で描き、ワールドから色を変えられません。
+            //    白い硝子のパネルの上では読めず、ボタン自体に「▶ 再生」などと書いてあるので、
+            //    出さなくても何のボタンかは分かります。戻すときは <see cref="ShowInteractText"/> を true に。
             var text = serialized.FindProperty("interactText");
             if (text != null && caption != null)
             {
-                text.stringValue = caption.Length == 0 ? " " : caption;
+                text.stringValue = !ShowInteractText || caption.Length == 0 ? " " : caption;
             }
 
             var proximity = serialized.FindProperty("proximity");
@@ -739,6 +744,12 @@ namespace SmartMediaPlatform.World.EditorTools
 
             serialized.ApplyModifiedPropertiesWithoutUndo();
         }
+
+        /// <summary>
+        /// 「使う」を向けたときに、カーソルの横へボタンの説明を出すか。
+        /// VRChat が白い文字で描くため、白いパネルの上では読めないので切ってあります。
+        /// </summary>
+        public const bool ShowInteractText = false;
 
         /// <summary>「使う」が届く距離(m)。</summary>
         public const float InteractDistance = 5f;
