@@ -125,11 +125,27 @@ namespace SmartMediaPlatform.World.Udon
         // -1 はまだ配られていない(そのときは各自の Inspector の値のまま)。
         [UdonSynced] private int _accessPolicy = -1;
 
+        // ── URL(カタログに無い動画)。2026-09-28。
+        //    URL には番号が無いので、<b>URL そのもの</b>を配ります。
+        //    どれも人が URL 欄に打ち込んだものを受け渡すだけで、文字列から作ってはいません。
+
+        // いま流している URL。カタログの曲を流しているときは空。
+        [UdonSynced] private VRCUrl _currentUrl;
+
+        // URL を流し始めるたびに持ち主が進める番号。同じ URL をもう一度流したとき(1 曲繰り返し)も
+        // 番号が変わるので、受け取る側は読み直せる。
+        [UdonSynced] private int _externalSerial;
+
+        // あとで流す URL(再生予定の先頭に出るもの)。持ち主が代わっても続きを流せるように配る。
+        [UdonSynced] private VRCUrl[] _urlQueue;
+
         // ───────── 手元だけの状態 ─────────
 
         private int _appliedRevision = -1;
         private int _appliedMedia = -1;
         private int _capturedMedia = -1;
+        private int _appliedSerial = -1;
+        private int _capturedSerial = -1;
 
         // 実際に鳴り始めた時点で基準を置き直したか。
         // 置き直すまでは位置合わせをしない(下の AnchorWhenPlaybackStarts 参照)。
@@ -148,6 +164,10 @@ namespace SmartMediaPlatform.World.Udon
             _initialized = true;
 
             if (_queue == null) _queue = new int[0];
+
+            // 空の URL は null ではなく「空」で持つ(同期で null を送らないため)。
+            if (_currentUrl == null) _currentUrl = VRCUrl.Empty;
+            if (_urlQueue == null) _urlQueue = new VRCUrl[0];
 
             // 動画の終了で次へ進んでよいのは持ち主だけ。
             // (終了イベントは全員の手元で別々に起きるため)
@@ -306,12 +326,22 @@ namespace SmartMediaPlatform.World.Udon
             _nextMedia = Session.PeekNextIndex();
             _accessPolicy = AccessPolicy;
 
+            // URL を流しているなら、URL そのものと番号も配る。
+            UdonPlayerOptions options = Session.Options;
+            VRCUrl url = options != null ? options.CurrentUrl : null;
+            bool external = Session.IsExternal && url != null;
+
+            _currentUrl = external ? url : VRCUrl.Empty;
+            _externalSerial = external ? Session.ExternalSerial : 0;
+            _urlQueue = options != null ? options.SnapshotExternal() : new VRCUrl[0];
+
             // 鳴らすものが変わったなら頭から。変わっていないなら、いまの位置を基準にする
-            // (一時停止・再開はこれで表せる)。
-            if (current != _capturedMedia)
+            // (一時停止・再開はこれで表せる)。URL は番号が変わったら「変わった」。
+            if (current != _capturedMedia || _externalSerial != _capturedSerial)
             {
                 _basePositionMs = 0;
                 _capturedMedia = current;
+                _capturedSerial = _externalSerial;
                 _anchored = false;      // 鳴り始めたら置き直す
             }
             else
@@ -326,6 +356,7 @@ namespace SmartMediaPlatform.World.Udon
 
             _appliedRevision = _revision;
             _appliedMedia = current;
+            _appliedSerial = _externalSerial;
 
             RequestSerialization();
 
@@ -360,17 +391,36 @@ namespace SmartMediaPlatform.World.Udon
             Session.ApplySyncedState(_queue, _playing, current);
             Session.ApplySyncedNext(_nextMedia);
 
+            // URL のぶん。持ち主が URL を流していれば、番号がそのまま目印になる。
+            string urlText = UrlText(_currentUrl);
+            bool external = current < 0 && urlText.Length > 0;
+            UdonPlayerOptions options = Session.Options;
+
+            if (options != null) options.ApplySyncedExternal(_urlQueue);
+
             UdonVideoBackend active = ActiveBackend();
 
             // 2. 鳴らすものが変わったなら読み直す
-            if (current != _appliedMedia)
+            if (current != _appliedMedia || (external && _externalSerial != _appliedSerial))
             {
                 _appliedMedia = current;
                 _capturedMedia = current;
+                _appliedSerial = _externalSerial;
+                _capturedSerial = _externalSerial;
 
                 _anchored = false;      // 受け取る側も、鳴り始めるまで合わせない
 
-                if (current < 0)
+                if (external && options != null)
+                {
+                    // 持ち主と同じ URL を読む(重ねている最中なら、裏の曲はやめる)。
+                    options.PlayFromSync(_currentUrl, _externalSerial);
+                    if (!_playing)
+                    {
+                        UdonVideoBackend paused = ActiveBackend();
+                        if (paused != null) paused.Pause();
+                    }
+                }
+                else if (current < 0)
                 {
                     if (Crossfade != null) Crossfade.CancelFade();
                     if (active != null) active.Stop();
@@ -385,8 +435,11 @@ namespace SmartMediaPlatform.World.Udon
                     active.LoadAndPlay(current);
                 }
             }
-            else if (active != null && current >= 0)
+            else if (active != null && (current >= 0 || external))
             {
+                // URL の印は ApplySyncedState で消えるので、同じ URL のままなら戻す。
+                if (external) Session.ApplySyncedExternal(urlText, _externalSerial);
+
                 // 3. 同じものなら、再生 / 一時停止だけ合わせる
                 if (_playing) active.Play();
                 else
@@ -436,10 +489,37 @@ namespace SmartMediaPlatform.World.Udon
             if (Session.CurrentIndex != _appliedMedia
                 || Session.IsPlaying != _playing
                 || Session.PeekNextIndex() != _nextMedia
-                || QueueChanged())
+                || QueueChanged()
+                || ExternalChanged())
             {
                 Capture();
             }
+        }
+
+        /// <summary>URL のぶんが、最後に配ったものから変わったか。</summary>
+        private bool ExternalChanged()
+        {
+            int serial = Session.IsExternal ? Session.ExternalSerial : 0;
+            if (serial != _externalSerial) return true;
+
+            UdonPlayerOptions options = Session.Options;
+            int count = options != null ? options.ExternalCount : 0;
+            int synced = _urlQueue == null ? 0 : _urlQueue.Length;
+            if (count != synced) return true;
+
+            for (int i = 0; i < count; i++)
+            {
+                if (options.ExternalTextAt(i) != UrlText(_urlQueue[i])) return true;
+            }
+            return false;
+        }
+
+        /// <summary>URL の中身の文字。null や空なら空文字。</summary>
+        private string UrlText(VRCUrl url)
+        {
+            if (url == null) return "";
+            string text = url.Get();
+            return text == null ? "" : text;
         }
 
         private bool QueueChanged()
@@ -494,6 +574,9 @@ namespace SmartMediaPlatform.World.Udon
             if (active == null || Session == null) return false;
             if (active.IsLoading) return false;
 
+            // URL はカタログの番号を持たない(-1)。読み込みが終わっていれば、それがいまの URL。
+            if (Session.IsExternal) return active.LoadedIndex < 0;
+
             return active.LoadedIndex == Session.CurrentIndex;
         }
 
@@ -537,7 +620,7 @@ namespace SmartMediaPlatform.World.Udon
         {
             if (_anchored) return;
             if (Session == null) return;
-            if (Session.CurrentIndex < 0) return;
+            if (!Session.HasCurrent) return;
 
             // ── まだ「前の曲」が鳴っているうちに基準を置かない。
             //
@@ -577,7 +660,7 @@ namespace SmartMediaPlatform.World.Udon
             if (!_anchored) return;
             if (!_playing) return;
             if (Session == null) return;
-            if (Session.CurrentIndex < 0) return;
+            if (!Session.HasCurrent) return;
 
             // 読み込み中の曲と、いま鳴っている曲が違う間は触らない。
             if (!IsBackendOnCurrentMedia()) return;
@@ -644,6 +727,7 @@ namespace SmartMediaPlatform.World.Udon
             }
 
             _appliedMedia = -1;   // 読み直させる
+            _appliedSerial = -1;
             _anchored = false;
             Apply();
         }

@@ -117,6 +117,10 @@ namespace SmartMediaPlatform.World.Udon
         private bool _externalPlaying;
         private string _externalLabel = "";
 
+        // URL を流し始めるたびに 1 つ進める番号(同期用)。同じ URL をもう一度流したときも進むので、
+        // 受け取る側は「番号が変わった = 読み直す」で判断できる。
+        private int _externalSerial;
+
         private bool _initialized;
 
         void Start()
@@ -168,6 +172,9 @@ namespace SmartMediaPlatform.World.Udon
 
         /// <summary>URL を流しているときの見出し(打ち込まれた URL そのもの)。</summary>
         public string ExternalLabel { get { return IsExternal ? _externalLabel : ""; } }
+
+        /// <summary>URL を流し始めるたびに進む番号(同期で「読み直すか」を決めるのに使う)。</summary>
+        public int ExternalSerial { get { return _externalSerial; } }
 
         /// <summary>カタログの曲か URL の、どちらかが「いまの曲」としてあるか。</summary>
         public bool HasCurrent { get { return _currentIndex >= 0 || IsExternal; } }
@@ -537,8 +544,25 @@ namespace SmartMediaPlatform.World.Udon
             _requestedIndex = -1;
             _externalPlaying = true;
             _externalLabel = label == null ? "" : label;
+            _externalSerial++;
             _isPlaying = true;
             _exhausted = false;
+        }
+
+        /// <summary>
+        /// <b>同期で「持ち主は URL を流している」と届いた。</b>2026-09-28。
+        /// <see cref="ApplySyncedState"/> のあとに呼びます(あちらは URL の印を消すため)。
+        /// 読み込みはしません(読むかどうかは <see cref="UdonSyncCoordinator"/> が番号で決める)。
+        /// </summary>
+        public void ApplySyncedExternal(string label, int serial)
+        {
+            EnsureInitialized();
+
+            _currentIndex = -1;
+            _requestedIndex = -1;
+            _externalPlaying = true;
+            _externalLabel = label == null ? "" : label;
+            _externalSerial = serial;
         }
 
         /// <summary>実際に鳴り始めた。ここで失敗の数を戻す。</summary>
@@ -620,6 +644,8 @@ namespace SmartMediaPlatform.World.Udon
                 UdonVideoBackend replaying = ActiveBackend();
                 if (replaying != null && replaying.ReplayExternal())
                 {
+                    // 同じ URL でも「もう一度流した」ことを同期で伝えるため、番号を進める。
+                    _externalSerial++;
                     _isPlaying = true;
                     return;
                 }

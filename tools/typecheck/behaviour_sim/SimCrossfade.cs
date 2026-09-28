@@ -569,6 +569,65 @@ public static class SimCrossfade
         }
     }
 
+    // ───────── 同期(二人ぶんの手元)─────────
+
+    static UdonSyncCoordinator AttachSync(XWorld w)
+    {
+        var sync = Make<UdonSyncCoordinator>("Sync");
+        sync.Session = w.Session;
+        sync.Backend = w.A;
+        sync.Controller = w.Controller;
+        sync.Crossfade = w.X;
+        w.Controller.Sync = sync;
+        w.Options.Sync = sync;
+        return sync;
+    }
+
+    static void AsPlayer(VRCPlayerApi player, Action action)
+    {
+        Networking.SimLocal = player;
+        action();
+    }
+
+    /// <summary>持ち主の同期する値([UdonSynced])を、受け取る側へ写して「届いた」を呼ぶ。</summary>
+    static void Deliver(UdonSyncCoordinator from, UdonSyncCoordinator to)
+    {
+        foreach (FieldInfo f in typeof(UdonSyncCoordinator).GetFields(BindingFlags.NonPublic | BindingFlags.Instance))
+        {
+            if (f.GetCustomAttributes(typeof(UdonSharp.UdonSyncedAttribute), false).Length == 0) continue;
+            f.SetValue(to, f.GetValue(from));
+        }
+        to.OnDeserialization();
+    }
+
+    /// <summary>二人の手元を同じ時間だけ進める(それぞれ自分のプレイヤーとして)。</summary>
+    static bool RunBoth(XWorld a, XWorld b, VRCPlayerApi pa, VRCPlayerApi pb, Func<bool> done, float maxSeconds)
+    {
+        int steps = (int)(maxSeconds / Dt + 0.5f);
+        for (int i = 0; i < steps; i++)
+        {
+            if (done()) return true;
+
+            Time.SimNow += Dt;
+            SimEvents.RunDue();
+
+            foreach (XWorld w in new[] { a, b })
+            {
+                Networking.SimLocal = w == a ? pa : pb;
+                w.PA.Advance(Dt);
+                w.PB.Advance(Dt);
+                CallUpdate(w.A);
+                CallUpdate(w.B);
+                CallUpdate(w.FA);
+                CallUpdate(w.FB);
+                CallUpdate(w.X);
+                CallUpdate(w.Options);
+                w.Sample();
+            }
+        }
+        return done();
+    }
+
     // ───────── URL(カタログに無い動画)─────────
 
     /// <summary>URL 欄に URL を貼ったことにする。動画の長さも決めておく。</summary>
@@ -763,6 +822,107 @@ public static class SimCrossfade
             Equal(UdonSyncCoordinator.AccessOwnerOnly, sync.AccessPolicy, "次は「いまの操作者だけ」");
             w.Options.CycleAccess();
             Equal(UdonSyncCoordinator.AccessEveryone, sync.AccessPolicy, "一周して「誰でも」に戻る");
+
+            Networking.SimLocal = null;
+            Networking.SimOwner = null;
+        });
+
+        Sim.Scenario("[URL 同期] 持ち主が流した URL は、ほかの人の手元でも同じ URL が流れ、止まらない", () =>
+        {
+            var owner = new VRCPlayerApi { playerId = 1, displayName = "持ち主", isLocal = true, isMaster = true };
+            var guest = new VRCPlayerApi { playerId = 2, displayName = "ゲスト", isLocal = true, isMaster = false };
+
+            var a = Build(6, 120f, true, true);
+            var b = Build(6, 120f, true, true);
+            UdonSyncCoordinator syncA = AttachSync(a);
+            UdonSyncCoordinator syncB = AttachSync(b);
+
+            Networking.SimOwner = owner;
+            AsPlayer(owner, () => { syncA.EnsureInitialized(); a.Controller.PlayCatalogIndex(0); });
+            AsPlayer(guest, () => { syncB.EnsureInitialized(); Deliver(syncA, syncB); });
+            Check(RunBoth(a, b, owner, guest, () => FrontAudible(a) && FrontAudible(b), 15f), "二人とも曲 0 が鳴る");
+
+            // 持ち主が URL を流す。
+            AsPlayer(owner, () =>
+            {
+                PasteUrl(a, "https://example.com/shared", 90f);
+                a.Options.PlayUrl();
+            });
+            AsPlayer(guest, () => Deliver(syncA, syncB));
+
+            Check(b.Session.IsExternal, "ゲストの手元でも URL を流している印が立つ(止まらない)");
+            Equal("https://example.com/shared", b.Session.ExternalLabel, "ゲストの見出しも同じ URL");
+            Check(RunBoth(a, b, owner, guest,
+                          () => FrontUrl(b) == "https://example.com/shared" && FrontAudible(b), 15f),
+                  "ゲストの手元でも同じ URL が鳴り始める");
+            Check(b.Session.IsPlaying, "ゲストの手元も再生中のまま");
+
+            // 何度届いても、同じ URL は読み直さない。
+            int loads = b.PA.Loads + b.PB.Loads;
+            AsPlayer(guest, () => { Deliver(syncA, syncB); Deliver(syncA, syncB); });
+            Run(b, 0.5f);
+            Equal(loads, b.PA.Loads + b.PB.Loads, "同じ URL が何度届いても読み直さない");
+            Check(b.Session.IsExternal, "届いたあとも URL の印は立ったまま");
+
+            // 持ち主が URL を「予定へ」入れると、ゲストの再生予定にも出る。
+            AsPlayer(owner, () =>
+            {
+                PasteUrl(a, "https://example.com/next", 90f);
+                a.Options.EnqueueUrl();
+            });
+            AsPlayer(guest, () => Deliver(syncA, syncB));
+            Equal(1, b.Options.ExternalCount, "ゲストの再生予定にも URL が 1 件出る");
+            Equal("https://example.com/next", b.Options.ExternalTextAt(0), "同じ URL");
+
+            // 持ち主が一時停止すると、ゲストも止まる。
+            AsPlayer(owner, () => { a.Session.TogglePlayPause(); syncA.Capture(); });
+            AsPlayer(guest, () => Deliver(syncA, syncB));
+            Run(b, 0.3f);
+            Check(!b.Session.ActiveBackend().IsPlaying, "持ち主が止めると、ゲストの URL も止まる");
+            Check(b.Session.IsExternal, "止まっても URL のまま");
+
+            // 持ち主が同じ URL をもう一度流す(1 曲繰り返しと同じ)と、ゲストも頭から読み直す。
+            AsPlayer(owner, () =>
+            {
+                a.Session.TogglePlayPause();
+                PasteUrl(a, "https://example.com/shared", 90f);
+                a.Options.PlayUrl();
+            });
+            loads = b.PA.Loads + b.PB.Loads;
+            AsPlayer(guest, () => Deliver(syncA, syncB));
+            Check(RunBoth(a, b, owner, guest, () => b.PA.Loads + b.PB.Loads > loads, 10f),
+                  "同じ URL でも、もう一度流したならゲストも読み直す");
+
+            // 持ち主がカタログの曲へ戻すと、ゲストも戻る。
+            AsPlayer(owner, () => a.Controller.PlayCatalogIndex(2));
+            AsPlayer(guest, () => Deliver(syncA, syncB));
+            Check(!b.Session.IsExternal && b.Session.CurrentIndex == 2, "カタログの曲へ戻ると、ゲストも曲 2 になる");
+
+            Networking.SimLocal = null;
+            Networking.SimOwner = null;
+        });
+
+        Sim.Scenario("[URL 同期] 「マスターだけ」のとき、マスターでない人は URL を流せない", () =>
+        {
+            var master = new VRCPlayerApi { playerId = 1, displayName = "マスター", isLocal = true, isMaster = true };
+            var guest = new VRCPlayerApi { playerId = 2, displayName = "ゲスト", isLocal = true, isMaster = false };
+
+            var w = Build(6, 120f, true, true);
+            UdonSyncCoordinator sync = AttachSync(w);
+            sync.AccessPolicy = UdonSyncCoordinator.AccessMasterOnly;
+            Networking.SimOwner = master;
+
+            AsPlayer(guest, () =>
+            {
+                sync.EnsureInitialized();
+                PasteUrl(w, "https://example.com/nope", 90f);
+                w.Options.PlayUrl();
+                w.Options.EnqueueUrl();
+            });
+
+            Check(!w.Session.IsExternal, "ゲストが押しても URL は流れない");
+            Equal(0, w.Options.ExternalCount, "ゲストが押しても再生予定に入らない");
+            Check(Networking.SimOwner == master, "持ち主はマスターのまま");
 
             Networking.SimLocal = null;
             Networking.SimOwner = null;

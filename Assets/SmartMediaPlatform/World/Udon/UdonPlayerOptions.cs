@@ -98,6 +98,9 @@ namespace SmartMediaPlatform.World.Udon
         private string[] _externalText;
         private int _externalCount;
 
+        // いま流している URL(同期で全員へ配るため)。カタログの曲を流しているときは使わない。
+        private VRCUrl _current;
+
         private bool _initialized;
 
         void Start()
@@ -153,8 +156,12 @@ namespace SmartMediaPlatform.World.Udon
                 return;
             }
 
+            if (!BeginControl()) return;
+
             if (StartExternal(url)) SetStatus("URL の動画を再生します");
             else SetStatus("再生できませんでした");
+
+            EndControl();
         }
 
         /// <summary>打ち込まれた URL をあとで流す。</summary>
@@ -187,11 +194,102 @@ namespace SmartMediaPlatform.World.Udon
                 return;
             }
 
+            if (!BeginControl()) return;
+
             _external[_externalCount] = url;
             _externalText[_externalCount] = text;
             _externalCount++;
 
             SetStatus("URL を再生予定に入れました(URL " + _externalCount + " 件)");
+
+            EndControl();
+        }
+
+        // ───────── 同期(2026-09-28)─────────
+        //
+        // URL は番号を持たないので、<b>URL そのもの</b>を同期で配ります。
+        // ここは VRCUrlInputField で人が打ち込んだものを<b>受け渡すだけ</b>で、
+        // 文字列から URL を作ることはしません(VideoBackend 以外で VRCUrl を持つ唯一の例外)。
+
+        /// <summary>
+        /// 操作の前に、同期の持ち主になる。操作できる人でなければ理由を出して false。
+        /// 同期していなければ何もせず true。
+        /// </summary>
+        private bool BeginControl()
+        {
+            if (Sync == null || !Sync.Enabled) return true;
+            if (Sync.TakeControl()) return true;
+
+            SetStatus(Sync.DenyReason());
+            return false;
+        }
+
+        /// <summary>操作のあと、いまの状態を全員へ配る。</summary>
+        private void EndControl()
+        {
+            if (Sync != null && Sync.Enabled) Sync.Capture();
+        }
+
+        /// <summary>いま流している URL。URL を流していなければ null。</summary>
+        public VRCUrl CurrentUrl
+        {
+            get { return Session != null && Session.IsExternal ? _current : null; }
+        }
+
+        /// <summary>あとで流す URL を写し取る(持ち主が配るため)。</summary>
+        public VRCUrl[] SnapshotExternal()
+        {
+            EnsureInitialized();
+
+            VRCUrl[] copy = new VRCUrl[_externalCount];
+            for (int i = 0; i < _externalCount; i++) copy[i] = _external[i];
+            return copy;
+        }
+
+        /// <summary>
+        /// <b>同期で届いた「あとで流す URL」をそのまま当てる。</b>持ち主以外の手元で呼ばれます。
+        /// 持ち主が代わったとき、新しい持ち主がそのまま続きを流せるようにするためです。
+        /// </summary>
+        public void ApplySyncedExternal(VRCUrl[] urls)
+        {
+            EnsureInitialized();
+
+            int count = urls == null ? 0 : urls.Length;
+            if (count > ExternalCapacity) count = ExternalCapacity;
+
+            int kept = 0;
+            for (int i = 0; i < count; i++)
+            {
+                VRCUrl url = urls[i];
+                if (url == null) continue;
+
+                string text = url.Get();
+                if (text == null || text.Length == 0) continue;
+
+                _external[kept] = url;
+                _externalText[kept] = text;
+                kept++;
+            }
+
+            for (int i = kept; i < _externalCount; i++)
+            {
+                _external[i] = null;
+                _externalText[i] = null;
+            }
+            _externalCount = kept;
+        }
+
+        /// <summary>
+        /// <b>同期で「持ち主がこの URL を流し始めた」と届いた。</b>手元でも同じ URL を読み込みます。
+        /// <paramref name="serial"/> は持ち主の番号で、次に同じ番号が届いても読み直しません。
+        /// </summary>
+        public bool PlayFromSync(VRCUrl url, int serial)
+        {
+            if (url == null || Session == null) return false;
+
+            bool ok = StartExternal(url);
+            Session.ApplySyncedExternal(url.Get(), serial);
+            return ok;
         }
 
         /// <summary>
@@ -279,6 +377,7 @@ namespace SmartMediaPlatform.World.Udon
             // 重ねている最中なら、ここで裏の曲がやめになります。
             // だから動画プレイヤーは<b>そのあとで</b>選びます(先に選ぶと裏を掴むことがある)。
             if (Session != null) Session.NotifyExternalPlayback(url.Get());
+            _current = url;
 
             UdonVideoBackend backend = ResolveBackend();
             if (backend == null) return false;
