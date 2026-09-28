@@ -166,6 +166,10 @@ namespace SmartMediaPlatform.World.Udon.UI
             }
 
             RefreshVolume();
+
+            // 「…」が開いている間は、中の見出しも合わせる
+            // (おやすみの残り分数や、マスターが切り替えた「操作できる人」は、押さなくても変わるため)。
+            if (Options != null && Options.Sheet != null && Options.Sheet.activeSelf) Options.RefreshLabels();
         }
 
         /// <summary>

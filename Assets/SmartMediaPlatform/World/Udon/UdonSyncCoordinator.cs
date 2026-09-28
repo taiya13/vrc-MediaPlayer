@@ -121,6 +121,10 @@ namespace SmartMediaPlatform.World.Udon
         // 重ねるクロスフェードでは曲が終わる前に次を裏で読むので、全員が同じ曲を読むよう配る。
         [UdonSynced] private int _nextMedia = -1;
 
+        // 誰が操作できるか(2026-09-28)。マスターがワールドの中で切り替えたものを全員へ配る。
+        // -1 はまだ配られていない(そのときは各自の Inspector の値のまま)。
+        [UdonSynced] private int _accessPolicy = -1;
+
         // ───────── 手元だけの状態 ─────────
 
         private int _appliedRevision = -1;
@@ -175,6 +179,56 @@ namespace SmartMediaPlatform.World.Udon
             return true;
         }
 
+        /// <summary>自分がいまのインスタンスマスターか。</summary>
+        public bool IsLocalMaster()
+        {
+            VRCPlayerApi local = Networking.LocalPlayer;
+            return local != null && local.isMaster;
+        }
+
+        /// <summary>
+        /// <b>「誰が操作できるか」を次へ送る。</b>誰でも → マスターだけ → いまの操作者だけ → 誰でも ……。
+        /// 2026-09-28。「…」の中のボタンから呼ばれます。
+        ///
+        /// <b>切り替えられるのはマスターだけです。</b>誰でも切り替えられると、制限をかけても
+        /// 別の人がすぐ外せてしまい、意味がなくなるためです。
+        /// マスターが抜けると VRChat が次のマスターを自動で決めるので、切り替えられる人が
+        /// いなくなることはありません。
+        ///
+        /// 切り替えた結果は全員へ配るので、配るためにマスターが持ち主になります
+        /// (「いまの操作者だけ」の最中でも、マスターは取れます。<see cref="OnOwnershipRequest"/>)。
+        /// </summary>
+        /// <returns>切り替えたら true。マスターでない・同期していないときは false。</returns>
+        public bool CycleAccessPolicy()
+        {
+            EnsureInitialized();
+            if (!Enabled) return false;
+            if (!IsLocalMaster()) return false;
+
+            int next = AccessPolicy + 1;
+            if (next > AccessOwnerOnly || next < AccessEveryone) next = AccessEveryone;
+            AccessPolicy = next;
+
+            if (!IsOwner())
+            {
+                Networking.SetOwner(Networking.LocalPlayer, gameObject);
+                ApplyAdvancePermission();
+            }
+
+            Capture();
+            if (Controller != null) Controller.NotifyChanged();
+            return true;
+        }
+
+        /// <summary>「…」のボタンに出す文字。</summary>
+        public string AccessLabel()
+        {
+            if (!Enabled) return "操作できる人:同期なし";
+            if (AccessPolicy == AccessMasterOnly) return "操作できる人:マスターだけ";
+            if (AccessPolicy == AccessOwnerOnly) return "操作できる人:いまの操作者だけ";
+            return "操作できる人:誰でも";
+        }
+
         /// <summary>操作できないときに画面へ出す理由。</summary>
         public string DenyReason()
         {
@@ -223,6 +277,10 @@ namespace SmartMediaPlatform.World.Udon
         public override bool OnOwnershipRequest(VRCPlayerApi requester, VRCPlayerApi newOwner)
         {
             if (!Enabled) return true;
+
+            // マスターは「誰が操作できるか」を切り替えるために、いつでも持ち主になれる。
+            if (requester != null && requester.isMaster) return true;
+
             return AccessPolicy != AccessOwnerOnly;
         }
 
@@ -246,6 +304,7 @@ namespace SmartMediaPlatform.World.Udon
             int current = Session.CurrentIndex;
             _currentMedia = current;
             _nextMedia = Session.PeekNextIndex();
+            _accessPolicy = AccessPolicy;
 
             // 鳴らすものが変わったなら頭から。変わっていないなら、いまの位置を基準にする
             // (一時停止・再開はこれで表せる)。
@@ -289,6 +348,12 @@ namespace SmartMediaPlatform.World.Udon
         {
             EnsureInitialized();
             if (!Enabled || Session == null) return;
+
+            // 0. 誰が操作できるか(マスターが切り替えたもの)を写す。
+            if (_accessPolicy >= AccessEveryone && _accessPolicy <= AccessOwnerOnly)
+            {
+                AccessPolicy = _accessPolicy;
+            }
 
             // 1. 再生中・再生予定・再生状態をそのまま写す(判断はしない)
             int current = _currentMedia;

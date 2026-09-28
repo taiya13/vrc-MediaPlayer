@@ -53,6 +53,13 @@ namespace SmartMediaPlatform.World.Udon
         public Text RepeatLabel;
         public Text SleepLabel;
 
+        [Header("誰が操作できるか(2026-09-28)")]
+        [Tooltip("同期の担当。空なら切り替えのボタンは何もしない。UdonMediaPanel が自動で入れる")]
+        public UdonSyncCoordinator Sync;
+
+        [Tooltip("「操作できる人:誰でも」などを出す所。空でも動く")]
+        public Text AccessLabel;
+
         // ───────── 繰り返し ─────────
 
         /// <summary>繰り返さない。</summary>
@@ -325,6 +332,30 @@ namespace SmartMediaPlatform.World.Udon
             Session.RepeatQueue = RepeatMode == RepeatQueue;
         }
 
+        // ───────── 誰が操作できるか ─────────
+
+        /// <summary>
+        /// <b>誰でも → マスターだけ → いまの操作者だけ</b> と送る。マスターだけが押せます。
+        /// 判断と配るのは <see cref="UdonSyncCoordinator.CycleAccessPolicy"/> の仕事で、ここは頼むだけです。
+        /// </summary>
+        public void CycleAccess()
+        {
+            if (Sync == null || !Sync.Enabled)
+            {
+                SetStatus("同期していないので、切り替えるものがありません");
+                return;
+            }
+
+            if (!Sync.IsLocalMaster())
+            {
+                SetStatus("操作できる人を変えられるのは、マスターだけです");
+                return;
+            }
+
+            if (Sync.CycleAccessPolicy()) SetStatus(Sync.AccessLabel() + " にしました");
+            RefreshLabels();
+        }
+
         // ───────── おやすみタイマー ─────────
 
         /// <summary>切 → 15 → 30 → 60 → 90 → この曲の終わり → 切 …… と送る。</summary>
@@ -404,6 +435,13 @@ namespace SmartMediaPlatform.World.Udon
             {
                 string sleep = SleepLabelText();
                 if (SleepLabel.text != sleep) SleepLabel.text = sleep;
+            }
+
+            // 誰が操作できるかは、マスターが切り替えると同期で変わるので、書き直しのたびに合わせる。
+            if (AccessLabel != null)
+            {
+                string access = Sync != null ? Sync.AccessLabel() : "操作できる人:同期なし";
+                if (AccessLabel.text != access) AccessLabel.text = access;
             }
         }
 

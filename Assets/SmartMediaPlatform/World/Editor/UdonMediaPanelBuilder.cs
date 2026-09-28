@@ -553,13 +553,18 @@ namespace SmartMediaPlatform.World.EditorTools
             //    (2026-09-28)。一覧を持たないリモコンだけ、ここに URL 欄を残します。
             bool withUrl = !wide;
 
+            // ── 「操作できる人」の切り替え(2026-09-28)。壁パネルだけに置きます。
+            //    リモコンは手元で曲を送るためのもので、ここまで置くとシートが板からはみ出します。
+            bool withAccess = wide;
+            int rowCount = withAccess ? 5 : 4;
+
             // 上から:(URL の説明 → URL 欄 → 再生 / 予定へ → 結果の 1 行)→ 繰り返し → おやすみ
             //         → 停止 / 予定を空に → 閉じる
             float top = pad + 20f;
             float urlBlock = withUrl
                 ? 26f + RowHeight + Gap + RowHeight + 4f + StatusHeight + Gap
                 : 0f;
-            float sheetHeight = top + urlBlock + RowHeight * 4f + Gap * 3f + pad;
+            float sheetHeight = top + urlBlock + RowHeight * rowCount + Gap * (rowCount - 1) + pad;
 
             RectTransform sheet = UdonWorldUiKit.Place(
                 section, "MoreSheet", 0f, height + UdonMediaTheme.Space1, width, sheetHeight);
@@ -690,6 +695,19 @@ namespace SmartMediaPlatform.World.EditorTools
 
             y += RowHeight + Gap;
 
+            // ── 誰が操作できるか。押せるのはマスターだけ(ほかの人が押すと理由が出る)。
+            Text accessLabel = null;
+            Button access = null;
+            if (withAccess)
+            {
+                access = UdonWorldUiKit.RoundedButton(
+                    sheet, "Access", pad, y, inner, RowHeight, "操作できる人:誰でも",
+                    UdonMediaTheme.TextBody, UdonMediaTheme.Fill,
+                    UdonMediaTheme.RadiusMedium, out accessLabel);
+
+                y += RowHeight + Gap;
+            }
+
             // ── 停止 / 予定を空に
             Button stop = UdonWorldUiKit.RoundedButton(
                 sheet, "Stop", pad, y, half, RowHeight, "■ 停止",
@@ -717,6 +735,12 @@ namespace SmartMediaPlatform.World.EditorTools
                 options.Sheet = sheet.gameObject;
                 options.RepeatLabel = repeatLabel;
                 options.SleepLabel = sleepLabel;
+
+                if (withAccess)
+                {
+                    options.AccessLabel = accessLabel;
+                    UdonWorldUiKit.Wire(access, options, "CycleAccess", "操作できる人を変える");
+                }
 
                 if (withUrl)
                 {

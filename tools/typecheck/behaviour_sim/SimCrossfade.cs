@@ -696,6 +696,77 @@ public static class SimCrossfade
             Equal(0, w.Options.ExternalCount, "「予定を空に」で URL も空になる");
             Equal(0, w.Session.QueueCount, "「予定を空に」で曲も空になる");
         });
+
+        Sim.Scenario("[URL] 「1 曲繰り返し」なら、URL の動画も終わったら頭からもう一度流れる", () =>
+        {
+            var w = Build(6, 60f, true, true);
+            w.Options.RepeatMode = UdonPlayerOptions.RepeatOne;
+            w.Options.Apply();
+
+            PasteUrl(w, "https://example.com/loop", 50f);
+            w.Options.PlayUrl();
+            Check(RunUntil(w, () => FrontAudible(w), 15f), "URL が鳴り始める");
+
+            int loads = w.PA.Loads + w.PB.Loads;
+            Check(RunUntil(w, () => w.PA.Loads + w.PB.Loads > loads, 60f), "終わったら読み直す");
+            Check(RunUntil(w, () => FrontAudible(w), 15f), "また鳴り始める");
+            Equal("https://example.com/loop", FrontUrl(w), "同じ URL のまま");
+            Check(w.Session.IsExternal && w.Session.CurrentIndex < 0, "おすすめの曲へ進んでいない");
+
+            w.Options.RepeatMode = UdonPlayerOptions.RepeatOff;
+            w.Options.Apply();
+            Check(RunUntil(w, () => w.Session.CurrentIndex >= 0, 70f), "繰り返しを切れば、終わったあとおすすめへ進む");
+        });
+
+        Sim.Scenario("[操作できる人] 切り替えられるのはマスターだけ。切り替えた結果はほかの人にも届く", () =>
+        {
+            var w = Build(6, 120f, true, true);
+
+            var master = new VRCPlayerApi { playerId = 1, displayName = "マスター", isLocal = true, isMaster = true };
+            var guest = new VRCPlayerApi { playerId = 2, displayName = "ゲスト", isLocal = true, isMaster = false };
+
+            var sync = Make<UdonSyncCoordinator>("Sync");
+            sync.Session = w.Session;
+            sync.Controller = w.Controller;
+            w.Options.Sync = sync;
+            w.Options.AccessLabel = Make<UnityEngine.UI.Text>("AccessLabel");
+
+            // ゲストの手元。持ち主はゲスト(最後に操作した人)。
+            Networking.SimLocal = guest;
+            Networking.SimOwner = guest;
+            sync.EnsureInitialized();
+
+            w.Options.CycleAccess();
+            Equal(UdonSyncCoordinator.AccessEveryone, sync.AccessPolicy, "ゲストが押しても変わらない");
+
+            // マスターの手元。
+            Networking.SimLocal = master;
+            w.Options.CycleAccess();
+            Equal(UdonSyncCoordinator.AccessMasterOnly, sync.AccessPolicy, "マスターが押すと「マスターだけ」になる");
+            Check(Networking.SimOwner == master, "配るためにマスターが持ち主になる");
+            Equal("操作できる人:マスターだけ", w.Options.AccessLabel.text, "ボタンの文字も変わる");
+
+            // ゲストの手元へ届いたことにする(同期する値を写して、受け取りを呼ぶ)。
+            var remote = Make<UdonSyncCoordinator>("SyncRemote");
+            remote.Session = Make<UdonPlayerSession>("RemoteSession");
+            remote.Session.EnsureInitialized();
+            FieldInfo policy = typeof(UdonSyncCoordinator).GetField("_accessPolicy", BindingFlags.NonPublic | BindingFlags.Instance);
+            policy.SetValue(remote, policy.GetValue(sync));
+            Networking.SimLocal = guest;
+            remote.Apply();
+            Equal(UdonSyncCoordinator.AccessMasterOnly, remote.AccessPolicy, "ゲストの手元でも「マスターだけ」になる");
+            Check(!remote.CanOperate(), "ゲストは操作できない");
+
+            // 「いまの操作者だけ」→「誰でも」と一周する。
+            Networking.SimLocal = master;
+            w.Options.CycleAccess();
+            Equal(UdonSyncCoordinator.AccessOwnerOnly, sync.AccessPolicy, "次は「いまの操作者だけ」");
+            w.Options.CycleAccess();
+            Equal(UdonSyncCoordinator.AccessEveryone, sync.AccessPolicy, "一周して「誰でも」に戻る");
+
+            Networking.SimLocal = null;
+            Networking.SimOwner = null;
+        });
     }
 
     public static void Run()

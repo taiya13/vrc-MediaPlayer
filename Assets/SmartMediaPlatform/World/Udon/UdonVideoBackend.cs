@@ -88,6 +88,9 @@ namespace SmartMediaPlatform.World.Udon
 
         // 待たせている URL(カタログに無いもの)。null ならカタログの _pendingIndex を読む。
         private VRCUrl _pendingExternal;
+
+        // 最後に頼まれた URL。「1 曲繰り返し」で同じ URL を読み直すために覚えておく。
+        private VRCUrl _lastExternal;
         private bool _loadScheduled;
 
         // 読み込んでから一度でも鳴ったか(鳴らずに終わったら失敗とみなす)
@@ -299,6 +302,7 @@ namespace SmartMediaPlatform.World.Udon
 
             _pendingIndex = -1;
             _pendingExternal = url;
+            _lastExternal = url;
             LoadedIndex = -1;
             _wantsPlay = true;
 
@@ -309,6 +313,16 @@ namespace SmartMediaPlatform.World.Udon
             if (LoadWait() > 0f) Player.Pause();
 
             return LoadOrWait();
+        }
+
+        /// <summary>
+        /// <b>最後に流した URL を、頭からもう一度流す。</b>「1 曲繰り返し」用(2026-09-28)。
+        /// URL を 1 度も流していなければ false。
+        /// </summary>
+        public bool ReplayExternal()
+        {
+            if (_lastExternal == null) return false;
+            return PlayExternal(_lastExternal);
         }
 
         public bool Stop()

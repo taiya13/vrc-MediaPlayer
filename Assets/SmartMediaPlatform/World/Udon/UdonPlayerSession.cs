@@ -612,6 +612,19 @@ namespace SmartMediaPlatform.World.Udon
                 return;
             }
 
+            // ── URL の動画も 1 曲繰り返す(2026-09-28)。
+            //    URL には番号が無いので、上の道(番号で読み直す)を通れず、
+            //    おすすめへ進んでしまっていました。同じ URL を読み直してもらいます。
+            if (EndBehaviour == EndBehaviourRepeatOne && IsExternal)
+            {
+                UdonVideoBackend replaying = ActiveBackend();
+                if (replaying != null && replaying.ReplayExternal())
+                {
+                    _isPlaying = true;
+                    return;
+                }
+            }
+
             if (EndBehaviour == EndBehaviourRecommend)
             {
                 int pick = TakeRecommendation();

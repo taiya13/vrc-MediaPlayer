@@ -155,6 +155,12 @@ namespace SmartMediaPlatform.World.Udon.UI
                 {
                     Transport.Options.Panel = this;
                 }
+
+                // 「操作できる人」の切り替えは、同期の担当に頼む。
+                if (Transport.Options != null && Transport.Options.Sync == null && Controller != null)
+                {
+                    Transport.Options.Sync = Controller.Sync;
+                }
                 if (Transport.Screen == null) Transport.Screen = Screen;
                 if (Transport.Panel == null) Transport.Panel = this;
             }

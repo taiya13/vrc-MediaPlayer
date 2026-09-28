@@ -50,6 +50,13 @@ def live_vrc():
         "        public static VRCPlayerApi LocalPlayer { get { return null; } }\n",
         "        public static VRCPlayerApi SimLocal;\n"
         "        public static VRCPlayerApi LocalPlayer { get { return SimLocal; } }\n", w)
+    # 持ち主を 1 人だけ覚える(誰が操作できるかの確認用)
+    text = replace_once(text,
+        "        public static bool IsOwner(VRCPlayerApi player, GameObject obj) { return false; }\n"
+        "        public static void SetOwner(VRCPlayerApi player, GameObject obj) { }\n",
+        "        public static VRCPlayerApi SimOwner;\n"
+        "        public static bool IsOwner(VRCPlayerApi player, GameObject obj) { return player != null && player == SimOwner; }\n"
+        "        public static void SetOwner(VRCPlayerApi player, GameObject obj) { SimOwner = player; }\n", w)
     text = replace_once(text,
         "        public VRC.SDKBase.VRCUrl GetUrl() { return null; }\n",
         "        public string SimText;\n"
