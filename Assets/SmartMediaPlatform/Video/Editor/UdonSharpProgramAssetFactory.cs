@@ -73,6 +73,9 @@ namespace SmartMediaPlatform.Video.EditorTools
         /// <returns>消した数。</returns>
         public static int CleanupOrphanPrograms(bool quiet)
         {
+            // プログラムを消したり繋ぎ直したりするので、覚えていたものは捨てる。
+            ForgetPrograms();
+
             if (!IsAvailable) return 0;
             if (!AssetDatabase.IsValidFolder(ProgramFolder)) return 0;
 
@@ -235,6 +238,8 @@ namespace SmartMediaPlatform.Video.EditorTools
         /// <returns>繋ぎ直した数。</returns>
         public static int RepairBrokenProgramAssets(out int removed, out string details)
         {
+            ForgetPrograms();
+
             removed = 0;
             details = string.Empty;
             if (!IsAvailable) return 0;
@@ -405,6 +410,8 @@ namespace SmartMediaPlatform.Video.EditorTools
             EditorUtility.SetDirty(asset);
             created = true;
 
+            _programCache[behaviourType] = asset;
+
             Debug.Log(
                 $"[UdonSharpProgramAssetFactory] {behaviourType.Name} のプログラムを作成しました: "
                 + assetPath);
@@ -416,6 +423,14 @@ namespace SmartMediaPlatform.Video.EditorTools
         {
             if (behaviourType == null || !IsAvailable) return null;
 
+            // ── 一度見つけたものは覚えておく(2026-10-07)。
+            //
+            //    Prefab を作るとき、ボタン 1 個ごとにここが呼ばれます(1 回の作成で約 480 回)。
+            //    毎回プロジェクト中のプログラムを探して全部読み込んでいたため、
+            //    <b>作成に 2 分ほどかかっていました</b>。消えたもの(Unity では null になる)は使わず、探し直します。
+            ScriptableObject cached;
+            if (_programCache.TryGetValue(behaviourType, out cached) && cached != null) return cached;
+
             var scriptMember = FindMonoScriptMember(ProgramAssetType);
             if (scriptMember == null) return null;
 
@@ -426,10 +441,26 @@ namespace SmartMediaPlatform.Video.EditorTools
                 if (asset == null || !ProgramAssetType.IsInstanceOfType(asset)) continue;
 
                 var script = scriptMember.GetValue(asset) as MonoScript;
-                if (script != null && script.GetClass() == behaviourType) return asset;
+                if (script == null) continue;
+
+                // ついでに、見かけた全部を覚えておく(次の種類を探すときに検索しなくて済む)。
+                Type owner = script.GetClass();
+                if (owner != null && !_programCache.ContainsKey(owner)) _programCache[owner] = asset;
+
+                if (owner == behaviourType) return asset;
             }
 
             return null;
+        }
+
+        // 種類ごとのプログラム。Prefab を作るときの探し直しを省くため。
+        private static readonly Dictionary<Type, ScriptableObject> _programCache =
+            new Dictionary<Type, ScriptableObject>();
+
+        /// <summary>覚えていたプログラムを捨てる(プログラムを消した・繋ぎ直したあとに呼ぶ)。</summary>
+        public static void ForgetPrograms()
+        {
+            _programCache.Clear();
         }
 
         /// <summary>
