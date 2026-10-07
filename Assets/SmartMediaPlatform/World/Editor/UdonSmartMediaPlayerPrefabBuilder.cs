@@ -299,6 +299,10 @@ namespace SmartMediaPlatform.World.EditorTools
             AudioSource speaker = BuildSpeaker(screenObject, "Speaker", 0.6f);
             AudioSource speakerB = UseCrossfade ? BuildSpeaker(screenObject, "SpeakerB", 0.6f) : null;
 
+            // ── 画面の真ん中に重ねる文字(「読み込み中…」「再生できませんでした」)。2026-10-07。
+            UnityEngine.UI.Text messageText;
+            GameObject messageRoot = BuildScreenMessage(screenObject, out messageText);
+
             var screen = Add<UdonMediaScreen>(screenObject);
             if (screen != null)
             {
@@ -306,6 +310,8 @@ namespace SmartMediaPlatform.World.EditorTools
                 screen.Speaker = speaker;
                 screen.SurfaceB = rendererB;
                 screen.SpeakerB = speakerB;
+                screen.MessageRoot = messageRoot;
+                screen.MessageText = messageText;
             }
             if (_needsCompile) return root;
 
@@ -732,6 +738,50 @@ namespace SmartMediaPlatform.World.EditorTools
             var renderer = surface.GetComponent<Renderer>();
             AssignScreenMaterial(renderer, materialName, log);
             return renderer;
+        }
+
+        /// <summary>
+        /// <b>画面の真ん中に重ねる文字の板。</b>2026-10-07。
+        /// 動画が「読み込み中」なのか「再生できなかった」のかを、画面を見ただけで分かるようにします。
+        /// 面(3.2 × 1.8 m)と同じ大きさの Canvas を、面の少し手前に置きます。
+        /// <b>当たり判定は付けません</b>(画面の前でパネルを操作する邪魔をしないように)。
+        /// 最初は隠しておき、<see cref="UdonMediaScreen.SetMessage"/> が出し入れします。
+        /// </summary>
+        private static GameObject BuildScreenMessage(GameObject screenObject, out UnityEngine.UI.Text text)
+        {
+            const float W = 1600f;
+            const float H = 900f;
+            const float PlateW = 1400f;
+            const float PlateH = 260f;
+
+            RectTransform canvas = UdonWorldUiKit.WorldCanvas(screenObject, "Message", W, H, 0.002f);
+            canvas.localPosition = new Vector3(0f, 1.8f, -0.02f);
+
+            // WorldCanvas はパネル用に当たり判定と uGUI の受け口を付けるので、ここでは外す。
+            var collider = canvas.GetComponent<Collider>();
+            if (collider != null)
+            {
+                collider.enabled = false;
+                UnityEngine.Object.DestroyImmediate(collider);
+            }
+            var raycaster = canvas.GetComponent<UnityEngine.UI.GraphicRaycaster>();
+            if (raycaster != null) UnityEngine.Object.DestroyImmediate(raycaster);
+
+            float x = (W - PlateW) * 0.5f;
+            float y = (H - PlateH) * 0.5f;
+
+            UdonWorldUiKit.RoundedPlate(
+                canvas, "Plate", x, y, PlateW, PlateH, new Color(0f, 0f, 0f, 0.7f), 32)
+                .raycastTarget = false;
+
+            text = UdonWorldUiKit.FittedLabel(
+                canvas, "Text", x + 48f, y, PlateW - 96f, PlateH, 56, 28,
+                TextAnchor.MiddleCenter, Color.white);
+            text.raycastTarget = false;
+            text.text = "";
+
+            canvas.gameObject.SetActive(false);
+            return canvas.gameObject;
         }
 
         /// <summary>

@@ -83,6 +83,15 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>直近のエラーコード(<c>VideoError</c> の値)。無ければ -1。</summary>
         public int LastErrorCode = -1;
 
+        /// <summary>
+        /// <b>いま読み込んだものが、再生できずに終わったか。</b>2026-10-07。
+        /// 画面に「再生できませんでした」を出すために使います。次の読み込みを始めると消えます。
+        /// </summary>
+        public bool HasError;
+
+        /// <summary>一度も鳴らずに終わったときの、エラーコードの代わり。</summary>
+        public const int ErrorNeverStarted = -2;
+
         /// <summary>読み込み待ちか。</summary>
         public bool IsLoading;
 
@@ -143,6 +152,9 @@ namespace SmartMediaPlatform.World.Udon
         /// <summary>待つ必要があれば読み込みを遅らせ、無ければいま読む。</summary>
         private bool LoadOrWait()
         {
+            // 新しく読み込むので、前のエラーの表示は消す。
+            HasError = false;
+
             float wait = LoadWait();
             if (wait > 0f)
             {
@@ -366,6 +378,7 @@ namespace SmartMediaPlatform.World.Udon
             IsLoading = false;
             _started = false;
             _ready = false;
+            HasError = false;
             Player.Stop();
             return true;
         }
@@ -599,6 +612,8 @@ namespace SmartMediaPlatform.World.Udon
                                  + LoadedIndex, gameObject);
 
                 _ready = false;
+                HasError = true;
+                LastErrorCode = ErrorNeverStarted;
                 DeliverError();
                 return;
             }
@@ -619,16 +634,39 @@ namespace SmartMediaPlatform.World.Udon
 
             int code = (int)videoError;
             LastErrorCode = code;
+            HasError = true;
 
             // 同じ失敗を続けて送ってきたときに二重で次へ送らない(Phase3-2 と同じ)
             if (CollapseRepeatedErrors && code == _lastReportedErrorCode) return;
             _lastReportedErrorCode = code;
 
             Debug.LogWarning("[UdonVideoBackend] 再生に失敗しました (VideoError " + code
-                             + ") index " + LoadedIndex);
+                             + ") index " + LoadedIndex + " / " + ErrorReason(code), gameObject);
 
             _ready = false;
             DeliverError();
+        }
+
+        /// <summary>
+        /// <b>エラーの理由を、人が読める言葉にする。</b>画面とログに出す用。
+        /// <paramref name="code"/> は <c>VideoError</c> の値(または <see cref="ErrorNeverStarted"/>)。
+        /// </summary>
+        public string ErrorReason(int code)
+        {
+            if (code == 1) return "URL が正しくないか、動画が見つかりません";
+            if (code == 2) return "この URL は再生が許可されていません(VRChat の設定で「Untrusted URL」を許可すると流れることがあります)";
+            if (code == 3) return "動画を読み込めませんでした(YouTube 側の制限の可能性があります)";
+            if (code == 4) return "読み込みが続いたため制限されました。少し待ってから試してください";
+            if (code == ErrorNeverStarted) return "再生が始まらないまま終わりました";
+            return "原因の分からないエラーです";
+        }
+
+        /// <summary>画面に出す 1 行。エラーが無ければ空。</summary>
+        public string ErrorMessage()
+        {
+            if (!HasError) return "";
+            string code = LastErrorCode >= 0 ? "(エラー " + LastErrorCode + ")" : "";
+            return "再生できませんでした:" + ErrorReason(LastErrorCode) + code;
         }
 
         /// <summary>いま読み込んでいるものが鳴り始めたか(クロスフェードの開始判定)。</summary>

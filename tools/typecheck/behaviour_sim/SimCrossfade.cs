@@ -529,6 +529,11 @@ public static class SimCrossfade
         Check(screen.SpeakerB.gameObject != screen.SurfaceB.gameObject, "2 つめの音の出口も面とは別");
         Check(screen.Surface != screen.SurfaceB, "面も 2 枚");
         Check(!screen.SurfaceB.enabled, "2 枚目の面は最初は隠れている");
+        Check(screen.MessageRoot != null && screen.MessageText != null, "画面に重ねる文字がつながっている");
+        Check(screen.MessageRoot != null && !screen.MessageRoot.activeSelf, "画面の文字は最初は隠れている");
+        Check(screen.MessageRoot != null
+              && (screen.MessageRoot.GetComponent<Collider>() == null || !screen.MessageRoot.GetComponent<Collider>().enabled),
+              "画面の文字には当たり判定が無い(パネルの操作を邪魔しない)");
 
         UdonVideoBackend a = player.Backend;
         UdonVideoBackend b = player.BackendB;
@@ -1037,6 +1042,48 @@ public static class SimCrossfade
 
             Networking.SimLocal = null;
             Networking.SimOwner = null;
+        });
+
+        Sim.Scenario("[画面の表示] 読み込み中は「読み込み中…」、再生できなければ理由が画面に出る。鳴れば消える", () =>
+        {
+            var w = Build(6, 120f, true, true);
+
+            w.Screen.MessageRoot = new GameObject("Message");
+            w.Screen.MessageRoot.SetActive(false);
+            w.Screen.MessageText = Make<UnityEngine.UI.Text>("MessageText");
+
+            var view = Make<SmartMediaPlatform.World.Udon.UI.UdonNowPlayingView>("NowPlaying");
+            view.Session = w.Session;
+            view.Store = w.Store;
+            view.Screen = w.Screen;
+            view.StateText = Make<UnityEngine.UI.Text>("State");
+
+            // 壊れた URL。
+            w.Options.UrlField = new GameObject("UrlField").AddComponent<VRC.SDK3.Components.VRCUrlInputField>();
+            w.Media["https://example.com/broken"] = new SimMedia { Duration = 90f, Fail = true, LoadSeconds = 2f };
+            w.Options.UrlField.SimText = "https://example.com/broken";
+            w.Options.PlayUrl();
+
+            Run(w, 0.5f);
+            view.Refresh();
+            Check(w.Screen.MessageRoot.activeSelf, "読み込み中は画面に文字が出る");
+            Equal("読み込み中…", w.Screen.MessageText.text, "「読み込み中…」と出る");
+            Equal("読み込み中…", view.StateText.text, "帯の状態欄にも出る");
+
+            Run(w, 3f);
+            view.Refresh();
+            Check(w.Screen.MessageRoot.activeSelf, "再生できなければ画面に文字が出る");
+            Check(w.Screen.MessageText.text.StartsWith("再生できませんでした"), "「再生できませんでした」と出る: " + w.Screen.MessageText.text);
+            Check(w.Screen.MessageText.text.Contains("エラー 3"), "エラーの番号も出る");
+            Equal("再生エラー", view.StateText.text, "帯の状態欄は「再生エラー」");
+
+            // 次はちゃんと流れる URL。
+            PasteUrl(w, "https://example.com/ok", 90f);
+            w.Options.PlayUrl();
+            Check(RunUntil(w, () => FrontAudible(w), 15f), "次の URL は鳴り始める");
+            view.Refresh();
+            Check(!w.Screen.MessageRoot.activeSelf, "鳴り始めたら画面の文字は消える");
+            Equal("", view.StateText.text, "帯の状態欄も空になる");
         });
     }
 

@@ -46,6 +46,13 @@ namespace SmartMediaPlatform.World.Udon
         [Tooltip("2 つめの動画プレイヤーの音の出口。Speaker とは別の GameObject に置く")]
         public AudioSource SpeakerB;
 
+        [Header("画面に重ねて出す文字(2026-10-07。空でも動く)")]
+        [Tooltip("「読み込み中…」「再生できませんでした」を出す入れ物。何も無いときは隠す")]
+        public GameObject MessageRoot;
+
+        [Tooltip("その文字")]
+        public UnityEngine.UI.Text MessageText;
+
         [Tooltip("既定の音量(0〜1)")]
         [Range(0f, 1f)]
         public float Volume = 0.6f;
@@ -180,6 +187,18 @@ namespace SmartMediaPlatform.World.Udon
         {
             if (Surface != null && Surface.enabled == _showingB) Surface.enabled = !_showingB;
             if (SurfaceB != null && SurfaceB.enabled != _showingB) SurfaceB.enabled = _showingB;
+        }
+
+        /// <summary>
+        /// <b>画面の真ん中に文字を出す。</b>空なら隠す。何を出すかは決めません
+        /// (決めるのは <c>UdonNowPlayingView</c>。ここは出力先なので、言われたものを出すだけ)。
+        /// </summary>
+        public void SetMessage(string message)
+        {
+            bool show = message != null && message.Length > 0;
+
+            if (MessageText != null && show && MessageText.text != message) MessageText.text = message;
+            if (MessageRoot != null && MessageRoot.activeSelf != show) MessageRoot.SetActive(show);
         }
 
         /// <summary>音量を変える(0〜1)。</summary>

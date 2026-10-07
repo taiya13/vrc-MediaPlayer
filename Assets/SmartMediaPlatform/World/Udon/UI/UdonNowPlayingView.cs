@@ -31,6 +31,12 @@ namespace SmartMediaPlatform.World.Udon.UI
         [Tooltip("同期の担当(Phase5-4)。空なら操作者の欄を出さない")]
         public UdonSyncCoordinator Sync;
 
+        [Tooltip("動画の画面。「読み込み中…」「再生できませんでした」を画面の真ん中に出す。空なら出さない")]
+        public UdonMediaScreen Screen;
+
+        [Tooltip("エラーの理由を、パネルの結果の行にも残す。空なら残さない")]
+        public UdonMediaPanel Panel;
+
         [Header("文字(空でも動く)")]
         public Text TitleText;
 
@@ -78,6 +84,7 @@ namespace SmartMediaPlatform.World.Udon.UI
         public string StoppedLabel = "■ 停止";
         public string ExhaustedLabel = "次がありません";
         public string LoadingLabel = "読み込み中…";
+        public string ErrorLabel = "再生エラー";
         public string ExternalTitle = "URL の動画";
 
         /// <summary>
@@ -212,6 +219,7 @@ namespace SmartMediaPlatform.World.Udon.UI
             if (!Session.HasCurrent)
             {
                 ShowNothing(Session.IsExhausted ? ExhaustedLabel : StoppedLabel);
+                ShowScreenMessage("");
                 return;
             }
 
@@ -253,10 +261,25 @@ namespace SmartMediaPlatform.World.Udon.UI
             //    3 つ並んだ文字のうち 1 つが常に無意味だと、
             //    残りの 2 つ(経過・残り)も読まれなくなります。
             //    読み込み中と一時停止のときだけ出します。
-            bool loading = Session.IsPlaying && !backend.IsPlaying;
-            SetText(StateText, loading
-                ? LoadingLabel
-                : (Session.IsPlaying ? "" : PausedLabel));
+            //    エラーは何より先に出します(2026-10-07)。以前は出しておらず、
+            //    再生できなかったのか、まだ読み込んでいるのかが見分けられませんでした。
+            bool failed = backend.HasError;
+            bool loading = !failed && Session.IsPlaying && (backend.IsLoading || !backend.IsPlaying);
+
+            SetText(StateText, failed
+                ? ErrorLabel
+                : (loading ? LoadingLabel : (Session.IsPlaying ? "" : PausedLabel)));
+
+            // 画面の真ん中にも出す。何も無ければ消える。
+            ShowScreenMessage(failed ? backend.ErrorMessage() : (loading ? LoadingLabel : ""));
+
+            // エラーになった瞬間だけ、理由をパネルの結果の行に残す(画面を見ていなくても分かるように)。
+            if (failed && !_errorReported)
+            {
+                _errorReported = true;
+                if (Panel != null) Panel.SetStatus(backend.ErrorMessage());
+            }
+            if (!failed) _errorReported = false;
 
             float elapsed = backend.GetTime();
             float length = backend.GetDuration();
@@ -267,6 +290,14 @@ namespace SmartMediaPlatform.World.Udon.UI
         }
 
         // ───────── 内部 ─────────
+
+        // いまのエラーを、もう結果の行に出したか。
+        private bool _errorReported;
+
+        private void ShowScreenMessage(string message)
+        {
+            if (Screen != null) Screen.SetMessage(message);
+        }
 
         private void ShowNothing(string state)
         {
