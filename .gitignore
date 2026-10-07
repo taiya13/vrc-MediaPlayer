@@ -1,0 +1,46 @@
+# 配布用にまとめた zip(リポジトリには入れない)
+SmartMediaPlatform_*.zip
+
+# Unity が生成するもの
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]ser[Ss]ettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+
+# Visual Studio / Rider が生成するもの
+.vs/
+.idea/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.opendb
+*.VC.db
+
+# OS が生成するもの
+.DS_Store
+Thumbs.db
+
+# ───────── 作った物・あなたのデータ(Phase8)─────────
+#
+# ここには <b>API キー</b>・焼き込んだ Prefab・サムネイル・
+# カタログ(曲データ)が入ります。
+#   ・API キーが漏れると、他人にクォータを使われ、Google に止められます
+#   ・カタログには第三者の動画データが入ります
+# どちらも <b>リポジトリにも配布物にも入れてはいけません</b>。
+Assets/SmartMediaPlatform_Data/
+Assets/SmartMediaPlatform_Data.meta
+
+# 旧い置き場(Phase7-2 まで)にキーが残っていることがある
+Assets/SmartMediaPlatform/CatalogBuilder/Importers/YouTube/YouTubeApiSettings.asset
+Assets/SmartMediaPlatform/CatalogBuilder/Importers/YouTube/YouTubeApiSettings.asset.meta

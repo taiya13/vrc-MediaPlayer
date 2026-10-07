@@ -1,0 +1,19 @@
+{
+    "name": "SmartMediaPlatform.CatalogBuilder.YouTube",
+    "rootNamespace": "SmartMediaPlatform.CatalogBuilder.YouTube",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.CatalogBuilder"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

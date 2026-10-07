@@ -1,0 +1,25 @@
+{
+    "name": "SmartMediaPlatform.World",
+    "rootNamespace": "SmartMediaPlatform.World",
+    "references": [
+        "SmartMediaPlatform.Catalog",
+        "SmartMediaPlatform.Catalog.Assets",
+        "SmartMediaPlatform.Recommendation",
+        "SmartMediaPlatform.Queue",
+        "SmartMediaPlatform.Backend",
+        "SmartMediaPlatform.Player",
+        "SmartMediaPlatform.Session",
+        "SmartMediaPlatform.Video",
+        "SmartMediaPlatform.Library",
+        "SmartMediaPlatform.Library.Playback"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
